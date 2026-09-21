@@ -143,12 +143,6 @@ fun LiveLogsScreen(
         }
     }
 
-    // 采用 macOS 终端/顶级聊天系统级 reverseLayout 倒序自吸底方案：
-    // index 0 天然锚定在可视区域最底部，新消息到来时平滑向上推入，彻底消灭测量时延造成的任何抖动与闪屏！
-    val reversedPackets = remember(filteredPackets) {
-        filteredPackets.asReversed()
-    }
-
     val onSelectPacket: (MqttLogPacket) -> Unit = remember {
         { packet -> selectedDetailsPacket = packet }
     }
@@ -165,10 +159,50 @@ fun LiveLogsScreen(
         }
     }
 
-    // 恢复播放时平滑回到最新一条 (index 0)
+    // 智能自动吸底与防闪屏状态机：
+    // 1. 默认处于 autoScrollToBottom 自动向下吸底追踪状态；
+    // 2. 当用户向上滚动离开底部时，自动停止吸底，保障自由翻看历史不受干扰；
+    // 3. 当用户手动滑回最底部、解除暂停或点击悬浮回到底部按钮时，平滑重新恢复吸底！
+    var autoScrollToBottom by remember { mutableStateOf(true) }
+
+    val isAtBottom by remember {
+        derivedStateOf {
+            val layoutInfo = listState.layoutInfo
+            val visibleItems = layoutInfo.visibleItemsInfo
+            if (visibleItems.isEmpty()) true
+            else {
+                val lastVisibleIndex = visibleItems.last().index
+                val totalCount = layoutInfo.totalItemsCount
+                lastVisibleIndex >= totalCount - 2
+            }
+        }
+    }
+
+    // 监听用户真实滑动交互，区分主动翻看历史还是系统自动推移
+    LaunchedEffect(listState.isScrollInProgress) {
+        if (listState.isScrollInProgress) {
+            if (!isAtBottom) {
+                autoScrollToBottom = false
+            } else {
+                autoScrollToBottom = true
+            }
+        }
+    }
+
+    // 毫秒级零抖动自动向下吸底推进：
+    // 当处于吸底状态且未暂停时，新报文到来直接定位到最后一项 (filteredPackets.size - 1)。
+    // 彻底告别被频繁打断的弹性插值动画，消除任何一帧的上下拉扯闪屏，如 macOS 终端般丝滑向下推移！
+    LaunchedEffect(filteredPackets.size, autoScrollToBottom, isPaused) {
+        if (autoScrollToBottom && !isPaused && filteredPackets.isNotEmpty()) {
+            listState.scrollToItem(filteredPackets.size - 1)
+        }
+    }
+
+    // 解除暂停时平滑过渡滚动至最底端并恢复吸底
     LaunchedEffect(isPaused) {
-        if (!isPaused && reversedPackets.isNotEmpty()) {
-            listState.animateScrollToItem(0)
+        if (!isPaused && filteredPackets.isNotEmpty()) {
+            autoScrollToBottom = true
+            listState.animateScrollToItem(filteredPackets.size - 1)
         }
     }
 
@@ -341,13 +375,23 @@ fun LiveLogsScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    val statusText = when {
+                        isPaused -> "⏸ 自动滚动已暂停 (${filteredPackets.size} 条 · 可自由浏览)"
+                        !autoScrollToBottom -> "↑ 正在翻看历史 (${filteredPackets.size} 条 · 已停吸底)"
+                        else -> "● 自动吸附最新 (${filteredPackets.size} 条)"
+                    }
+                    val statusColor = when {
+                        isPaused -> Color(0xFFD97706)
+                        !autoScrollToBottom -> PrimaryBlack
+                        else -> AccentEmerald
+                    }
                     Text(
-                        text = if (isPaused) "⏸ 自动滚动已暂停 (${filteredPackets.size} 条 · 可自由浏览)" else "● 自动吸附最新 (${filteredPackets.size} 条)",
+                        text = statusText,
                         style = TextStyle(
                             fontFamily = FontFamily.Monospace,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Medium,
-                            color = if (isPaused) Color(0xFFD97706) else AccentEmerald
+                            color = statusColor
                         )
                     )
                     if (totalFilterRules > 0) {
@@ -361,7 +405,7 @@ fun LiveLogsScreen(
             }
         }
 
-        // 2. 独立滚动的消息流列表 (支持自动吸底滚动与暂停自由翻阅)
+        // 2. 独立滚动的消息流列表 (正向自然流序，自动向下吸底滚动与暂停自由翻阅)
         Box(
             modifier = Modifier
                 .weight(1f)
@@ -369,13 +413,13 @@ fun LiveLogsScreen(
         ) {
             LazyColumn(
                 state = listState,
-                reverseLayout = true,
+                reverseLayout = false,
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                if (reversedPackets.isEmpty()) {
+                if (filteredPackets.isEmpty()) {
                     item {
                         Box(
                             modifier = Modifier
@@ -390,7 +434,7 @@ fun LiveLogsScreen(
                         }
                     }
                 } else {
-                    items(reversedPackets, key = { it.id }) { packet ->
+                    items(filteredPackets, key = { it.id }) { packet ->
                         CompactMessageCard(
                             packet = packet,
                             isJsonPretty = isJsonPretty,
@@ -402,15 +446,13 @@ fun LiveLogsScreen(
                 }
             }
 
-            // 悬浮快速“滚到底部最新”微按钮 (当离开底部最新消息或处于暂停模式时展示)
-            val isNotAtBottom by remember {
-                derivedStateOf { listState.firstVisibleItemIndex > 0 }
-            }
-            if ((isNotAtBottom || isPaused) && reversedPackets.isNotEmpty()) {
+            // 悬浮快速“滚到底部最新”微按钮 (当离开底部翻看历史或处于暂停模式时展示，一键直达并恢复吸附)
+            if ((!autoScrollToBottom || !isAtBottom || isPaused) && filteredPackets.isNotEmpty()) {
                 FloatingActionButton(
                     onClick = {
+                        autoScrollToBottom = true
                         coroutineScope.launch {
-                            listState.animateScrollToItem(0)
+                            listState.animateScrollToItem(filteredPackets.size - 1)
                         }
                     },
                     modifier = Modifier

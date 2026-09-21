@@ -493,55 +493,6 @@ fun SettingsScreen(
                     }
                 }
 
-                // Status Banner
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(SurfaceContainerLow)
-                        .padding(12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "连接引擎状态",
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontSize = 11.sp,
-                                color = OnSurfaceVariantGray
-                            )
-                        )
-                        val statusDesc = when (connectionState) {
-                            MqttConnectionState.CONNECTED -> "已连接 · ${config.host}:${config.port}"
-                            MqttConnectionState.CONNECTING -> "正在建立 TCP/MQTT 会话..."
-                            MqttConnectionState.RECONNECTING -> "意外断线 · 自动重连中 (${reconnectCountdown}s)"
-                            MqttConnectionState.DISCONNECTED -> "已断开连接"
-                            MqttConnectionState.ERROR -> "连接遇到异常"
-                        }
-                        Text(
-                            text = statusDesc,
-                            style = TextStyle(
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = PrimaryBlack
-                            )
-                        )
-                    }
-
-                    // 状态指示微点
-                    val dotColor = when (connectionState) {
-                        MqttConnectionState.CONNECTED -> AccentEmerald
-                        MqttConnectionState.CONNECTING, MqttConnectionState.RECONNECTING -> Color(0xFFD97706)
-                        else -> OutlineGray
-                    }
-                    Box(
-                        modifier = Modifier
-                            .size(8.dp)
-                            .clip(CircleShape)
-                            .background(dotColor)
-                    )
-                }
 
                 // 1. Auto Reconnect switch
                 Row(

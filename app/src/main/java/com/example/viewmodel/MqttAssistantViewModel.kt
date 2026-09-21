@@ -185,24 +185,32 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
     private fun startPacketBatchCollector() {
         viewModelScope.launch(Dispatchers.Default) {
             val batch = mutableListOf<MqttLogPacket>()
+            var lastEmitTime = 0L
             while (isActive) {
                 val firstPacket = incomingPacketChannel.receiveCatching().getOrNull() ?: break
                 batch.add(firstPacket)
 
-                // 纳秒级即时抽干通道中所有已排队的消息（零延迟即发即显）
+                // 抽干当前通道中已排队的消息
                 while (batch.size < 200) {
                     val next = incomingPacketChannel.tryReceive().getOrNull() ?: break
                     batch.add(next)
                 }
 
-                // 若处于并发高频冲刷期（积压多条），微让步 8ms 汇聚，单条消息则 0ms 瞬间上屏
-                if (batch.size > 1 && batch.size < 100) {
-                    delay(8)
+                // 60Hz 帧率边界平滑对齐：
+                // 若空闲已久（距上次发射 >= 16ms），立即 0ms 发射，毫无迟滞感；
+                // 若处于高并发密集冲刷期（距上次发射 < 16ms），微让步对齐单帧渲染节拍并吸收新消息，
+                // 彻底杜绝主线程每秒上百次重组雪崩与滚动掉帧闪屏！
+                val now = System.currentTimeMillis()
+                val elapsed = now - lastEmitTime
+                if (elapsed < 16) {
+                    val waitMs = 16 - elapsed
+                    delay(waitMs)
                     while (batch.size < 200) {
                         val next = incomingPacketChannel.tryReceive().getOrNull() ?: break
                         batch.add(next)
                     }
                 }
+                lastEmitTime = System.currentTimeMillis()
 
                 val currentBatch = batch.toList()
                 batch.clear()
