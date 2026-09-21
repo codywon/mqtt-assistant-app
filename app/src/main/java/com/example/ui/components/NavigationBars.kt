@@ -127,12 +127,14 @@ fun AppTopBar(
                                 )
                         )
                         Spacer(modifier = Modifier.width(4.dp))
-                        val badgeText = when (connectionState) {
-                            MqttConnectionState.CONNECTED -> brokerHost
-                            MqttConnectionState.CONNECTING -> "正在连接..."
-                            MqttConnectionState.RECONNECTING -> "重连中 (${reconnectCountdown}s)"
-                            MqttConnectionState.DISCONNECTED -> "未连接 · 点击连接"
-                            MqttConnectionState.ERROR -> "连接失败 · 点击重试"
+                        val badgeText = when {
+                            brokerHost.isBlank() -> "未配置 Broker · 点击添加"
+                            connectionState == MqttConnectionState.CONNECTED -> brokerHost
+                            connectionState == MqttConnectionState.CONNECTING -> "正在连接..."
+                            connectionState == MqttConnectionState.RECONNECTING -> "重连中 (${reconnectCountdown}s)"
+                            connectionState == MqttConnectionState.DISCONNECTED -> "$brokerHost · 点击连接"
+                            connectionState == MqttConnectionState.ERROR -> "$brokerHost · 连接失败"
+                            else -> "未连接 · 点击连接"
                         }
                         Text(
                             text = badgeText,

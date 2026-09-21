@@ -43,13 +43,21 @@ class MqttBackgroundService : Service() {
         const val NOTIFICATION_ID = 10086
         const val ACTION_START = "com.example.service.ACTION_START"
         const val ACTION_STOP = "com.example.service.ACTION_STOP"
+        const val ACTION_UPDATE_STATS = "com.example.service.ACTION_UPDATE_STATS"
         const val EXTRA_BROKER = "EXTRA_BROKER"
+        const val EXTRA_COUNT = "EXTRA_COUNT"
+        const val EXTRA_TOPIC = "EXTRA_TOPIC"
 
         var isRunning: Boolean = false
             private set
 
+        private var currentBrokerHost: String = ""
+        private var totalPacketCount: Int = 0
+        private var latestMessageTopic: String? = null
+
         fun startKeepAlive(context: Context, brokerHost: String = "MQTT Broker") {
             try {
+                currentBrokerHost = brokerHost
                 val intent = Intent(context, MqttBackgroundService::class.java).apply {
                     action = ACTION_START
                     putExtra(EXTRA_BROKER, brokerHost)
@@ -62,6 +70,31 @@ class MqttBackgroundService : Service() {
                 Log.d(TAG, "Requested startKeepAlive for $brokerHost")
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to start keep alive service", e)
+            }
+        }
+
+        fun updateNotification(
+            context: Context,
+            brokerHost: String? = null,
+            count: Int? = null,
+            latestTopic: String? = null
+        ) {
+            brokerHost?.let { currentBrokerHost = it }
+            count?.let { totalPacketCount = it }
+            latestTopic?.let { latestMessageTopic = it }
+
+            if (!isRunning) return
+
+            try {
+                val intent = Intent(context, MqttBackgroundService::class.java).apply {
+                    action = ACTION_UPDATE_STATS
+                    putExtra(EXTRA_BROKER, currentBrokerHost)
+                    putExtra(EXTRA_COUNT, totalPacketCount)
+                    putExtra(EXTRA_TOPIC, latestMessageTopic)
+                }
+                context.startService(intent)
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to update notification stats", e)
             }
         }
 
@@ -84,16 +117,30 @@ class MqttBackgroundService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_STOP) {
-            stopSelf()
-            return START_NOT_STICKY
+        when (intent?.action) {
+            ACTION_STOP -> {
+                stopSelf()
+                return START_NOT_STICKY
+            }
+            ACTION_UPDATE_STATS -> {
+                val host = intent.getStringExtra(EXTRA_BROKER)
+                val count = intent.getIntExtra(EXTRA_COUNT, -1)
+                val topic = intent.getStringExtra(EXTRA_TOPIC)
+                if (!host.isNullOrBlank()) currentBrokerHost = host
+                if (count >= 0) totalPacketCount = count
+                if (topic != null) latestMessageTopic = topic
+
+                refreshNotification()
+                return START_STICKY
+            }
         }
 
         isRunning = true
         acquireWakeAndWifiLocks()
 
-        val brokerHost = intent?.getStringExtra(EXTRA_BROKER) ?: "MQTT Broker"
-        val notification = buildForegroundNotification("已保持后台常驻连接 · $brokerHost")
+        val brokerHost = intent?.getStringExtra(EXTRA_BROKER) ?: currentBrokerHost
+        if (brokerHost.isNotBlank()) currentBrokerHost = brokerHost
+        val notification = buildForegroundNotification()
 
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -181,7 +228,7 @@ class MqttBackgroundService : Service() {
         }
     }
 
-    private fun buildForegroundNotification(contentText: String): Notification {
+    private fun buildForegroundNotification(): Notification {
         val launchIntent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
@@ -192,15 +239,39 @@ class MqttBackgroundService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        val title = if (currentBrokerHost.isNotBlank()) {
+            "MQTT 助手 · $currentBrokerHost"
+        } else {
+            "MQTT 助手"
+        }
+
+        val contentText = if (!latestMessageTopic.isNullOrBlank()) {
+            "已接收 $totalPacketCount 条报文 · 最新: $latestMessageTopic"
+        } else if (totalPacketCount > 0) {
+            "● 已接收 $totalPacketCount 条报文 · 运行正常"
+        } else {
+            "● 连接正常 · 等待报文推送"
+        }
+
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("MQTT 助手 · 正在后台保持连接")
+            .setContentTitle(title)
             .setContentText(contentText)
             .setSmallIcon(android.R.drawable.stat_notify_sync)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
+            .setOnlyAlertOnce(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .build()
+    }
+
+    private fun refreshNotification() {
+        try {
+            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+            notificationManager?.notify(NOTIFICATION_ID, buildForegroundNotification())
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to refresh notification", e)
+        }
     }
 
     override fun onDestroy() {

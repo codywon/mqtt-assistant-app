@@ -371,6 +371,10 @@ fun LiveLogsScreen(
                         packet = packet,
                         isJsonPretty = isJsonPretty,
                         onClick = { selectedDetailsPacket = packet },
+                        onCopyTopic = {
+                            clipboardManager.setPrimaryClip(ClipData.newPlainText("topic", packet.topic))
+                            viewModel.showToast("已复制主题: ${packet.topic}")
+                        },
                         onCopyPayload = {
                             clipboardManager.setPrimaryClip(ClipData.newPlainText("payload", packet.payload))
                             viewModel.showToast("已复制报文内容")
@@ -440,6 +444,7 @@ private fun CompactMessageCard(
     packet: MqttLogPacket,
     isJsonPretty: Boolean,
     onClick: () -> Unit,
+    onCopyTopic: () -> Unit,
     onCopyPayload: () -> Unit
 ) {
     Card(
@@ -455,18 +460,23 @@ private fun CompactMessageCard(
             modifier = Modifier.padding(10.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            // Row 1: Colored Dot + Topic + Copy Button
+            // Row 1: Colored Dot + Topic (支持多行完整换行，点击直接复制主题) + Copy Payload Button
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.Top
             ) {
                 Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.weight(1f)
+                    verticalAlignment = Alignment.Top,
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(4.dp))
+                        .clickable(onClick = onCopyTopic)
+                        .padding(end = 8.dp)
                 ) {
                     Box(
                         modifier = Modifier
+                            .padding(top = 4.5.dp)
                             .size(7.dp)
                             .clip(CircleShape)
                             .background(Color(packet.dotColorHex))
@@ -478,9 +488,10 @@ private fun CompactMessageCard(
                             fontFamily = FontFamily.Monospace,
                             fontWeight = FontWeight.Bold,
                             fontSize = 13.5.sp,
+                            lineHeight = 18.sp,
                             color = PrimaryBlack
                         ),
-                        maxLines = 1,
+                        maxLines = 4,
                         overflow = TextOverflow.Ellipsis
                     )
                 }

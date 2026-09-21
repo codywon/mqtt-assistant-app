@@ -131,7 +131,8 @@ fun PublishScreen(
                         .weight(1f)
                         .height(38.dp)
                         .clip(RoundedCornerShape(8.dp))
-                        .background(SurfaceContainerLow)
+                        .background(SurfaceContainerLow.copy(alpha = 0.5f))
+                        .border(0.6.dp, SurfaceContainerDefault, RoundedCornerShape(8.dp))
                         .padding(horizontal = 10.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -154,8 +155,8 @@ fun PublishScreen(
                         decorationBox = { innerTextField ->
                             if (searchQuery.isEmpty()) {
                                 Text(
-                                    text = "搜索配置主题或载荷...",
-                                    style = TextStyle(fontSize = 13.sp, color = OutlineGray)
+                                    text = "搜索主题 / 名称 / 载荷...",
+                                    style = TextStyle(fontSize = 12.sp, color = OutlineGray)
                                 )
                             }
                             innerTextField()
@@ -163,7 +164,7 @@ fun PublishScreen(
                     )
                     if (searchQuery.isNotEmpty()) {
                         Icon(
-                            imageVector = Icons.Default.Cancel,
+                            imageVector = Icons.Default.Close,
                             contentDescription = "清除搜索",
                             tint = OutlineGray,
                             modifier = Modifier
@@ -179,11 +180,11 @@ fun PublishScreen(
                         isCreatingNew = true
                         activeDialogPreset = PublishPreset(
                             id = UUID.randomUUID().toString(),
-                            name = "新配置",
-                            topic = "device/control/TH02",
+                            name = "",
+                            topic = "",
                             qos = 0,
                             retain = false,
-                            payload = "{\n  \"action\": \"status\"\n}"
+                            payload = ""
                         )
                     },
                     shape = RoundedCornerShape(8.dp),
@@ -361,42 +362,25 @@ private fun PublishPresetCard(
                 }
             }
 
-            // Row 2: Payload Preview (Refined Modern Code-style)
-            Row(
+            // Row 2: Payload Preview (Clean, minimalist ChatGPT-inspired typography, no heavy gray box)
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(SurfaceContainerLow.copy(alpha = 0.6f))
-                    .border(
-                        width = 0.7.dp,
-                        color = SurfaceContainerDefault,
-                        shape = RoundedCornerShape(8.dp)
-                    )
                     .clickable { onCopy() }
-                    .padding(horizontal = 10.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
+                    .padding(vertical = 4.dp)
             ) {
-                // Vertical accent bar for code block
-                Box(
-                    modifier = Modifier
-                        .width(2.5.dp)
-                        .height(28.dp)
-                        .clip(RoundedCornerShape(1.dp))
-                        .background(PrimaryBlack.copy(alpha = 0.35f))
-                )
-                Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = preset.payload.replace("\n", " ").trim(),
+                    text = preset.payload.ifBlank { "（无载荷内容）" }.replace("\n", " ").trim(),
                     style = TextStyle(
                         fontFamily = FontFamily.Monospace,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium,
-                        lineHeight = 18.sp,
-                        color = PrimaryBlack
+                        fontSize = 13.5.sp,
+                        fontWeight = FontWeight.Normal,
+                        lineHeight = 19.sp,
+                        color = if (preset.payload.isBlank()) OutlineGray else PrimaryBlack
                     ),
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.fillMaxWidth()
                 )
             }
 

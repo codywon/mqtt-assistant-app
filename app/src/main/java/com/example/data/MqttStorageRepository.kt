@@ -55,20 +55,7 @@ class MqttStorageRepository(context: Context) {
                         )
                     )
                 }
-                if (list.isNotEmpty()) {
-                    // Auto-heal legacy unresolvable dummy domains to public EMQX broker
-                    val healed = list.map { profile ->
-                        if (profile.host == "csms.thestatech.cn") {
-                            profile.copy(
-                                name = "EMQX 公共节点 (推荐)",
-                                host = "broker.emqx.io",
-                                port = 1883,
-                                username = "",
-                                password = ""
-                            )
-                        } else profile
-                    }
-                    return healed
+                    return list
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -103,54 +90,14 @@ class MqttStorageRepository(context: Context) {
     }
 
     fun loadActiveBrokerId(): String {
-        return prefs.getString(KEY_ACTIVE_BROKER_ID, null) ?: "b1"
+        return prefs.getString(KEY_ACTIVE_BROKER_ID, null) ?: ""
     }
 
     fun saveActiveBrokerId(id: String) {
         prefs.edit().putString(KEY_ACTIVE_BROKER_ID, id).apply()
     }
 
-    private fun defaultBrokerProfiles(): List<BrokerProfile> = listOf(
-        BrokerProfile(
-            id = "b1",
-            name = "EMQX 开放节点 (推荐)",
-            host = "broker.emqx.io",
-            port = 1883,
-            clientId = "android_client_" + (1000..9999).random(),
-            username = "",
-            password = "",
-            protocol = "MQTT 3.1.1",
-            cleanSession = true,
-            tlsEnabled = false,
-            keepAlive = 60
-        ),
-        BrokerProfile(
-            id = "b2",
-            name = "HiveMQ 开放测试节点",
-            host = "broker.hivemq.com",
-            port = 1883,
-            clientId = "hivemq_mobile_test",
-            username = "",
-            password = "",
-            protocol = "MQTT 3.1.1",
-            cleanSession = true,
-            tlsEnabled = false,
-            keepAlive = 60
-        ),
-        BrokerProfile(
-            id = "b3",
-            name = "自定义本地/私有节点",
-            host = "192.168.1.100",
-            port = 1883,
-            clientId = "client_custom_node",
-            username = "",
-            password = "",
-            protocol = "MQTT 3.1.1",
-            cleanSession = true,
-            tlsEnabled = false,
-            keepAlive = 60
-        )
-    )
+    private fun defaultBrokerProfiles(): List<BrokerProfile> = emptyList()
 
     // ==========================================
     // 2. Subscriptions Persistence
@@ -212,9 +159,7 @@ class MqttStorageRepository(context: Context) {
         }
     }
 
-    private fun defaultSubscriptions(): List<SubscriptionItem> = listOf(
-        SubscriptionItem("s0", "testtopic/#", 0, 0, "等待数据", true, 0xFF10B981, name = "公共测试流")
-    )
+    private fun defaultSubscriptions(): List<SubscriptionItem> = emptyList()
 
     // ==========================================
     // 3. Publish Presets Persistence
@@ -270,16 +215,7 @@ class MqttStorageRepository(context: Context) {
         }
     }
 
-    private fun defaultPublishPresets(): List<PublishPreset> = listOf(
-        PublishPreset(
-            id = "p0",
-            name = "通用测试消息",
-            topic = "testtopic/1",
-            qos = 0,
-            retain = false,
-            payload = "{\n  \"msg\": \"hello mqtt\",\n  \"status\": \"online\"\n}"
-        )
-    )
+    private fun defaultPublishPresets(): List<PublishPreset> = emptyList()
 
     // ==========================================
     // 4. Topic Filter Rules (Include / Exclude)

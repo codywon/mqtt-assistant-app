@@ -98,21 +98,38 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
         run {
             val initialActiveId = storage.loadActiveBrokerId()
             val initialProfiles = storage.loadBrokerProfiles()
-            val initialBroker = initialProfiles.find { it.id == initialActiveId } ?: initialProfiles.first()
-            MqttServerConfig(
-                activeProfileId = initialBroker.id,
-                host = initialBroker.host,
-                port = initialBroker.port,
-                clientId = initialBroker.clientId,
-                username = initialBroker.username,
-                password = initialBroker.password,
-                protocol = initialBroker.protocol,
-                cleanSession = initialBroker.cleanSession,
-                tlsEnabled = initialBroker.tlsEnabled,
-                keepAlive = initialBroker.keepAlive,
-                backgroundKeepAliveEnabled = storage.loadBackgroundKeepAlive(),
-                wakeLockEnabled = storage.loadWakeLock()
-            )
+            val initialBroker = initialProfiles.find { it.id == initialActiveId } ?: initialProfiles.firstOrNull()
+            if (initialBroker != null) {
+                MqttServerConfig(
+                    activeProfileId = initialBroker.id,
+                    host = initialBroker.host,
+                    port = initialBroker.port,
+                    clientId = initialBroker.clientId,
+                    username = initialBroker.username,
+                    password = initialBroker.password,
+                    protocol = initialBroker.protocol,
+                    cleanSession = initialBroker.cleanSession,
+                    tlsEnabled = initialBroker.tlsEnabled,
+                    keepAlive = initialBroker.keepAlive,
+                    backgroundKeepAliveEnabled = storage.loadBackgroundKeepAlive(),
+                    wakeLockEnabled = storage.loadWakeLock()
+                )
+            } else {
+                MqttServerConfig(
+                    activeProfileId = "",
+                    host = "",
+                    port = 1883,
+                    clientId = "android_client_" + (1000..9999).random(),
+                    username = "",
+                    password = "",
+                    protocol = "MQTT 3.1.1",
+                    cleanSession = true,
+                    tlsEnabled = false,
+                    keepAlive = 60,
+                    backgroundKeepAliveEnabled = storage.loadBackgroundKeepAlive(),
+                    wakeLockEnabled = storage.loadWakeLock()
+                )
+            }
         }
     )
     val isPasswordVisible = MutableStateFlow(false)
@@ -120,11 +137,13 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
 
     init {
         setupMqttCallbacks()
-        connectToBroker()
-        if (serverConfig.value.backgroundKeepAliveEnabled) {
-            val brokerHost = "${serverConfig.value.host}:${serverConfig.value.port}"
-            MqttBackgroundService.startKeepAlive(application, brokerHost)
-            isForegroundKeepAliveRunning.value = true
+        if (serverConfig.value.host.isNotBlank()) {
+            connectToBroker()
+            if (serverConfig.value.backgroundKeepAliveEnabled) {
+                val brokerHost = "${serverConfig.value.host}:${serverConfig.value.port}"
+                MqttBackgroundService.startKeepAlive(application, brokerHost)
+                isForegroundKeepAliveRunning.value = true
+            }
         }
     }
 
@@ -174,6 +193,18 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                     } else sub
                 }
             }
+
+            // 更新常驻通知栏中的统计报文数与最新主题
+            if (MqttBackgroundService.isRunning) {
+                val host = serverConfig.value.host
+                val brokerLabel = if (host.isNotBlank()) "${host}:${serverConfig.value.port}" else ""
+                MqttBackgroundService.updateNotification(
+                    context = getApplication(),
+                    brokerHost = brokerLabel,
+                    count = packetSeqCounter,
+                    latestTopic = topic
+                )
+            }
         }
 
         MqttClientManager.onConnectionStateChanged = { isConn, cause ->
@@ -192,6 +223,12 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 if (serverConfig.value.backgroundKeepAliveEnabled) {
                     val brokerHost = "${serverConfig.value.host}:${serverConfig.value.port}"
                     MqttBackgroundService.startKeepAlive(getApplication(), brokerHost)
+                    MqttBackgroundService.updateNotification(
+                        context = getApplication(),
+                        brokerHost = brokerHost,
+                        count = packetSeqCounter,
+                        latestTopic = null
+                    )
                     isForegroundKeepAliveRunning.value = true
                 }
             } else {
@@ -206,6 +243,11 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
     }
 
     fun connectToBroker() {
+        if (serverConfig.value.host.isBlank()) {
+            connectionState.value = MqttConnectionState.DISCONNECTED
+            serverConfig.update { it.copy(isConnected = false) }
+            return
+        }
         reconnectJob?.cancel()
         reconnectCountdown.value = 0
         viewModelScope.launch {
@@ -1094,7 +1136,18 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
     fun clearAllData() {
         publishHistory.value = emptyList()
         livePackets.value = emptyList()
+        packetSeqCounter = 0
         serverConfig.update { it.copy(usedSpaceMb = 0.0, packetCount = 0) }
+        if (MqttBackgroundService.isRunning) {
+            val host = serverConfig.value.host
+            val brokerLabel = if (host.isNotBlank()) "${host}:${serverConfig.value.port}" else ""
+            MqttBackgroundService.updateNotification(
+                context = getApplication(),
+                brokerHost = brokerLabel,
+                count = 0,
+                latestTopic = null
+            )
+        }
         showToast("本地历史日志与未发缓存已清空")
     }
 

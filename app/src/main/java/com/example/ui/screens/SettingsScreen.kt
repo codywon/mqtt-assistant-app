@@ -1,6 +1,7 @@
 package com.example.ui.screens
 
 import android.content.Intent
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -55,6 +56,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -261,7 +263,7 @@ fun SettingsScreen(
                     }
                 }
 
-                // Action buttons
+                // Action buttons: 规范统一的 42.dp 与 10.dp 圆角
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -274,14 +276,14 @@ fun SettingsScreen(
                                 viewModel.selectBroker(brokerProfiles[nextIndex].id)
                             }
                         },
-                        shape = CircleShape,
+                        shape = RoundedCornerShape(10.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = PrimaryBlack,
                             contentColor = OnPrimaryWhite
                         ),
                         modifier = Modifier
                             .weight(1f)
-                            .height(40.dp)
+                            .height(42.dp)
                             .testTag("switch_node_btn")
                     ) {
                         Icon(
@@ -292,7 +294,7 @@ fun SettingsScreen(
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
                             text = "切换节点 (${brokerProfiles.size}可用)",
-                            style = MaterialTheme.typography.labelSmall.copy(
+                            style = TextStyle(
                                 fontWeight = FontWeight.Medium,
                                 fontSize = 12.sp,
                                 color = Color.White
@@ -304,28 +306,28 @@ fun SettingsScreen(
 
                     Button(
                         onClick = { viewModel.toggleConnection() },
-                        shape = CircleShape,
+                        shape = RoundedCornerShape(10.dp),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = SurfaceContainerDefault,
-                            contentColor = ErrorRed
+                            containerColor = if (config.isConnected) SurfaceContainerDefault else PrimaryBlack,
+                            contentColor = if (config.isConnected) ErrorRed else OnPrimaryWhite
                         ),
                         modifier = Modifier
                             .weight(1f)
-                            .height(40.dp)
+                            .height(42.dp)
                             .testTag("disconnect_btn")
                     ) {
                         Icon(
                             imageVector = if (config.isConnected) Icons.Default.LinkOff else Icons.Default.Link,
                             contentDescription = null,
-                            tint = ErrorRed,
+                            tint = if (config.isConnected) ErrorRed else OnPrimaryWhite,
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
                             text = if (config.isConnected) "断开连接" else "重新连接",
-                            style = MaterialTheme.typography.labelSmall.copy(
+                            style = TextStyle(
                                 fontWeight = FontWeight.SemiBold,
-                                color = ErrorRed,
+                                color = if (config.isConnected) ErrorRed else OnPrimaryWhite,
                                 fontSize = 12.sp
                             )
                         )
@@ -385,19 +387,19 @@ fun SettingsScreen(
                             )
                             showBrokerDialog = true
                         },
-                        shape = CircleShape,
+                        shape = RoundedCornerShape(8.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = PrimaryBlack,
                             contentColor = OnPrimaryWhite
                         ),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
                         modifier = Modifier
-                            .height(32.dp)
+                            .height(36.dp)
                             .testTag("add_broker_node_btn")
                     ) {
-                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("新增节点", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        Icon(Icons.Default.Add, contentDescription = null, tint = OnPrimaryWhite, modifier = Modifier.size(15.dp))
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text("新增节点", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = OnPrimaryWhite)
                     }
                 }
 
@@ -1314,7 +1316,7 @@ fun SettingsScreen(
                     )
                 }
 
-                // Metrics cards
+                // Metrics cards (1:1 绝对等高与严格对称排版)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -1322,56 +1324,66 @@ fun SettingsScreen(
                     Column(
                         modifier = Modifier
                             .weight(1f)
-                            .clip(RoundedCornerShape(12.dp))
+                            .height(78.dp)
+                            .clip(RoundedCornerShape(10.dp))
                             .background(SurfaceContainerLow)
-                            .padding(12.dp)
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(
                             text = "缓存报警阈值",
-                            style = MaterialTheme.typography.labelSmall.copy(color = OnSurfaceVariantGray)
+                            style = MaterialTheme.typography.labelSmall.copy(color = OnSurfaceVariantGray, fontSize = 11.5.sp)
                         )
-                        Spacer(modifier = Modifier.height(4.dp))
                         Row(verticalAlignment = Alignment.Bottom) {
                             Text(
                                 text = "${config.bufferThreshold}",
                                 style = TextStyle(
                                     fontFamily = FontFamily.Monospace,
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 18.sp,
+                                    fontSize = 17.sp,
                                     color = PrimaryBlack
                                 )
                             )
-                            Spacer(modifier = Modifier.width(4.dp))
+                            Spacer(modifier = Modifier.width(3.dp))
                             Text(
                                 text = "条",
                                 style = MaterialTheme.typography.labelSmall.copy(color = OnSurfaceVariantGray)
                             )
                         }
+                        Text(
+                            text = "超限循环覆盖",
+                            style = TextStyle(
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 10.sp,
+                                color = OnSurfaceVariantGray
+                            )
+                        )
                     }
 
                     Column(
                         modifier = Modifier
                             .weight(1f)
-                            .clip(RoundedCornerShape(12.dp))
+                            .height(78.dp)
+                            .clip(RoundedCornerShape(10.dp))
                             .background(SurfaceContainerLow)
-                            .padding(12.dp)
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(
                             text = "已占用空间",
-                            style = MaterialTheme.typography.labelSmall.copy(color = OnSurfaceVariantGray)
+                            style = MaterialTheme.typography.labelSmall.copy(color = OnSurfaceVariantGray, fontSize = 11.5.sp)
                         )
-                        Spacer(modifier = Modifier.height(4.dp))
                         Row(verticalAlignment = Alignment.Bottom) {
                             Text(
                                 text = "${config.usedSpaceMb}",
                                 style = TextStyle(
                                     fontFamily = FontFamily.Monospace,
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 18.sp,
+                                    fontSize = 17.sp,
                                     color = PrimaryBlack
                                 )
                             )
-                            Spacer(modifier = Modifier.width(4.dp))
+                            Spacer(modifier = Modifier.width(3.dp))
                             Text(
                                 text = "MB",
                                 style = MaterialTheme.typography.labelSmall.copy(color = OnSurfaceVariantGray)
@@ -1400,13 +1412,13 @@ fun SettingsScreen(
                     )
                     Button(
                         onClick = { viewModel.clearAllData() },
-                        shape = CircleShape,
+                        shape = RoundedCornerShape(8.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = ErrorContainerRed,
                             contentColor = OnErrorContainerRed
                         ),
                         modifier = Modifier
-                            .height(34.dp)
+                            .height(36.dp)
                             .testTag("clear_all_data_btn")
                     ) {
                         Icon(
@@ -1417,9 +1429,9 @@ fun SettingsScreen(
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
                             text = "清空全部数据",
-                            style = MaterialTheme.typography.labelSmall.copy(
+                            style = TextStyle(
                                 fontWeight = FontWeight.SemiBold,
-                                fontSize = 11.sp
+                                fontSize = 11.5.sp
                             )
                         )
                     }
@@ -1430,7 +1442,7 @@ fun SettingsScreen(
         // 6. Save & Meta Action
         Button(
             onClick = { viewModel.saveAndApplySettings() },
-            shape = CircleShape,
+            shape = RoundedCornerShape(10.dp),
             colors = ButtonDefaults.buttonColors(
                 containerColor = PrimaryBlack,
                 contentColor = OnPrimaryWhite
@@ -1438,7 +1450,7 @@ fun SettingsScreen(
             elevation = ButtonDefaults.buttonElevation(defaultElevation = 2.dp),
             modifier = Modifier
                 .fillMaxWidth()
-                .height(50.dp)
+                .height(46.dp)
                 .testTag("save_settings_btn")
         ) {
             if (isSaving) {
@@ -1993,10 +2005,15 @@ private fun BrokerProfileEditDialog(
                     horizontalArrangement = Arrangement.End,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    TextButton(onClick = onDismiss) {
+                    OutlinedButton(
+                        onClick = onDismiss,
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(0.6.dp, OutlineGray),
+                        modifier = Modifier.height(38.dp)
+                    ) {
                         Text("取消", color = OnSurfaceVariantGray, fontSize = 13.sp)
                     }
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(10.dp))
                     Button(
                         onClick = {
                             val p = portStr.toIntOrNull() ?: 1883

@@ -112,7 +112,10 @@ fun SubscribeScreen(
     val totalCount = subscriptions.size
 
     val filteredList = subscriptions.filter {
-        searchQuery.isBlank() || it.topic.contains(searchQuery.trim(), ignoreCase = true)
+        val query = searchQuery.trim()
+        query.isBlank() ||
+            it.topic.contains(query, ignoreCase = true) ||
+            it.name.contains(query, ignoreCase = true)
     }
 
     // State for modal dialog (creating or editing subscription)
