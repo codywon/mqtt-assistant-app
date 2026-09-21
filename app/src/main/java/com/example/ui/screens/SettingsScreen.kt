@@ -1197,6 +1197,7 @@ fun SettingsScreen(
                             )
                         )
                     }
+                    Spacer(modifier = Modifier.width(16.dp))
                     Button(
                         onClick = {
                             try {
@@ -1209,14 +1210,23 @@ fun SettingsScreen(
                                 } catch (_: Exception) {}
                             }
                         },
-                        shape = RoundedCornerShape(6.dp),
+                        modifier = Modifier
+                            .height(34.dp)
+                            .defaultMinSize(minWidth = 68.dp),
+                        shape = RoundedCornerShape(8.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = PrimaryBlack,
                             contentColor = OnPrimaryWhite
                         ),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
                     ) {
-                        Text("去设置", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        Text(
+                            text = "去设置",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color.White,
+                            maxLines = 1
+                        )
                     }
                 }
             }

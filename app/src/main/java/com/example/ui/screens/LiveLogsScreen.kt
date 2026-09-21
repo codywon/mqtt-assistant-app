@@ -397,7 +397,7 @@ fun LiveLogsScreen(
             },
             onCopyPayload = {
                 clipboardManager.setPrimaryClip(ClipData.newPlainText("payload", packet.payload))
-                viewModel.showToast("已复制载荷内容")
+                viewModel.showToast("已复制消息内容")
             },
             onLoadIntoPublish = {
                 val preset = PublishPreset(
@@ -502,7 +502,7 @@ private fun CompactMessageCard(
                 ) {
                     Icon(
                         imageVector = Icons.Default.ContentCopy,
-                        contentDescription = "复制载荷",
+                        contentDescription = "复制消息",
                         tint = OnSurfaceVariantGray,
                         modifier = Modifier.size(15.dp)
                     )
@@ -659,31 +659,25 @@ private fun MessageDetailsModalDialog(
                     }
                 }
 
-                // Attributes List
+                // Clean Topic Section (Retained for immediate context and 1-tap copy)
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(8.dp))
                         .background(SurfaceContainerLow)
-                        .padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                        .padding(horizontal = 12.dp, vertical = 10.dp)
                 ) {
                     DetailRow(label = "主题 (Topic)", value = packet.topic, onCopy = onCopyTopic)
-                    DetailRow(label = "服务质量 (QoS)", value = "QoS ${packet.qos} (${when(packet.qos) { 0 -> "最多发一次"; 1 -> "至少送达一次"; 2 -> "保证仅送达一次"; else -> "" }})")
-                    DetailRow(label = "报文序号", value = packet.packetSeq)
-                    DetailRow(label = "接收时间", value = packet.timestamp)
-                    DetailRow(label = "载荷大小", value = packet.sizeText)
-                    DetailRow(label = "保留标记", value = if (packet.devInfo.contains("Retain")) "是 (Retained)" else "否")
                 }
 
-                // Payload Header
+                // Message Payload Header with 复制消息 button
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "载荷内容 (Payload)",
+                        text = "完整消息内容",
                         style = TextStyle(
                             fontSize = 13.sp,
                             fontWeight = FontWeight.SemiBold,
@@ -698,7 +692,7 @@ private fun MessageDetailsModalDialog(
                             modifier = Modifier.size(14.dp)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("复制载荷", fontSize = 12.sp, color = PrimaryBlack, fontWeight = FontWeight.Bold)
+                        Text("复制消息", fontSize = 12.sp, color = PrimaryBlack, fontWeight = FontWeight.Bold)
                     }
                 }
 

@@ -56,8 +56,8 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
 
     val isForegroundKeepAliveRunning = MutableStateFlow(false)
 
-    // --- Live Packet Log States ---
-    val livePackets = MutableStateFlow<List<MqttLogPacket>>(emptyList())
+    // --- Live Packet Log States (Backed by SQLite Database) ---
+    val livePackets = MutableStateFlow<List<MqttLogPacket>>(storage.loadRecentPackets(300))
     val selectedTopicFilter = MutableStateFlow("全部主题")
     val selectedPacket = MutableStateFlow<MqttLogPacket?>(null)
     val searchQuery = MutableStateFlow("")
@@ -181,6 +181,9 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 livePackets.update { current ->
                     (listOf(packet) + current).take(serverConfig.value.bufferThreshold)
                 }
+                viewModelScope.launch(Dispatchers.IO) {
+                    storage.savePacket(packet)
+                }
             }
 
             subscriptions.update { list ->
@@ -271,7 +274,8 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 val errorMsg = MqttClientManager.getReadableErrorMessage(
                     result.exceptionOrNull() ?: Exception("连接失败"),
                     serverConfig.value.host,
-                    serverConfig.value.port
+                    serverConfig.value.port,
+                    isTls = serverConfig.value.tlsEnabled
                 )
                 showToast("连接异常: $errorMsg")
                 if (serverConfig.value.autoReconnect) {
@@ -458,6 +462,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 dotColorHex = dotColor
             )
             livePackets.update { (listOf(packet) + it).take(serverConfig.value.bufferThreshold) }
+            storage.savePacket(packet)
 
             // Match against subscriptions
             subscriptions.update { list ->
@@ -588,6 +593,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 dotColorHex = dotColor
             )
             livePackets.update { (listOf(packet) + it).take(serverConfig.value.bufferThreshold) }
+            storage.savePacket(packet)
 
             if (result.isSuccess) {
                 // If any enabled subscription matches the published topic, update stats immediately
@@ -998,8 +1004,22 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
     }
 
     fun toggleTls() {
-        serverConfig.update { it.copy(tlsEnabled = !it.tlsEnabled) }
-        showToast(if (serverConfig.value.tlsEnabled) "已启用 TLS 加密" else "已停用 TLS 加密")
+        val next = !serverConfig.value.tlsEnabled
+        val currentPort = serverConfig.value.port
+        val newPort = if (next && currentPort == 1883) {
+            8883
+        } else if (!next && currentPort == 8883) {
+            1883
+        } else {
+            currentPort
+        }
+        serverConfig.update { it.copy(tlsEnabled = next, port = newPort) }
+        persistCurrentActiveBrokerProfile()
+        if (next) {
+            showToast("已启用 TLS 加密传输 (已智能联动安全端口 $newPort)")
+        } else {
+            showToast("已停用 TLS 加密传输 (已恢复普通端口 $newPort)")
+        }
     }
 
     fun toggleAutoRotate() {
@@ -1035,7 +1055,8 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 val errorMsg = MqttClientManager.getReadableErrorMessage(
                     result.exceptionOrNull() ?: Exception("连接失败"),
                     serverConfig.value.host,
-                    serverConfig.value.port
+                    serverConfig.value.port,
+                    isTls = serverConfig.value.tlsEnabled
                 )
                 showToast("连接失败: $errorMsg")
                 if (serverConfig.value.autoReconnect) {
@@ -1137,6 +1158,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
         publishHistory.value = emptyList()
         livePackets.value = emptyList()
         packetSeqCounter = 0
+        storage.clearAllPackets()
         serverConfig.update { it.copy(usedSpaceMb = 0.0, packetCount = 0) }
         if (MqttBackgroundService.isRunning) {
             val host = serverConfig.value.host

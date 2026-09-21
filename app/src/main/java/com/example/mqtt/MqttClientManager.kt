@@ -12,10 +12,14 @@ import org.eclipse.paho.client.mqttv3.MqttClient
 import org.eclipse.paho.client.mqttv3.MqttConnectOptions
 import org.eclipse.paho.client.mqttv3.MqttMessage
 import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence
+import java.net.InetAddress
+import java.net.Socket
 import java.security.SecureRandom
 import java.security.cert.X509Certificate
 import java.util.UUID
+import javax.net.ssl.SNIHostName
 import javax.net.ssl.SSLContext
+import javax.net.ssl.SSLSocket
 import javax.net.ssl.SSLSocketFactory
 import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
@@ -115,7 +119,8 @@ object MqttClientManager {
                     // TLS/SSL support with permissive trust manager for IoT and self-hosted brokers
                     if (brokerUrl.startsWith("ssl://") || brokerUrl.startsWith("wss://")) {
                         try {
-                            socketFactory = createTrustAllSocketFactory()
+                            val cleanHost = hostWithoutPort(config.host)
+                            socketFactory = createTrustAllSocketFactory(cleanHost)
                             // Also disable hostname verification for self-signed or direct IP brokers
                             setHttpsHostnameVerificationEnabled(false)
                         } catch (e: Exception) {
@@ -169,10 +174,21 @@ object MqttClientManager {
         }
     }
 
+    private fun hostWithoutPort(rawHost: String): String {
+        return rawHost.trim()
+            .removePrefix("http://").removePrefix("https://")
+            .removePrefix("tcp://").removePrefix("ssl://")
+            .removePrefix("ws://").removePrefix("wss://")
+            .removePrefix("mqtt://").removePrefix("mqtts://")
+            .substringBefore(":")
+            .substringBefore("/")
+    }
+
     /**
-     * Creates a tolerant SSLSocketFactory that accepts private or self-signed certificates.
+     * Creates a tolerant SSLSocketFactory that accepts private or self-signed certificates
+     * and injects SNI (Server Name Indication) for modern cloud MQTT brokers.
      */
-    private fun createTrustAllSocketFactory(): SSLSocketFactory {
+    private fun createTrustAllSocketFactory(sniHost: String?): SSLSocketFactory {
         val trustAllCerts = arrayOf<TrustManager>(object : X509TrustManager {
             override fun checkClientTrusted(chain: Array<X509Certificate>?, authType: String?) {}
             override fun checkServerTrusted(chain: Array<X509Certificate>?, authType: String?) {}
@@ -180,15 +196,16 @@ object MqttClientManager {
         })
         val sslContext = SSLContext.getInstance("TLS")
         sslContext.init(null, trustAllCerts, SecureRandom())
-        return sslContext.socketFactory
+        return SniSSLSocketFactory(sslContext.socketFactory, sniHost)
     }
 
     /**
      * Extracts clear, diagnostic, user-friendly error messages from MQTT and network exceptions.
      */
-    fun getReadableErrorMessage(e: Throwable, host: String, port: Int): String {
+    fun getReadableErrorMessage(e: Throwable, host: String, port: Int, isTls: Boolean = false): String {
         val rootCause = generateSequence(e) { it.cause }.lastOrNull() ?: e
         val rootMsg = rootCause.message ?: ""
+        val exceptionMsg = e.message ?: ""
 
         if (rootCause is java.net.UnknownHostException ||
             rootMsg.contains("Unable to resolve host", ignoreCase = true) ||
@@ -208,10 +225,27 @@ object MqttClientManager {
             rootMsg.contains("handshake", ignoreCase = true) ||
             rootMsg.contains("CertPathValidatorException", ignoreCase = true)
         ) {
+            if (isTls && port == 1883) {
+                return "TLS握手失败: 当前为1883明文端口！开启TLS安全传输通常需使用 8883 端口"
+            }
             return "TLS/SSL 握手失败 (请检查端口 $port 与 TLS 开关是否匹配，或证书有效性)"
+        }
+        if (rootMsg.contains("connection closed", ignoreCase = true) || exceptionMsg.contains("connection closed", ignoreCase = true)) {
+            if (isTls && port == 1883) {
+                return "连接被Broker断开 (connection closed)。您开启了TLS加密传输，但端口仍为明文 1883 端口，请将端口修改为 8883"
+            }
+            return "连接被 Broker 关闭 (connection closed，可能原因：端口不匹配、TLS未配置证书、或Broker限制)"
         }
         if (e is org.eclipse.paho.client.mqttv3.MqttException) {
             return when (e.reasonCode.toInt()) {
+                0 -> {
+                    if (isTls && port == 1883) {
+                        "TLS连接失败: 端口 1883 为非加密端口，请切换至 8883 安全端口"
+                    } else {
+                        val causeDesc = e.cause?.message ?: e.message ?: "客户端连接异常"
+                        "MQTT 异常 [码 0]: $causeDesc"
+                    }
+                }
                 4, 5 -> "身份认证失败 (用户名或密码错误，Broker拒绝连接)"
                 3 -> "Broker 服务暂时不可用 (Server Unavailable)"
                 128 -> "Broker 连接被拒绝 (错误码 128)"
@@ -370,5 +404,64 @@ object MqttClientManager {
             Log.w(TAG, "Failed to publish to $topic: ${e.message}")
             Result.failure(e)
         }
+    }
+}
+
+/**
+ * SSLSocketFactory decorator that injects Server Name Indication (SNI) and configures modern TLS protocols.
+ */
+class SniSSLSocketFactory(
+    private val delegate: SSLSocketFactory,
+    private val targetHost: String?
+) : SSLSocketFactory() {
+
+    override fun getDefaultCipherSuites(): Array<String> = delegate.defaultCipherSuites
+    override fun getSupportedCipherSuites(): Array<String> = delegate.supportedCipherSuites
+
+    private fun configureSocket(socket: Socket): Socket {
+        if (socket is SSLSocket) {
+            try {
+                // Enable modern TLS protocols
+                val supported = socket.supportedProtocols.toSet()
+                val desired = listOf("TLSv1.3", "TLSv1.2", "TLSv1.1", "TLSv1").filter { supported.contains(it) }
+                if (desired.isNotEmpty()) {
+                    socket.enabledProtocols = desired.toTypedArray()
+                }
+
+                // Inject SNIHostName if host is domain name
+                if (!targetHost.isNullOrBlank() && !isIpAddress(targetHost)) {
+                    val params = socket.sslParameters
+                    params.serverNames = listOf(SNIHostName(targetHost))
+                    socket.sslParameters = params
+                }
+            } catch (e: Throwable) {
+                Log.w("SniSSLSocketFactory", "Could not configure SNI/TLS on socket: ${e.message}")
+            }
+        }
+        return socket
+    }
+
+    private fun isIpAddress(host: String): Boolean {
+        return host.matches(Regex("^(\\d{1,3}\\.){3}\\d{1,3}$")) || host.contains(":")
+    }
+
+    override fun createSocket(s: Socket?, host: String?, port: Int, autoClose: Boolean): Socket {
+        return configureSocket(delegate.createSocket(s, host, port, autoClose))
+    }
+
+    override fun createSocket(host: String?, port: Int): Socket {
+        return configureSocket(delegate.createSocket(host, port))
+    }
+
+    override fun createSocket(host: String?, port: Int, localHost: InetAddress?, localPort: Int): Socket {
+        return configureSocket(delegate.createSocket(host, port, localHost, localPort))
+    }
+
+    override fun createSocket(host: InetAddress?, port: Int): Socket {
+        return configureSocket(delegate.createSocket(host, port))
+    }
+
+    override fun createSocket(address: InetAddress?, port: Int, localAddress: InetAddress?, localPort: Int): Socket {
+        return configureSocket(delegate.createSocket(address, port, localAddress, localPort))
     }
 }

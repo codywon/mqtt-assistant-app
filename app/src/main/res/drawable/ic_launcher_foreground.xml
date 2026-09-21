@@ -5,39 +5,45 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- Perfectly Centered Pure White Speech Bubble Body (No Antennas, Clean & Bold) -->
-    <!-- Safe-zone centered bubble: x: 22 to 86 (width 64), y: 31 to 71 (height 40), radius: 18 -->
-    <path
-        android:pathData="M 40,31 L 68,31 A 18,18 0 0,1 86,49 L 86,53 A 18,18 0 0,1 68,71 L 40,71 A 18,18 0 0,1 22,53 L 22,49 A 18,18 0 0,1 40,31 Z"
-        android:fillColor="#FFFFFF" />
+    <group
+        android:pivotX="54"
+        android:pivotY="52"
+        android:scaleX="0.70"
+        android:scaleY="0.70">
 
-    <!-- Smooth Bubble Tail on Bottom-Left -->
-    <path
-        android:pathData="M 28,67 L 28,79 A 1.5,1.5 0 0,0 30.5,80.5 L 43,71 Z"
-        android:fillColor="#FFFFFF" />
+        <!-- Perfectly Centered Pure White Speech Bubble Body (No Antennas, Clean & Bold) -->
+        <!-- Golden ratio bubble sized to 67% safe-zone for Android desktop mask -->
+        <path
+            android:pathData="M 40,31 L 68,31 A 18,18 0 0,1 86,49 L 86,53 A 18,18 0 0,1 68,71 L 40,71 A 18,18 0 0,1 22,53 L 22,49 A 18,18 0 0,1 40,31 Z"
+            android:fillColor="#FFFFFF" />
 
-    <!-- "MQTT" Bold Typographic Cutout -->
-    <!-- M -->
-    <path
-        android:pathData="M 28,62 L 28,40 L 32.5,40 L 37,49.5 L 41.5,40 L 46,40 L 46,62 L 42,62 L 42,47 L 38.2,55.5 L 35.8,55.5 L 32,47 L 32,62 Z"
-        android:fillColor="#0C0C0E" />
+        <!-- Smooth Bubble Tail on Bottom-Left -->
+        <path
+            android:pathData="M 28,67 L 28,79 A 1.5,1.5 0 0,0 30.5,80.5 L 43,71 Z"
+            android:fillColor="#FFFFFF" />
 
-    <!-- Q -->
-    <path
-        android:pathData="M 49,51 C 49,44.5 52,40 57.5,40 C 63,40 66,44.5 66,51 C 66,57.5 63,62 57.5,62 C 52,62 49,57.5 49,51 Z M 53.2,51 C 53.2,55.5 54.8,58.2 57.5,58.2 C 60.2,58.2 61.8,55.5 61.8,51 C 61.8,46.5 60.2,43.8 57.5,43.8 C 54.8,43.8 53.2,46.5 53.2,51 Z"
-        android:fillColor="#0C0C0E" />
-    <path
-        android:pathData="M 60,56.5 L 66,63.5 L 63.5,65.5 L 58,59 Z"
-        android:fillColor="#0C0C0E" />
+        <!-- "MQTT" Bold Typographic Cutout -->
+        <!-- M -->
+        <path
+            android:pathData="M 28,62 L 28,40 L 32.5,40 L 37,49.5 L 41.5,40 L 46,40 L 46,62 L 42,62 L 42,47 L 38.2,55.5 L 35.8,55.5 L 32,47 L 32,62 Z"
+            android:fillColor="#0C0C0E" />
 
-    <!-- T (First) -->
-    <path
-        android:pathData="M 67.5,40 L 76.5,40 L 76.5,44 L 74,44 L 74,62 L 70,62 L 70,44 L 67.5,44 Z"
-        android:fillColor="#0C0C0E" />
+        <!-- Q -->
+        <path
+            android:pathData="M 49,51 C 49,44.5 52,40 57.5,40 C 63,40 66,44.5 66,51 C 66,57.5 63,62 57.5,62 C 52,62 49,57.5 49,51 Z M 53.2,51 C 53.2,55.5 54.8,58.2 57.5,58.2 C 60.2,58.2 61.8,55.5 61.8,51 C 61.8,46.5 60.2,43.8 57.5,43.8 C 54.8,43.8 53.2,46.5 53.2,51 Z"
+            android:fillColor="#0C0C0E" />
+        <path
+            android:pathData="M 60,56.5 L 66,63.5 L 63.5,65.5 L 58,59 Z"
+            android:fillColor="#0C0C0E" />
 
-    <!-- T (Second) -->
-    <path
-        android:pathData="M 77.5,40 L 86.5,40 L 86.5,44 L 84,44 L 84,62 L 80,62 L 80,44 L 77.5,44 Z"
-        android:fillColor="#0C0C0E" />
+        <!-- T (First) -->
+        <path
+            android:pathData="M 67.5,40 L 76.5,40 L 76.5,44 L 74,44 L 74,62 L 70,62 L 70,44 L 67.5,44 Z"
+            android:fillColor="#0C0C0E" />
 
+        <!-- T (Second) -->
+        <path
+            android:pathData="M 77.5,40 L 86.5,40 L 86.5,44 L 84,44 L 84,62 L 80,62 L 80,44 L 77.5,44 Z"
+            android:fillColor="#0C0C0E" />
+    </group>
 </vector>

@@ -2,112 +2,77 @@ package com.example.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.example.data.db.MqttDatabaseHelper
 import com.example.model.BrokerProfile
+import com.example.model.MqttLogPacket
 import com.example.model.PublishPreset
 import com.example.model.SubscriptionItem
 import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * Local persistent storage for MQTT Assistant using SharedPreferences and JSON.
- * Ensures all Broker configurations, Subscriptions, and Publish Presets persist
- * across app restarts, reboots, and configuration changes.
+ * High-performance Storage Repository for MQTT Assistant.
+ * Fully backed by native SQLite database (mqtt_assistant.db).
+ * Ensures all Broker profiles, Subscriptions, Publish presets, Topic filters,
+ * and Live MQTT message packets persist permanently across app restarts and reboots.
  */
 class MqttStorageRepository(context: Context) {
 
+    private val dbHelper = MqttDatabaseHelper(context)
     private val prefs: SharedPreferences =
         context.getSharedPreferences("mqtt_assistant_storage", Context.MODE_PRIVATE)
 
     companion object {
-        private const val KEY_BROKER_PROFILES = "key_broker_profiles"
         private const val KEY_ACTIVE_BROKER_ID = "key_active_broker_id"
-        private const val KEY_SUBSCRIPTIONS = "key_subscriptions"
-        private const val KEY_PUBLISH_PRESETS = "key_publish_presets"
         private const val KEY_INCLUDE_TOPIC_FILTERS = "key_include_topic_filters"
         private const val KEY_EXCLUDE_TOPIC_FILTERS = "key_exclude_topic_filters"
+        private const val KEY_BG_KEEPALIVE = "key_background_keepalive_enabled"
+        private const val KEY_WAKE_LOCK = "key_wake_lock_enabled"
+        private const val KEY_LEGACY_MIGRATED = "key_legacy_migrated_to_sqlite"
     }
 
-    // ==========================================
-    // 1. Broker Profiles Persistence
-    // ==========================================
+    init {
+        migrateLegacyPreferencesIfNeeded()
+    }
 
-    fun loadBrokerProfiles(): List<BrokerProfile> {
-        val jsonString = prefs.getString(KEY_BROKER_PROFILES, null)
-        if (!jsonString.isNullOrBlank()) {
+    /**
+     * Seamlessly migrates existing user data from SharedPreferences to SQLite if present.
+     */
+    private fun migrateLegacyPreferencesIfNeeded() {
+        if (!prefs.getBoolean(KEY_LEGACY_MIGRATED, false)) {
             try {
-                val array = JSONArray(jsonString)
-                val list = mutableListOf<BrokerProfile>()
-                for (i in 0 until array.length()) {
-                    val obj = array.getJSONObject(i)
-                    list.add(
-                        BrokerProfile(
-                            id = obj.optString("id", "b$i"),
-                            name = obj.optString("name", "Broker $i"),
-                            host = obj.optString("host", "broker.emqx.io"),
-                            port = obj.optInt("port", 1883),
-                            clientId = obj.optString("clientId", "client_mobile_th0201"),
-                            username = obj.optString("username", ""),
-                            password = obj.optString("password", ""),
-                            protocol = obj.optString("protocol", "MQTT 3.1.1"),
-                            cleanSession = obj.optBoolean("cleanSession", true),
-                            tlsEnabled = obj.optBoolean("tlsEnabled", false),
-                            keepAlive = obj.optInt("keepAlive", 60)
+                // 1. Migrate broker profiles
+                val brokerJson = prefs.getString("key_broker_profiles", null)
+                if (!brokerJson.isNullOrBlank()) {
+                    val array = JSONArray(brokerJson)
+                    val list = mutableListOf<BrokerProfile>()
+                    for (i in 0 until array.length()) {
+                        val obj = array.getJSONObject(i)
+                        list.add(
+                            BrokerProfile(
+                                id = obj.optString("id", "b$i"),
+                                name = obj.optString("name", "Broker $i"),
+                                host = obj.optString("host", "broker.emqx.io"),
+                                port = obj.optInt("port", 1883),
+                                clientId = obj.optString("clientId", "client_mobile_th0201"),
+                                username = obj.optString("username", ""),
+                                password = obj.optString("password", ""),
+                                protocol = obj.optString("protocol", "MQTT 3.1.1"),
+                                cleanSession = obj.optBoolean("cleanSession", true),
+                                tlsEnabled = obj.optBoolean("tlsEnabled", false),
+                                keepAlive = obj.optInt("keepAlive", 60)
+                            )
                         )
-                    )
+                    }
+                    if (list.isNotEmpty()) {
+                        dbHelper.saveBrokerProfiles(list)
+                    }
                 }
-                return list
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        }
-        return defaultBrokerProfiles()
-    }
 
-    fun saveBrokerProfiles(profiles: List<BrokerProfile>) {
-        try {
-            val array = JSONArray()
-            for (p in profiles) {
-                val obj = JSONObject().apply {
-                    put("id", p.id)
-                    put("name", p.name)
-                    put("host", p.host)
-                    put("port", p.port)
-                    put("clientId", p.clientId)
-                    put("username", p.username)
-                    put("password", p.password)
-                    put("protocol", p.protocol)
-                    put("cleanSession", p.cleanSession)
-                    put("tlsEnabled", p.tlsEnabled)
-                    put("keepAlive", p.keepAlive)
-                }
-                array.put(obj)
-            }
-            prefs.edit().putString(KEY_BROKER_PROFILES, array.toString()).apply()
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-    }
-
-    fun loadActiveBrokerId(): String {
-        return prefs.getString(KEY_ACTIVE_BROKER_ID, null) ?: ""
-    }
-
-    fun saveActiveBrokerId(id: String) {
-        prefs.edit().putString(KEY_ACTIVE_BROKER_ID, id).apply()
-    }
-
-    private fun defaultBrokerProfiles(): List<BrokerProfile> = emptyList()
-
-    // ==========================================
-    // 2. Subscriptions Persistence
-    // ==========================================
-
-    fun loadSubscriptions(): List<SubscriptionItem> {
-        if (prefs.contains(KEY_SUBSCRIPTIONS)) {
-            val jsonString = prefs.getString(KEY_SUBSCRIPTIONS, null)
-            if (!jsonString.isNullOrBlank()) {
-                try {
-                    val array = JSONArray(jsonString)
+                // 2. Migrate subscriptions
+                val subJson = prefs.getString("key_subscriptions", null)
+                if (!subJson.isNullOrBlank()) {
+                    val array = JSONArray(subJson)
                     val list = mutableListOf<SubscriptionItem>()
                     for (i in 0 until array.length()) {
                         val obj = array.getJSONObject(i)
@@ -125,51 +90,15 @@ class MqttStorageRepository(context: Context) {
                             )
                         )
                     }
-                    return list
-                } catch (e: Exception) {
-                    e.printStackTrace()
+                    if (list.isNotEmpty()) {
+                        dbHelper.saveSubscriptions(list)
+                    }
                 }
-            }
-            return emptyList()
-        }
-        return defaultSubscriptions()
-    }
 
-    fun saveSubscriptions(subscriptions: List<SubscriptionItem>) {
-        try {
-            val array = JSONArray()
-            for (sub in subscriptions) {
-                val obj = JSONObject().apply {
-                    put("id", sub.id)
-                    put("topic", sub.topic)
-                    put("qos", sub.qos)
-                    put("msgCount", sub.msgCount)
-                    put("lastTimeText", sub.lastTimeText)
-                    put("isEnabled", sub.isEnabled)
-                    put("dotColorHex", sub.dotColorHex)
-                    put("name", sub.name)
-                    put("retainHandling", sub.retainHandling)
-                }
-                array.put(obj)
-            }
-            prefs.edit().putString(KEY_SUBSCRIPTIONS, array.toString()).apply()
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-    }
-
-    private fun defaultSubscriptions(): List<SubscriptionItem> = emptyList()
-
-    // ==========================================
-    // 3. Publish Presets Persistence
-    // ==========================================
-
-    fun loadPublishPresets(): List<PublishPreset> {
-        if (prefs.contains(KEY_PUBLISH_PRESETS)) {
-            val jsonString = prefs.getString(KEY_PUBLISH_PRESETS, null)
-            if (!jsonString.isNullOrBlank()) {
-                try {
-                    val array = JSONArray(jsonString)
+                // 3. Migrate presets
+                val presetJson = prefs.getString("key_publish_presets", null)
+                if (!presetJson.isNullOrBlank()) {
+                    val array = JSONArray(presetJson)
                     val list = mutableListOf<PublishPreset>()
                     for (i in 0 until array.length()) {
                         val obj = array.getJSONObject(i)
@@ -184,116 +113,132 @@ class MqttStorageRepository(context: Context) {
                             )
                         )
                     }
-                    return list
-                } catch (e: Exception) {
-                    e.printStackTrace()
+                    if (list.isNotEmpty()) {
+                        dbHelper.savePublishPresets(list)
+                    }
                 }
+
+                prefs.edit().putBoolean(KEY_LEGACY_MIGRATED, true).apply()
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
-            return emptyList()
         }
-        return defaultPublishPresets()
+    }
+
+    // ==========================================
+    // 1. Broker Profiles (SQLite Backed)
+    // ==========================================
+
+    fun loadBrokerProfiles(): List<BrokerProfile> {
+        val list = dbHelper.loadBrokerProfiles()
+        return list.ifEmpty { defaultBrokerProfiles() }
+    }
+
+    fun saveBrokerProfiles(profiles: List<BrokerProfile>) {
+        dbHelper.saveBrokerProfiles(profiles)
+    }
+
+    fun loadActiveBrokerId(): String {
+        return dbHelper.loadSetting(KEY_ACTIVE_BROKER_ID, "")
+    }
+
+    fun saveActiveBrokerId(id: String) {
+        dbHelper.saveSetting(KEY_ACTIVE_BROKER_ID, id)
+    }
+
+    private fun defaultBrokerProfiles(): List<BrokerProfile> = emptyList()
+
+    // ==========================================
+    // 2. Subscriptions (SQLite Backed)
+    // ==========================================
+
+    fun loadSubscriptions(): List<SubscriptionItem> {
+        val list = dbHelper.loadSubscriptions()
+        return list.ifEmpty { defaultSubscriptions() }
+    }
+
+    fun saveSubscriptions(subscriptions: List<SubscriptionItem>) {
+        dbHelper.saveSubscriptions(subscriptions)
+    }
+
+    private fun defaultSubscriptions(): List<SubscriptionItem> = emptyList()
+
+    // ==========================================
+    // 3. Publish Presets (SQLite Backed)
+    // ==========================================
+
+    fun loadPublishPresets(): List<PublishPreset> {
+        val list = dbHelper.loadPublishPresets()
+        return list.ifEmpty { defaultPublishPresets() }
     }
 
     fun savePublishPresets(presets: List<PublishPreset>) {
-        try {
-            val array = JSONArray()
-            for (p in presets) {
-                val obj = JSONObject().apply {
-                    put("id", p.id)
-                    put("name", p.name)
-                    put("topic", p.topic)
-                    put("qos", p.qos)
-                    put("retain", p.retain)
-                    put("payload", p.payload)
-                }
-                array.put(obj)
-            }
-            prefs.edit().putString(KEY_PUBLISH_PRESETS, array.toString()).apply()
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
+        dbHelper.savePublishPresets(presets)
     }
 
     private fun defaultPublishPresets(): List<PublishPreset> = emptyList()
 
     // ==========================================
-    // 4. Topic Filter Rules (Include / Exclude)
+    // 4. Topic Filter Rules (SQLite Backed)
     // ==========================================
 
     fun loadIncludeTopicFilters(): List<String> {
-        val jsonString = prefs.getString(KEY_INCLUDE_TOPIC_FILTERS, null)
-        if (!jsonString.isNullOrBlank()) {
-            try {
-                val array = JSONArray(jsonString)
-                val list = mutableListOf<String>()
-                for (i in 0 until array.length()) {
-                    val s = array.optString(i)
-                    if (s.isNotBlank()) list.add(s)
-                }
-                return list
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        }
-        return emptyList()
+        val raw = dbHelper.loadSetting(KEY_INCLUDE_TOPIC_FILTERS, "")
+        if (raw.isBlank()) return emptyList()
+        return raw.split(";;;").filter { it.isNotBlank() }
     }
 
     fun saveIncludeTopicFilters(filters: List<String>) {
-        try {
-            val array = JSONArray()
-            filters.filter { it.isNotBlank() }.forEach { array.put(it.trim()) }
-            prefs.edit().putString(KEY_INCLUDE_TOPIC_FILTERS, array.toString()).apply()
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
+        val serialized = filters.filter { it.isNotBlank() }.joinToString(";;;")
+        dbHelper.saveSetting(KEY_INCLUDE_TOPIC_FILTERS, serialized)
     }
 
     fun loadExcludeTopicFilters(): List<String> {
-        val jsonString = prefs.getString(KEY_EXCLUDE_TOPIC_FILTERS, null)
-        if (!jsonString.isNullOrBlank()) {
-            try {
-                val array = JSONArray(jsonString)
-                val list = mutableListOf<String>()
-                for (i in 0 until array.length()) {
-                    val s = array.optString(i)
-                    if (s.isNotBlank()) list.add(s)
-                }
-                return list
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        }
-        return emptyList()
+        val raw = dbHelper.loadSetting(KEY_EXCLUDE_TOPIC_FILTERS, "")
+        if (raw.isBlank()) return emptyList()
+        return raw.split(";;;").filter { it.isNotBlank() }
     }
 
     fun saveExcludeTopicFilters(filters: List<String>) {
-        try {
-            val array = JSONArray()
-            filters.filter { it.isNotBlank() }.forEach { array.put(it.trim()) }
-            prefs.edit().putString(KEY_EXCLUDE_TOPIC_FILTERS, array.toString()).apply()
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
+        val serialized = filters.filter { it.isNotBlank() }.joinToString(";;;")
+        dbHelper.saveSetting(KEY_EXCLUDE_TOPIC_FILTERS, serialized)
     }
 
     // ==========================================
-    // 5. KeepAlive & Background Settings Persistence
+    // 5. KeepAlive & Background Settings
     // ==========================================
 
     fun loadBackgroundKeepAlive(): Boolean {
-        return prefs.getBoolean("key_background_keepalive_enabled", true)
+        val v = dbHelper.loadSetting(KEY_BG_KEEPALIVE, "true")
+        return v.toBooleanStrictOrNull() ?: true
     }
 
     fun saveBackgroundKeepAlive(enabled: Boolean) {
-        prefs.edit().putBoolean("key_background_keepalive_enabled", enabled).apply()
+        dbHelper.saveSetting(KEY_BG_KEEPALIVE, enabled.toString())
     }
 
     fun loadWakeLock(): Boolean {
-        return prefs.getBoolean("key_wake_lock_enabled", true)
+        val v = dbHelper.loadSetting(KEY_WAKE_LOCK, "true")
+        return v.toBooleanStrictOrNull() ?: true
     }
 
     fun saveWakeLock(enabled: Boolean) {
-        prefs.edit().putBoolean("key_wake_lock_enabled", enabled).apply()
+        dbHelper.saveSetting(KEY_WAKE_LOCK, enabled.toString())
+    }
+
+    // ==========================================
+    // 6. MQTT Live & Historical Packets (SQLite)
+    // ==========================================
+
+    fun savePacket(packet: MqttLogPacket) {
+        dbHelper.insertPacket(packet)
+    }
+
+    fun loadRecentPackets(limit: Int = 300): List<MqttLogPacket> {
+        return dbHelper.loadRecentPackets(limit)
+    }
+
+    fun clearAllPackets() {
+        dbHelper.clearAllPackets()
     }
 }
-
