@@ -21,7 +21,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -35,6 +39,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.FilterAlt
 import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -42,6 +47,8 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -113,12 +120,29 @@ fun LiveLogsScreen(
     var isTopicFilterDialogVisible by remember { mutableStateOf(false) }
     val totalFilterRules = includeFilters.size + excludeFilters.size
 
+    val listState = rememberLazyListState()
+    val coroutineScope = rememberCoroutineScope()
+
     val filteredPackets = packets.filter { packet ->
         val matchesAllowed = MqttTopicUtil.isTopicAllowed(packet.topic, includeFilters, excludeFilters)
         val matchesQuery = filterQuery.isBlank() ||
                 packet.topic.contains(filterQuery, ignoreCase = true) ||
                 packet.payload.contains(filterQuery, ignoreCase = true)
         matchesAllowed && matchesQuery
+    }
+
+    // 自动向下滚动：未暂停时，新消息到达自动平滑向下滚动至最底部，底部永远是最新一条
+    LaunchedEffect(filteredPackets.size, isPaused) {
+        if (!isPaused && filteredPackets.isNotEmpty()) {
+            listState.animateScrollToItem(filteredPackets.size - 1)
+        }
+    }
+
+    // 初始进入或恢复时直接定位到最后一条最新消息
+    LaunchedEffect(Unit) {
+        if (filteredPackets.isNotEmpty()) {
+            listState.scrollToItem(filteredPackets.size - 1)
+        }
     }
 
     Column(
@@ -242,16 +266,27 @@ fun LiveLogsScreen(
                         )
                     }
 
-                    // 3. 暂停 / 继续 流接收 - 纯净图标，无灰底方块
+                    // 3. 暂停 / 恢复 自动向下滚动 - 纯净图标，无灰底方块
                     IconButton(
-                        onClick = { viewModel.toggleStreamPause() },
+                        onClick = {
+                            val wasPaused = isPaused
+                            viewModel.toggleStreamPause()
+                            if (wasPaused) {
+                                // 点击从暂停切回继续时，平滑滚动至最底部最新消息
+                                coroutineScope.launch {
+                                    if (filteredPackets.isNotEmpty()) {
+                                        listState.animateScrollToItem(filteredPackets.size - 1)
+                                    }
+                                }
+                            }
+                        },
                         modifier = Modifier
                             .size(36.dp)
                             .testTag("stream_pause_toggle_btn")
                     ) {
                         Icon(
                             imageVector = if (isPaused) Icons.Default.PlayArrow else Icons.Default.Pause,
-                            contentDescription = if (isPaused) "继续接收" else "暂停接收",
+                            contentDescription = if (isPaused) "恢复自动滚动" else "暂停自动滚动",
                             tint = if (isPaused) Color(0xFFDC2626) else PrimaryBlack,
                             modifier = Modifier.size(18.dp)
                         )
@@ -280,12 +315,12 @@ fun LiveLogsScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = if (isPaused) "● 消息流已暂停" else "● 实时接收中 (${filteredPackets.size} 条)",
+                        text = if (isPaused) "⏸ 自动滚动已暂停 (${filteredPackets.size} 条 · 可自由浏览)" else "● 自动吸附最新 (${filteredPackets.size} 条)",
                         style = TextStyle(
                             fontFamily = FontFamily.Monospace,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Medium,
-                            color = if (isPaused) OutlineGray else AccentEmerald
+                            color = if (isPaused) Color(0xFFD97706) else AccentEmerald
                         )
                     )
                     if (totalFilterRules > 0) {
@@ -343,42 +378,73 @@ fun LiveLogsScreen(
             }
         }
 
-        // 2. 独立滚动的消息流列表
-        LazyColumn(
+        // 2. 独立滚动的消息流列表 (支持自动吸底滚动与暂停自由翻阅)
+        Box(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            if (filteredPackets.isEmpty()) {
-                item {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 60.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = if (filterQuery.isNotBlank()) "未匹配到相关报文" else "暂无消息 (等待 Broker 推送...)",
-                            style = TextStyle(fontSize = 13.sp, color = OutlineGray)
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (filteredPackets.isEmpty()) {
+                    item {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 60.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = if (filterQuery.isNotBlank()) "未匹配到相关报文" else "暂无消息 (等待 Broker 推送...)",
+                                style = TextStyle(fontSize = 13.sp, color = OutlineGray)
+                            )
+                        }
+                    }
+                } else {
+                    items(filteredPackets, key = { it.id }) { packet ->
+                        CompactMessageCard(
+                            packet = packet,
+                            isJsonPretty = isJsonPretty,
+                            onClick = { selectedDetailsPacket = packet },
+                            onCopyTopic = {
+                                clipboardManager.setPrimaryClip(ClipData.newPlainText("topic", packet.topic))
+                                viewModel.showToast("已复制主题: ${packet.topic}")
+                            },
+                            onCopyPayload = {
+                                clipboardManager.setPrimaryClip(ClipData.newPlainText("payload", packet.payload))
+                                viewModel.showToast("已复制消息内容")
+                            }
                         )
                     }
                 }
-            } else {
-                items(filteredPackets, key = { it.id }) { packet ->
-                    CompactMessageCard(
-                        packet = packet,
-                        isJsonPretty = isJsonPretty,
-                        onClick = { selectedDetailsPacket = packet },
-                        onCopyTopic = {
-                            clipboardManager.setPrimaryClip(ClipData.newPlainText("topic", packet.topic))
-                            viewModel.showToast("已复制主题: ${packet.topic}")
-                        },
-                        onCopyPayload = {
-                            clipboardManager.setPrimaryClip(ClipData.newPlainText("payload", packet.payload))
-                            viewModel.showToast("已复制报文内容")
+            }
+
+            // 悬浮快速“滚到底部最新”微按钮 (暂停滚动模式下展示，一键吸底并恢复自动滚动)
+            if (isPaused && filteredPackets.isNotEmpty()) {
+                FloatingActionButton(
+                    onClick = {
+                        coroutineScope.launch {
+                            listState.animateScrollToItem(filteredPackets.size - 1)
                         }
+                    },
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(bottom = 16.dp, end = 16.dp)
+                        .size(42.dp),
+                    shape = CircleShape,
+                    containerColor = PrimaryBlack,
+                    contentColor = Color.White,
+                    elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 4.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.KeyboardArrowDown,
+                        contentDescription = "回到底部最新",
+                        modifier = Modifier.size(20.dp)
                     )
                 }
             }
@@ -659,15 +725,48 @@ private fun MessageDetailsModalDialog(
                     }
                 }
 
-                // Clean Topic Section (Retained for immediate context and 1-tap copy)
+                // Clean Topic Section (支持多行完整换行，整块区域点击直接复制主题)
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(8.dp))
                         .background(SurfaceContainerLow)
-                        .padding(horizontal = 12.dp, vertical = 10.dp)
+                        .clickable(onClick = onCopyTopic)
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    DetailRow(label = "主题 (Topic)", value = packet.topic, onCopy = onCopyTopic)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "主题 (点击可直接复制)",
+                            style = TextStyle(
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = OnSurfaceVariantGray
+                            )
+                        )
+                        Icon(
+                            imageVector = Icons.Default.ContentCopy,
+                            contentDescription = "复制主题",
+                            tint = OutlineGray,
+                            modifier = Modifier.size(13.dp)
+                        )
+                    }
+
+                    // 与消息卡片完全一致的多行换行主题呈现，支持任意层级主题
+                    Text(
+                        text = packet.topic,
+                        style = TextStyle(
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.5.sp,
+                            lineHeight = 18.sp,
+                            color = PrimaryBlack
+                        )
+                    )
                 }
 
                 // Message Payload Header with 复制消息 button

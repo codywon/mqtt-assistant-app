@@ -57,8 +57,8 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
 
     val isForegroundKeepAliveRunning = MutableStateFlow(false)
 
-    // --- Live Packet Log States (Backed by SQLite Database) ---
-    val livePackets = MutableStateFlow<List<MqttLogPacket>>(storage.loadRecentPackets(300))
+    // --- Live Packet Log States (Backed by SQLite Database, Chronological Order: Newest at Bottom) ---
+    val livePackets = MutableStateFlow<List<MqttLogPacket>>(storage.loadRecentPackets(300).reversed())
     val selectedTopicFilter = MutableStateFlow("全部主题")
     val selectedPacket = MutableStateFlow<MqttLogPacket?>(null)
     val searchQuery = MutableStateFlow("")
@@ -178,13 +178,12 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 dotColorHex = dotColor
             )
 
-            if (!isRecordingPaused.value) {
-                livePackets.update { current ->
-                    (listOf(packet) + current).take(serverConfig.value.bufferThreshold)
-                }
-                viewModelScope.launch(Dispatchers.IO) {
-                    storage.savePacket(packet)
-                }
+            // 消息接收永不中断：无论是否暂停自动滚动，均持续存入数据库并追加在列表底部
+            livePackets.update { current ->
+                (current + packet).takeLast(serverConfig.value.bufferThreshold)
+            }
+            viewModelScope.launch(Dispatchers.IO) {
+                storage.savePacket(packet)
             }
 
             subscriptions.update { list ->
@@ -462,7 +461,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 category = preset.name.ifBlank { preset.topic.substringBefore('/') },
                 dotColorHex = dotColor
             )
-            livePackets.update { (listOf(packet) + it).take(serverConfig.value.bufferThreshold) }
+            livePackets.update { (it + packet).takeLast(serverConfig.value.bufferThreshold) }
             storage.savePacket(packet)
 
             // Match against subscriptions
@@ -593,7 +592,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 category = topic.substringBefore('/'),
                 dotColorHex = dotColor
             )
-            livePackets.update { (listOf(packet) + it).take(serverConfig.value.bufferThreshold) }
+            livePackets.update { (it + packet).takeLast(serverConfig.value.bufferThreshold) }
             storage.savePacket(packet)
 
             if (result.isSuccess) {
@@ -890,7 +889,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
 
     fun togglePauseRecording() {
         isRecordingPaused.value = !isRecordingPaused.value
-        showToast(if (isRecordingPaused.value) "流已暂停" else "流已恢复")
+        showToast(if (isRecordingPaused.value) "自动滚动已暂停 (可自由滑动浏览，后台正常接收)" else "已恢复自动向下滚动 (吸附最新)")
     }
 
     fun toggleStreamPause() {
