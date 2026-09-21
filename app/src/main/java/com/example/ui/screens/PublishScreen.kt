@@ -295,9 +295,6 @@ private fun PublishPresetCard(
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            // Row 1: Topic and QoS / Retain Badges
-            Row(
-                modifier = Modifier.fillMaxWidth(),
             // Row 1: Topic + QoS & Retain Badges
             Row(
                 modifier = Modifier.fillMaxWidth(),
