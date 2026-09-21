@@ -184,12 +184,10 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 reconnectAttempt.value = 0
                 reconnectCountdown.value = 0
                 persistCurrentActiveBrokerProfile()
-                // Auto-subscribe all enabled subscriptions on the connected broker
+                // Auto-subscribe all enabled subscriptions on the connected broker using batch API
                 viewModelScope.launch {
                     val activeSubs = subscriptions.value.filter { it.isEnabled }
-                    activeSubs.forEach { sub ->
-                        MqttClientManager.subscribe(sub.topic, sub.qos)
-                    }
+                    MqttClientManager.subscribeBatch(activeSubs.map { it.topic to it.qos })
                 }
                 // Auto start foreground keepalive service for persistent background connection
                 if (serverConfig.value.backgroundKeepAliveEnabled) {
@@ -219,9 +217,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 serverConfig.update { it.copy(isConnected = true) }
                 persistCurrentActiveBrokerProfile()
                 val activeSubs = subscriptions.value.filter { it.isEnabled }
-                activeSubs.forEach { sub ->
-                    MqttClientManager.subscribe(sub.topic, sub.qos)
-                }
+                MqttClientManager.subscribeBatch(activeSubs.map { it.topic to it.qos })
                 if (serverConfig.value.backgroundKeepAliveEnabled) {
                     val brokerHost = "${serverConfig.value.host}:${serverConfig.value.port}"
                     MqttBackgroundService.startKeepAlive(getApplication(), brokerHost)
@@ -643,11 +639,38 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 if (res.isSuccess) {
                     showToast("已持久化保存并在 Broker 激活订阅: ${item.topic} (QoS ${item.qos})")
                 } else {
-                    showToast("已保存订阅: ${item.topic}，待网络连接后自动生效")
+                    showToast("订阅失败: ${res.exceptionOrNull()?.message}")
                 }
             } else {
-                MqttClientManager.unsubscribe(item.topic)
-                showToast("已保存订阅: ${item.topic} (已设为暂停)")
+                showToast("已保存订阅配置 (已暂停接收)")
+            }
+        }
+    }
+
+    fun testPublishLoopback() {
+        if (!serverConfig.value.isConnected) {
+            showToast("请先等待或点击顶部连接 Broker 再进行自测")
+            return
+        }
+        val firstSub = subscriptions.value.firstOrNull { it.isEnabled }
+        val targetTopic = if (firstSub != null) {
+            firstSub.topic.replace("/#", "/test_probe").replace("/+", "/test_probe")
+        } else {
+            "college/test_probe"
+        }
+        val timeNow = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
+        val testPayload = """{"event":"loopback_test","topic":"$targetTopic","status":"online","time":"$timeNow"}"""
+        viewModelScope.launch {
+            val result = MqttClientManager.publish(
+                topic = targetTopic,
+                payload = testPayload.toByteArray(Charsets.UTF_8),
+                qos = 0,
+                retain = false
+            )
+            if (result.isSuccess) {
+                showToast("自测报文已发送至 $targetTopic，请查看消息流")
+            } else {
+                showToast("自测发送异常: ${result.exceptionOrNull()?.message}")
             }
         }
     }

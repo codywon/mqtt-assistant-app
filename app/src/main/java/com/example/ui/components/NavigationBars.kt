@@ -94,7 +94,7 @@ fun AppTopBar(
                     Text(
                         text = "MQTT Assistant",
                         style = MaterialTheme.typography.titleMedium.copy(
-                            fontSize = 17.sp,
+                            fontSize = 15.5.sp,
                             fontWeight = FontWeight.Bold,
                             color = PrimaryBlack,
                             letterSpacing = (-0.3).sp
@@ -102,7 +102,7 @@ fun AppTopBar(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
                     // Broker badge (单一权威连接状态与一键重连/断开控制)
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -110,12 +110,12 @@ fun AppTopBar(
                             .clip(CircleShape)
                             .background(SurfaceContainerLow)
                             .clickable(onClick = onBadgeClick)
-                            .padding(horizontal = 9.dp, vertical = 4.dp)
+                            .padding(horizontal = 7.dp, vertical = 3.dp)
                             .testTag("top_broker_badge")
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(7.dp)
+                                .size(6.5.dp)
                                 .clip(CircleShape)
                                 .background(
                                     when (connectionState) {
@@ -126,7 +126,7 @@ fun AppTopBar(
                                     }
                                 )
                         )
-                        Spacer(modifier = Modifier.width(5.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
                         val badgeText = when (connectionState) {
                             MqttConnectionState.CONNECTED -> brokerHost
                             MqttConnectionState.CONNECTING -> "正在连接..."
@@ -137,7 +137,7 @@ fun AppTopBar(
                         Text(
                             text = badgeText,
                             style = MaterialTheme.typography.labelSmall.copy(
-                                fontSize = 11.5.sp,
+                                fontSize = 11.sp,
                                 fontFamily = FontFamily.Monospace,
                                 color = if (connectionState == MqttConnectionState.CONNECTED) PrimaryBlack else OnSurfaceVariantGray
                             ),
@@ -151,7 +151,7 @@ fun AppTopBar(
                 IconButton(
                     onClick = onSwitchBroker,
                     modifier = Modifier
-                        .size(36.dp)
+                        .size(32.dp)
                         .clip(CircleShape)
                         .background(SurfaceContainerLow)
                         .testTag("top_switch_broker_btn")
@@ -161,7 +161,7 @@ fun AppTopBar(
                         imageVector = Icons.Default.SwapHoriz,
                         contentDescription = "切换节点",
                         tint = PrimaryBlack,
-                        modifier = Modifier.size(19.dp)
+                        modifier = Modifier.size(17.dp)
                     )
                 }
             }

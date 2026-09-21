@@ -282,6 +282,29 @@ object MqttClientManager {
     }
 
     /**
+     * Batch subscribe to multiple topics simultaneously in a single MQTT SUB packet.
+     * Prevents concurrency conflicts and guarantees atomic subscription with the Broker.
+     */
+    suspend fun subscribeBatch(topicsWithQos: List<Pair<String, Int>>): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val client = mqttClient
+            if (client != null && client.isConnected) {
+                if (topicsWithQos.isEmpty()) return@withContext Result.success(Unit)
+                val topicArray = topicsWithQos.map { it.first.trim() }.toTypedArray()
+                val qosArray = topicsWithQos.map { it.second }.toIntArray()
+                client.subscribe(topicArray, qosArray)
+                Log.d(TAG, "Batch subscribed to ${topicArray.size} topics: ${topicArray.joinToString()}")
+                Result.success(Unit)
+            } else {
+                Result.failure(IllegalStateException("MQTT client is not connected"))
+            }
+        } catch (e: Throwable) {
+            Log.w(TAG, "Failed to batch subscribe: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
+
+    /**
      * Unsubscribe from a topic.
      */
     suspend fun unsubscribe(topic: String): Result<Unit> = withContext(Dispatchers.IO) {

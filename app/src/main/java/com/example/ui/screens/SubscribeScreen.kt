@@ -30,6 +30,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
@@ -224,7 +225,11 @@ fun SubscribeScreen(
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
                         text = if (totalFiltersCount > 0) "过滤 ($totalFiltersCount)" else "过滤",
-                        style = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        style = TextStyle(
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (totalFiltersCount > 0) Color.White else PrimaryBlack
+                        )
                     )
                 }
 
@@ -244,6 +249,7 @@ fun SubscribeScreen(
                     Icon(
                         imageVector = Icons.Default.Add,
                         contentDescription = null,
+                        tint = Color.White,
                         modifier = Modifier.size(16.dp)
                     )
                     Spacer(modifier = Modifier.width(2.dp))
@@ -251,24 +257,25 @@ fun SubscribeScreen(
                         text = "新建",
                         style = TextStyle(
                             fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
                         )
                     )
                 }
 
-                // Quick reset counts
+                // Link self-test & probe button
                 IconButton(
-                    onClick = { viewModel.resetSubscriptionCounts() },
+                    onClick = { viewModel.testPublishLoopback() },
                     modifier = Modifier
                         .size(38.dp)
                         .clip(RoundedCornerShape(8.dp))
                         .background(SurfaceContainerLow)
-                        .testTag("sub_clear_counts_btn")
+                        .testTag("sub_test_loopback_btn")
                 ) {
                     Icon(
-                        imageVector = Icons.Default.RestartAlt,
-                        contentDescription = "重置计数",
-                        tint = OnSurfaceVariantGray,
+                        imageVector = Icons.Default.Bolt,
+                        contentDescription = "自测接收",
+                        tint = PrimaryBlack,
                         modifier = Modifier.size(18.dp)
                     )
                 }
@@ -541,80 +548,81 @@ private fun SubscriptionItemCard(
                 )
             }
 
-            // Row 2: Alias name (if set)
-            if (item.name.isNotBlank()) {
-                Text(
-                    text = item.name,
-                    style = TextStyle(
-                        fontSize = 12.5.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = OnSurfaceVariantGray
-                    ),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-
-            // Row 3: Metrics and Action Buttons
+            // Row 2 (Bottom): Alias name (left) + Metrics + Actions (right)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = if (item.isEnabled) "${item.msgCount} 报文 · ${item.lastTimeText}" else "已暂停 · ${item.msgCount} 报文",
-                    style = TextStyle(
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = if (item.isEnabled) OnSurfaceVariantGray else OutlineGray
-                    )
-                )
-
+                // Bottom left: Alias (if set) and message metrics
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.weight(1f, fill = false)
+                ) {
+                    if (item.name.isNotBlank()) {
+                        Text(
+                            text = item.name,
+                            style = TextStyle(
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = PrimaryBlack
+                            ),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = "·",
+                            style = TextStyle(fontSize = 12.sp, color = OutlineGray)
+                        )
+                    }
+                    Text(
+                        text = if (item.isEnabled) "${item.msgCount} 报文" else "已暂停",
+                        style = TextStyle(
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = if (item.isEnabled) OnSurfaceVariantGray else OutlineGray
+                        )
+                    )
+                }
+
+                // Bottom right: Compact action buttons
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(
                         onClick = onCopy,
-                        modifier = Modifier
-                            .size(32.dp)
-                            .clip(CircleShape)
-                            .background(SurfaceContainerLow)
+                        modifier = Modifier.size(28.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.ContentCopy,
                             contentDescription = "复制主题",
                             tint = OnSurfaceVariantGray,
-                            modifier = Modifier.size(15.dp)
+                            modifier = Modifier.size(14.dp)
                         )
                     }
                     IconButton(
                         onClick = onEdit,
-                        modifier = Modifier
-                            .size(32.dp)
-                            .clip(CircleShape)
-                            .background(SurfaceContainerLow)
+                        modifier = Modifier.size(28.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Edit,
                             contentDescription = "编辑订阅",
                             tint = PrimaryBlack,
-                            modifier = Modifier.size(16.dp)
+                            modifier = Modifier.size(15.dp)
                         )
                     }
                     IconButton(
                         onClick = onDelete,
-                        modifier = Modifier
-                            .size(32.dp)
-                            .clip(CircleShape)
-                            .background(SurfaceContainerLow)
+                        modifier = Modifier.size(28.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Delete,
                             contentDescription = "删除订阅",
                             tint = OnSurfaceVariantGray,
-                            modifier = Modifier.size(15.dp)
+                            modifier = Modifier.size(14.dp)
                         )
                     }
                 }

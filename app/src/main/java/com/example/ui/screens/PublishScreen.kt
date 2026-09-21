@@ -205,8 +205,9 @@ fun PublishScreen(
                     Text(
                         text = "新增配置",
                         style = TextStyle(
-                            fontSize = 12.5.sp,
-                            fontWeight = FontWeight.Bold
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
                         ),
                         maxLines = 1,
                         softWrap = false
@@ -297,21 +298,30 @@ private fun PublishPresetCard(
             // Row 1: Topic and QoS / Retain Badges
             Row(
                 modifier = Modifier.fillMaxWidth(),
+            // Row 1: Topic + QoS & Retain Badges
+            Row(
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text(
-                    text = preset.topic,
-                    style = TextStyle(
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 13.5.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = PrimaryBlack
-                    ),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.weight(1f, fill = false)
-                )
+                ) {
+                    Text(
+                        text = preset.topic,
+                        style = TextStyle(
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 13.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = PrimaryBlack
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(6.dp))
 
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -381,12 +391,13 @@ private fun PublishPresetCard(
                 )
             }
 
-            // Row 3: Remark name tag + Character count + Actions
+            // Row 3: Remark (left) & Actions (right) - Perfectly spaced, no squishing
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
+                // Left: Remark badge or length counter
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -415,17 +426,18 @@ private fun PublishPresetCard(
                         text = "${preset.payload.length} 字符",
                         style = TextStyle(
                             fontFamily = FontFamily.Monospace,
-                            fontSize = 11.5.sp,
+                            fontSize = 11.sp,
                             color = OnSurfaceVariantGray
-                        )
+                        ),
+                        maxLines = 1
                     )
                 }
 
+                // Right: Compact icon buttons + solid send button with white text
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    // Copy
                     IconButton(
                         onClick = onCopy,
                         modifier = Modifier.size(28.dp)
@@ -438,7 +450,6 @@ private fun PublishPresetCard(
                         )
                     }
 
-                    // Edit
                     IconButton(
                         onClick = onEdit,
                         modifier = Modifier.size(28.dp)
@@ -451,7 +462,6 @@ private fun PublishPresetCard(
                         )
                     }
 
-                    // Delete
                     IconButton(
                         onClick = onDelete,
                         modifier = Modifier.size(28.dp)
@@ -466,7 +476,6 @@ private fun PublishPresetCard(
 
                     Spacer(modifier = Modifier.width(2.dp))
 
-                    // Solid Black Send Button (Wide enough, no wrapping)
                     Button(
                         onClick = onDirectSend,
                         shape = RoundedCornerShape(8.dp),
@@ -474,25 +483,26 @@ private fun PublishPresetCard(
                             containerColor = PrimaryBlack,
                             contentColor = OnPrimaryWhite
                         ),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
                         modifier = Modifier
-                            .height(30.dp)
+                            .height(28.dp)
                             .testTag("direct_send_btn_${preset.id}")
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.Send,
                             contentDescription = null,
-                            modifier = Modifier.size(12.dp)
+                            tint = Color.White,
+                            modifier = Modifier.size(11.dp)
                         )
-                        Spacer(modifier = Modifier.width(4.dp))
+                        Spacer(modifier = Modifier.width(3.dp))
                         Text(
                             text = "发送",
                             style = TextStyle(
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
                             ),
-                            maxLines = 1,
-                            softWrap = false
+                            maxLines = 1
                         )
                     }
                 }

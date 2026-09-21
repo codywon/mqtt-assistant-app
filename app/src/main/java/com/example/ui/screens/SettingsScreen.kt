@@ -294,7 +294,8 @@ fun SettingsScreen(
                             text = "切换节点 (${brokerProfiles.size}可用)",
                             style = MaterialTheme.typography.labelSmall.copy(
                                 fontWeight = FontWeight.Medium,
-                                fontSize = 12.sp
+                                fontSize = 12.sp,
+                                color = Color.White
                             ),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
@@ -396,7 +397,7 @@ fun SettingsScreen(
                     ) {
                         Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("新增节点", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text("新增节点", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
                     }
                 }
 
@@ -1067,7 +1068,8 @@ fun SettingsScreen(
                         Text(
                             text = if (connectionState == MqttConnectionState.CONNECTED) "断开测试" else "立即重连",
                             fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
                         )
                     }
                 }
@@ -1212,7 +1214,7 @@ fun SettingsScreen(
                         ),
                         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
                     ) {
-                        Text("去设置", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                        Text("去设置", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = Color.White)
                     }
                 }
             }
@@ -1450,7 +1452,8 @@ fun SettingsScreen(
                     text = "正在保存参数...",
                     style = MaterialTheme.typography.labelMedium.copy(
                         fontWeight = FontWeight.SemiBold,
-                        fontSize = 14.sp
+                        fontSize = 14.sp,
+                        color = Color.White
                     )
                 )
             } else {
@@ -1464,7 +1467,8 @@ fun SettingsScreen(
                     text = "保存并应用配置",
                     style = MaterialTheme.typography.labelMedium.copy(
                         fontWeight = FontWeight.SemiBold,
-                        fontSize = 14.sp
+                        fontSize = 14.sp,
+                        color = Color.White
                     )
                 )
             }
@@ -2019,7 +2023,7 @@ private fun BrokerProfileEditDialog(
                         ),
                         modifier = Modifier.height(38.dp).testTag("broker_dialog_save_btn")
                     ) {
-                        Text("保存节点", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        Text("保存节点", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White)
                     }
                 }
             }
