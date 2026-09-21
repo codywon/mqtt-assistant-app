@@ -708,7 +708,7 @@ private fun MessageDetailsModalDialog(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "主题 (点击可直接复制)",
+                                text = "主题",
                                 style = TextStyle(
                                     fontSize = 11.5.sp,
                                     fontWeight = FontWeight.Medium,

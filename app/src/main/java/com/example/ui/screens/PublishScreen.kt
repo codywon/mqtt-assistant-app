@@ -62,6 +62,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -678,39 +679,48 @@ private fun PublishConfigModalDialog(
                     }
                 }
 
-                // QoS & Retain
+                // QoS & Retain (严格对齐，选中卡绝对上下几何居中)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.Top
                 ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    // 服务质量 (QoS)
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
                         Text(
                             text = "服务质量 (QoS)",
-                            style = TextStyle(fontSize = 11.5.sp, color = OnSurfaceVariantGray)
+                            style = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = OnSurfaceDark)
                         )
                         Row(
                             modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
+                                .fillMaxWidth()
+                                .height(34.dp)
+                                .clip(RoundedCornerShape(8.dp))
                                 .background(SurfaceContainerLow)
-                                .padding(2.dp),
+                                .padding(3.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             listOf(0, 1, 2).forEach { q ->
                                 val selected = qos == q
                                 Box(
                                     modifier = Modifier
-                                        .clip(RoundedCornerShape(4.dp))
+                                        .weight(1f)
+                                        .fillMaxHeight()
+                                        .clip(RoundedCornerShape(6.dp))
                                         .background(if (selected) PrimaryBlack else Color.Transparent)
-                                        .clickable { qos = q }
-                                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                                        .clickable { qos = q },
+                                    contentAlignment = Alignment.Center
                                 ) {
                                     Text(
                                         text = "QoS $q",
                                         style = TextStyle(
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = if (selected) OnPrimaryWhite else OnSurfaceVariantGray
+                                            fontSize = 11.5.sp,
+                                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                                            color = if (selected) OnPrimaryWhite else OnSurfaceVariantGray,
+                                            platformStyle = PlatformTextStyle(includeFontPadding = false)
                                         )
                                     )
                                 }
@@ -718,25 +728,47 @@ private fun PublishConfigModalDialog(
                         }
                     }
 
+                    // 保留消息 (Retain)
                     Column(
-                        horizontalAlignment = Alignment.End,
+                        modifier = Modifier.weight(0.55f),
                         verticalArrangement = Arrangement.spacedBy(3.dp)
                     ) {
                         Text(
                             text = "保留消息 (Retain)",
-                            style = TextStyle(fontSize = 11.5.sp, color = OnSurfaceVariantGray)
+                            style = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = OnSurfaceDark)
                         )
-                        Switch(
-                            checked = retain,
-                            onCheckedChange = { retain = it },
-                            modifier = Modifier.scale(0.75f),
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = OnPrimaryWhite,
-                                checkedTrackColor = PrimaryBlack,
-                                uncheckedThumbColor = OnSurfaceVariantGray,
-                                uncheckedTrackColor = SurfaceContainerLow
-                            )
-                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(34.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(SurfaceContainerLow)
+                                .padding(3.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            listOf(false to "关", true to "开").forEach { (rVal, rLabel) ->
+                                val selected = retain == rVal
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .fillMaxHeight()
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(if (selected) PrimaryBlack else Color.Transparent)
+                                        .clickable { retain = rVal },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = rLabel,
+                                        style = TextStyle(
+                                            fontSize = 11.5.sp,
+                                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                                            color = if (selected) OnPrimaryWhite else OnSurfaceVariantGray,
+                                            platformStyle = PlatformTextStyle(includeFontPadding = false)
+                                        )
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
 

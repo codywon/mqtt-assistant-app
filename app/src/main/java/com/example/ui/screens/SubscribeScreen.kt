@@ -30,6 +30,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
@@ -71,6 +72,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -566,75 +568,58 @@ private fun SubscriptionConfigModalDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
-        Surface(
-            shape = RoundedCornerShape(20.dp),
-            color = SurfaceContainerLowest,
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = SurfaceContainerLowest),
+            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
             modifier = Modifier
-                .fillMaxWidth(0.94f)
-                .padding(vertical = 24.dp),
-            shadowElevation = 8.dp
+                .fillMaxWidth(0.92f)
+                .padding(vertical = 16.dp)
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+                    .padding(18.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Header
+                // Header (极简现代，与新增发布弹窗完全看齐)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        // Color dot preview in title
-                        Box(
-                            modifier = Modifier
-                                .size(14.dp)
-                                .clip(CircleShape)
-                                .background(Color(dotColorHex))
+                    Text(
+                        text = if (isEditMode) "编辑订阅主题" else "新建订阅主题",
+                        style = TextStyle(
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = PrimaryBlack
                         )
-                        Text(
-                            text = if (isEditMode) "编辑订阅主题" else "新建订阅主题",
-                            style = MaterialTheme.typography.titleMedium.copy(
-                                fontWeight = FontWeight.Bold,
-                                color = PrimaryBlack,
-                                fontSize = 17.sp
-                            )
-                        )
-                    }
+                    )
 
                     IconButton(
                         onClick = onDismiss,
-                        modifier = Modifier.size(30.dp)
+                        modifier = Modifier.size(28.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Close,
                             contentDescription = "关闭",
-                            tint = OnSurfaceVariantGray,
-                            modifier = Modifier.size(18.dp)
+                            tint = OutlineGray
                         )
                     }
                 }
 
-                HorizontalDivider(color = SurfaceContainerDefault, thickness = 0.5.dp)
-
-                // 1. Topic input field
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                // 1. 订阅主题 (Topic)
+                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "订阅主题 (Topic Filter)",
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontWeight = FontWeight.SemiBold,
-                                color = PrimaryBlack
-                            )
+                            text = "订阅主题 (Topic)",
+                            style = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = OnSurfaceDark)
                         )
                         if (validationResult != null && !validationResult.isValid) {
                             Text(
@@ -647,19 +632,12 @@ private fun SubscriptionConfigModalDialog(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(44.dp)
-                            .clip(RoundedCornerShape(10.dp))
+                            .height(40.dp)
+                            .clip(RoundedCornerShape(8.dp))
                             .background(SurfaceContainerLow)
-                            .padding(horizontal = 12.dp),
+                            .padding(horizontal = 10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Tag,
-                            contentDescription = null,
-                            tint = OutlineGray,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
                         BasicTextField(
                             value = topic,
                             onValueChange = { topic = it },
@@ -668,7 +646,7 @@ private fun SubscriptionConfigModalDialog(
                                 .testTag("sub_dialog_topic_input"),
                             textStyle = TextStyle(
                                 fontFamily = FontFamily.Monospace,
-                                fontSize = 14.sp,
+                                fontSize = 12.5.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = PrimaryBlack
                             ),
@@ -677,111 +655,92 @@ private fun SubscriptionConfigModalDialog(
                             decorationBox = { innerTextField ->
                                 if (topic.isEmpty()) {
                                     Text(
-                                        text = "例如: devices/+/status 或 sensor/#",
-                                        style = TextStyle(
-                                            fontFamily = FontFamily.Monospace,
-                                            fontSize = 13.sp,
-                                            color = OutlineGray
-                                        )
+                                        text = "例如: sensor/+/status 或 device/#",
+                                        style = TextStyle(fontSize = 12.sp, color = OutlineGray)
                                     )
                                 }
                                 innerTextField()
                             }
                         )
-                        if (topic.isNotEmpty()) {
-                            IconButton(
-                                onClick = { topic = "" },
-                                modifier = Modifier.size(24.dp)
+
+                        // 紧凑高级的快速通配符小药丸 (+ / #) 与 清空按钮
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(SurfaceContainerDefault)
+                                    .clickable {
+                                        val trimmed = topic.trim()
+                                        topic = if (trimmed.isEmpty()) "+"
+                                        else if (trimmed.endsWith("/")) "$trimmed+"
+                                        else "$trimmed/+"
+                                    }
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
                             ) {
+                                Text(
+                                    text = "+",
+                                    style = TextStyle(
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = PrimaryBlack,
+                                        platformStyle = PlatformTextStyle(includeFontPadding = false)
+                                    )
+                                )
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(SurfaceContainerDefault)
+                                    .clickable {
+                                        val trimmed = topic.trim()
+                                        topic = if (trimmed.isEmpty()) "#"
+                                        else if (trimmed.endsWith("/")) "$trimmed#"
+                                        else "$trimmed/#"
+                                    }
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Text(
+                                    text = "#",
+                                    style = TextStyle(
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = PrimaryBlack,
+                                        platformStyle = PlatformTextStyle(includeFontPadding = false)
+                                    )
+                                )
+                            }
+                            if (topic.isNotEmpty()) {
                                 Icon(
-                                    imageVector = Icons.Default.Close,
+                                    imageVector = Icons.Default.Cancel,
                                     contentDescription = "清空",
                                     tint = OutlineGray,
-                                    modifier = Modifier.size(15.dp)
+                                    modifier = Modifier
+                                        .size(16.dp)
+                                        .clickable { topic = "" }
                                 )
                             }
                         }
                     }
-
-                    // MQTT Wildcard Helper Chips
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 2.dp),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "通配符:",
-                            style = TextStyle(fontSize = 11.sp, color = OutlineGray)
-                        )
-
-                        // Single-level '+' helper
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(SurfaceContainerLow)
-                                .clickable {
-                                    val trimmed = topic.trim()
-                                    topic = if (trimmed.isEmpty()) "+"
-                                    else if (trimmed.endsWith("/")) "$trimmed+"
-                                    else "$trimmed/+"
-                                }
-                                .padding(horizontal = 8.dp, vertical = 3.dp)
-                        ) {
-                            Text(
-                                text = "+ 单级通配",
-                                style = TextStyle(
-                                    fontFamily = FontFamily.Monospace,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = PrimaryBlack
-                                )
-                            )
-                        }
-
-                        // Multi-level '#' helper
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(SurfaceContainerLow)
-                                .clickable {
-                                    val trimmed = topic.trim()
-                                    topic = if (trimmed.isEmpty()) "#"
-                                    else if (trimmed.endsWith("/")) "$trimmed#"
-                                    else "$trimmed/#"
-                                }
-                                .padding(horizontal = 8.dp, vertical = 3.dp)
-                        ) {
-                            Text(
-                                text = "# 多级通配 (末端)",
-                                style = TextStyle(
-                                    fontFamily = FontFamily.Monospace,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = PrimaryBlack
-                                )
-                            )
-                        }
-                    }
                 }
 
-                // 1.5 Alias / Name Field
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                // 2. 备注名称 (别名)
+                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text(
-                        text = "主题别名 / 备注 (可选)",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontWeight = FontWeight.SemiBold,
-                            color = PrimaryBlack
-                        )
+                        text = "备注名称",
+                        style = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = OnSurfaceDark)
                     )
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(40.dp)
-                            .clip(RoundedCornerShape(10.dp))
+                            .clip(RoundedCornerShape(8.dp))
                             .background(SurfaceContainerLow)
-                            .padding(horizontal = 12.dp),
+                            .padding(horizontal = 10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         BasicTextField(
@@ -790,47 +749,141 @@ private fun SubscriptionConfigModalDialog(
                             modifier = Modifier
                                 .weight(1f)
                                 .testTag("sub_dialog_name_input"),
-                            textStyle = TextStyle(
-                                fontSize = 13.sp,
-                                color = PrimaryBlack
-                            ),
+                            textStyle = TextStyle(fontSize = 12.5.sp, color = PrimaryBlack),
                             singleLine = true,
                             cursorBrush = SolidColor(PrimaryBlack),
                             decorationBox = { innerTextField ->
                                 if (name.isEmpty()) {
                                     Text(
-                                        text = "例如: 高校设备流、断路器监控",
+                                        text = "可选，如: 高校设备流 / 断路器监控",
                                         style = TextStyle(fontSize = 12.sp, color = OutlineGray)
                                     )
                                 }
                                 innerTextField()
                             }
                         )
+                        if (name.isNotEmpty()) {
+                            Icon(
+                                imageVector = Icons.Default.Cancel,
+                                contentDescription = "清除备注",
+                                tint = OutlineGray,
+                                modifier = Modifier
+                                    .size(16.dp)
+                                    .clickable { name = "" }
+                            )
+                        }
                     }
                 }
 
-                // 2. Dot Color Picker (主题圆点颜色选取)
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                // 3. 服务质量 (QoS) - 严格对齐与居中
+                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text(
-                        text = "主题标识颜色 (与实时日志及监控图表联动)",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontWeight = FontWeight.SemiBold,
-                            color = PrimaryBlack
-                        )
+                        text = "服务质量 (QoS)",
+                        style = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = OnSurfaceDark)
                     )
-
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            .height(34.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(SurfaceContainerLow)
+                            .padding(3.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        listOf(
+                            0 to "QoS 0 最多一次",
+                            1 to "QoS 1 至少一次",
+                            2 to "QoS 2 恰好一次"
+                        ).forEach { (qVal, qLabel) ->
+                            val selected = qos == qVal
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight()
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(if (selected) PrimaryBlack else Color.Transparent)
+                                    .clickable { qos = qVal },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = qLabel,
+                                    style = TextStyle(
+                                        fontSize = 11.sp,
+                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                                        color = if (selected) OnPrimaryWhite else OnSurfaceVariantGray,
+                                        platformStyle = PlatformTextStyle(includeFontPadding = false)
+                                    )
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // 4. 保留消息处理机制 (Retain Handling) - 严格对齐与居中
+                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text(
+                        text = "保留消息处理机制 (Retain Handling)",
+                        style = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = OnSurfaceDark)
+                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(34.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(SurfaceContainerLow)
+                            .padding(3.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        listOf(
+                            0 to "0: 建立时发送",
+                            1 to "1: 仅初次发送",
+                            2 to "2: 不发送保留"
+                        ).forEach { (rVal, rLabel) ->
+                            val selected = retainHandling == rVal
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight()
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(if (selected) PrimaryBlack else Color.Transparent)
+                                    .clickable { retainHandling = rVal },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = rLabel,
+                                    style = TextStyle(
+                                        fontSize = 11.sp,
+                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                                        color = if (selected) OnPrimaryWhite else OnSurfaceVariantGray,
+                                        platformStyle = PlatformTextStyle(includeFontPadding = false)
+                                    )
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // 5. 主题颜色标识 (精致等宽微胶囊轨道)
+                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text(
+                        text = "主题颜色标识",
+                        style = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = OnSurfaceDark)
+                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(34.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(SurfaceContainerLow)
+                            .padding(horizontal = 12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         MqttTopicUtil.IOT_DOT_COLORS.forEach { (colorHex, colorName) ->
                             val isSelected = dotColorHex == colorHex
                             Box(
                                 modifier = Modifier
-                                    .size(32.dp)
+                                    .size(if (isSelected) 22.dp else 16.dp)
                                     .clip(CircleShape)
                                     .background(Color(colorHex))
                                     .clickable { dotColorHex = colorHex }
@@ -842,11 +895,11 @@ private fun SubscriptionConfigModalDialog(
                                 contentAlignment = Alignment.Center
                             ) {
                                 if (isSelected) {
-                                    Icon(
-                                        imageVector = Icons.Default.Check,
-                                        contentDescription = "已选取 $colorName",
-                                        tint = OnPrimaryWhite,
-                                        modifier = Modifier.size(18.dp)
+                                    Box(
+                                        modifier = Modifier
+                                            .size(6.dp)
+                                            .clip(CircleShape)
+                                            .background(Color.White)
                                     )
                                 }
                             }
@@ -854,137 +907,32 @@ private fun SubscriptionConfigModalDialog(
                     }
                 }
 
-                // 3. QoS Selector (0, 1, 2)
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(
-                        text = "服务质量等级 (QoS)",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontWeight = FontWeight.SemiBold,
-                            color = PrimaryBlack
-                        )
-                    )
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(38.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(SurfaceContainerLow)
-                            .padding(3.dp),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        listOf(
-                            0 to "QoS 0 最多一次",
-                            1 to "QoS 1 至少一次",
-                            2 to "QoS 2 恰好一次"
-                        ).forEach { (qVal, qLabel) ->
-                            val selected = qos == qVal
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .background(if (selected) PrimaryBlack else Color.Transparent)
-                                    .clickable { qos = qVal }
-                                    .padding(vertical = 6.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = qLabel,
-                                    style = TextStyle(
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = if (selected) OnPrimaryWhite else OnSurfaceVariantGray
-                                    )
-                                )
-                            }
-                        }
-                    }
-                }
-
-                // 4. Retain Handling (保留消息处理机制)
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(
-                        text = "保留消息机制 (Retain Handling)",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontWeight = FontWeight.SemiBold,
-                            color = PrimaryBlack
-                        )
-                    )
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(36.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(SurfaceContainerLow)
-                            .padding(2.dp),
-                        horizontalArrangement = Arrangement.spacedBy(2.dp)
-                    ) {
-                        listOf(
-                            0 to "0: 建立时发送",
-                            1 to "1: 仅初次发送",
-                            2 to "2: 不发送保留"
-                        ).forEach { (rVal, rLabel) ->
-                            val selected = retainHandling == rVal
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .background(if (selected) PrimaryBlack else Color.Transparent)
-                                    .clickable { retainHandling = rVal }
-                                    .padding(vertical = 5.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = rLabel,
-                                    style = TextStyle(
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = if (selected) OnPrimaryWhite else OnSurfaceVariantGray
-                                    )
-                                )
-                            }
-                        }
-                    }
-                }
-
-                // 5. Activation Switch
+                // 6. 激活开关
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column {
-                        Text(
-                            text = "立即生效订阅",
-                            style = MaterialTheme.typography.labelMedium.copy(
-                                fontWeight = FontWeight.SemiBold,
-                                color = PrimaryBlack
-                            )
-                        )
-                        Text(
-                            text = "保存后向 Broker 发送 SUBSCRIBE 报文",
-                            style = MaterialTheme.typography.bodySmall.copy(
-                                fontSize = 11.sp,
-                                color = OnSurfaceVariantGray
-                            )
-                        )
-                    }
-
+                    Text(
+                        text = "立即激活订阅",
+                        style = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = OnSurfaceDark)
+                    )
                     Switch(
                         checked = isEnabled,
                         onCheckedChange = { isEnabled = it },
-                        modifier = Modifier.scale(0.85f),
+                        modifier = Modifier.scale(0.8f),
                         colors = SwitchDefaults.colors(
-                            checkedThumbColor = SurfaceContainerLowest,
+                            checkedThumbColor = OnPrimaryWhite,
                             checkedTrackColor = PrimaryBlack,
-                            uncheckedThumbColor = SurfaceContainerLowest,
+                            uncheckedThumbColor = OnSurfaceVariantGray,
                             uncheckedTrackColor = SurfaceContainerLow
                         )
                     )
                 }
 
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(2.dp))
 
-                // Bottom Action Buttons: Cancel, Delete (if edit), Save
+                // 7. 底部操作按钮 (取消、删除、保存，高度统一 38dp)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -993,7 +941,8 @@ private fun SubscriptionConfigModalDialog(
                     if (isEditMode) {
                         TextButton(
                             onClick = { onDelete(initialItem!!.id) },
-                            colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFDC2626))
+                            colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFDC2626)),
+                            modifier = Modifier.height(38.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Delete,
@@ -1010,7 +959,8 @@ private fun SubscriptionConfigModalDialog(
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         TextButton(
                             onClick = onDismiss,
-                            colors = ButtonDefaults.textButtonColors(contentColor = OnSurfaceVariantGray)
+                            colors = ButtonDefaults.textButtonColors(contentColor = OnSurfaceVariantGray),
+                            modifier = Modifier.height(38.dp)
                         ) {
                             Text(text = "取消", fontSize = 13.sp)
                         }
@@ -1036,7 +986,7 @@ private fun SubscriptionConfigModalDialog(
                                 onSave(savedItem)
                             },
                             enabled = topic.isNotBlank() && (validationResult?.isValid != false),
-                            shape = RoundedCornerShape(10.dp),
+                            shape = RoundedCornerShape(8.dp),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = PrimaryBlack,
                                 contentColor = OnPrimaryWhite,
@@ -1044,13 +994,13 @@ private fun SubscriptionConfigModalDialog(
                                 disabledContentColor = OutlineGray
                             ),
                             modifier = Modifier
-                                .height(40.dp)
+                                .height(38.dp)
                                 .testTag("sub_dialog_save_btn")
                         ) {
                             Text(
                                 text = if (isEditMode) "保存修改" else "保存订阅",
                                 style = TextStyle(
-                                    fontSize = 13.sp,
+                                    fontSize = 12.5.sp,
                                     fontWeight = FontWeight.Bold
                                 )
                             )
