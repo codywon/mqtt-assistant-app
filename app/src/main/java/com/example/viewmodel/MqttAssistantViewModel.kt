@@ -1144,7 +1144,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
             MqttBackgroundService.updateNotification(
                 context = getApplication(),
                 brokerHost = brokerLabel,
-                count = 0,
+                count = 0L,
                 latestTopic = null
             )
         }

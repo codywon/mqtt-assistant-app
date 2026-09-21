@@ -52,7 +52,7 @@ class MqttBackgroundService : Service() {
             private set
 
         private var currentBrokerHost: String = ""
-        private var totalPacketCount: Int = 0
+        private var totalPacketCount: Long = 0L
         private var latestMessageTopic: String? = null
 
         fun startKeepAlive(context: Context, brokerHost: String = "MQTT Broker") {
@@ -76,7 +76,7 @@ class MqttBackgroundService : Service() {
         fun updateNotification(
             context: Context,
             brokerHost: String? = null,
-            count: Int? = null,
+            count: Long? = null,
             latestTopic: String? = null
         ) {
             brokerHost?.let { currentBrokerHost = it }
@@ -124,10 +124,10 @@ class MqttBackgroundService : Service() {
             }
             ACTION_UPDATE_STATS -> {
                 val host = intent.getStringExtra(EXTRA_BROKER)
-                val count = intent.getIntExtra(EXTRA_COUNT, -1)
+                val count = intent.getLongExtra(EXTRA_COUNT, -1L)
                 val topic = intent.getStringExtra(EXTRA_TOPIC)
                 if (!host.isNullOrBlank()) currentBrokerHost = host
-                if (count >= 0) totalPacketCount = count
+                if (count >= 0L) totalPacketCount = count
                 if (topic != null) latestMessageTopic = topic
 
                 refreshNotification()

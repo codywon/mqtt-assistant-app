@@ -55,8 +55,7 @@ class MqttStorageRepository(context: Context) {
                         )
                     )
                 }
-                    return list
-                }
+                return list
             } catch (e: Exception) {
                 e.printStackTrace()
             }
