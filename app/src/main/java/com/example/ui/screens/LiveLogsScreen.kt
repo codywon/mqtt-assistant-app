@@ -72,6 +72,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.PlatformTextStyle
@@ -140,19 +141,28 @@ fun LiveLogsScreen(
         }
     }
 
-    // 智能丝滑吸底机制：彻底消除高并发消息冲刷下的“动画打断剧烈抖动与闪屏”
+    val onSelectPacket: (MqttLogPacket) -> Unit = remember {
+        { packet -> selectedDetailsPacket = packet }
+    }
+    val onCopyTopicText: (String) -> Unit = remember {
+        { topic ->
+            clipboardManager.setPrimaryClip(ClipData.newPlainText("topic", topic))
+            viewModel.showToast("已复制主题: $topic")
+        }
+    }
+    val onCopyPayloadText: (String) -> Unit = remember {
+        { payload ->
+            clipboardManager.setPrimaryClip(ClipData.newPlainText("payload", payload))
+            viewModel.showToast("已复制消息内容")
+        }
+    }
+
+    // 工业级防抖吸底引擎：加入 40ms 节流，在密集消息冲刷时合并瞬时跳动，彻底根除上下疯狂抽搐闪屏
     LaunchedEffect(filteredPackets.size, isPaused) {
         if (!isPaused && filteredPackets.isNotEmpty()) {
             val targetIndex = filteredPackets.size - 1
-            val lastVisibleIndex = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-            val distance = targetIndex - lastVisibleIndex
-            if (distance > 2) {
-                // 并发爆发涌入多条，直接无感瞬时吸底，避免动画频繁被打断重启而引发的剧烈上下抽搐/闪屏
-                listState.scrollToItem(targetIndex)
-            } else {
-                // 低频单条平滑微吸附
-                listState.animateScrollToItem(targetIndex)
-            }
+            kotlinx.coroutines.delay(40)
+            listState.scrollToItem(targetIndex)
         }
     }
 
@@ -384,15 +394,9 @@ fun LiveLogsScreen(
                         CompactMessageCard(
                             packet = packet,
                             isJsonPretty = isJsonPretty,
-                            onClick = { selectedDetailsPacket = packet },
-                            onCopyTopic = {
-                                clipboardManager.setPrimaryClip(ClipData.newPlainText("topic", packet.topic))
-                                viewModel.showToast("已复制主题: ${packet.topic}")
-                            },
-                            onCopyPayload = {
-                                clipboardManager.setPrimaryClip(ClipData.newPlainText("payload", packet.payload))
-                                viewModel.showToast("已复制消息内容")
-                            }
+                            onCardClick = onSelectPacket,
+                            onCopyTopic = onCopyTopicText,
+                            onCopyPayload = onCopyPayloadText
                         )
                     }
                 }
@@ -483,9 +487,9 @@ fun LiveLogsScreen(
 private fun CompactMessageCard(
     packet: MqttLogPacket,
     isJsonPretty: Boolean,
-    onClick: () -> Unit,
-    onCopyTopic: () -> Unit,
-    onCopyPayload: () -> Unit
+    onCardClick: (MqttLogPacket) -> Unit,
+    onCopyTopic: (String) -> Unit,
+    onCopyPayload: (String) -> Unit
 ) {
     Card(
         shape = RoundedCornerShape(10.dp),
@@ -493,7 +497,7 @@ private fun CompactMessageCard(
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .clickable(onClick = { onCardClick(packet) })
             .testTag("log_packet_${packet.id}")
     ) {
         Column(
@@ -511,7 +515,7 @@ private fun CompactMessageCard(
                     modifier = Modifier
                         .weight(1f)
                         .clip(RoundedCornerShape(4.dp))
-                        .clickable(onClick = onCopyTopic)
+                        .clickable(onClick = { onCopyTopic(packet.topic) })
                         .padding(end = 8.dp)
                 ) {
                     Box(
@@ -537,7 +541,7 @@ private fun CompactMessageCard(
                 }
 
                 IconButton(
-                    onClick = onCopyPayload,
+                    onClick = { onCopyPayload(packet.payload) },
                     modifier = Modifier.size(24.dp)
                 ) {
                     Icon(
@@ -655,6 +659,7 @@ private fun MessageDetailsModalDialog(
     onCopyPayload: () -> Unit,
     onLoadIntoPublish: () -> Unit
 ) {
+    val maxDialogHeight = (LocalConfiguration.current.screenHeightDp * 0.85f).dp
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
@@ -665,12 +670,13 @@ private fun MessageDetailsModalDialog(
             elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
             modifier = Modifier
                 .fillMaxWidth(0.92f)
-                .fillMaxHeight(0.85f)
+                .heightIn(max = maxDialogHeight)
                 .padding(vertical = 16.dp)
         ) {
             Column(
                 modifier = Modifier
-                    .fillMaxSize()
+                    .fillMaxWidth()
+                    .wrapContentHeight()
                     .padding(18.dp)
             ) {
                 // 1. 顶部固定 Header (标题与关闭按钮常驻)
@@ -701,11 +707,11 @@ private fun MessageDetailsModalDialog(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // 2. 中间独立平滑滚动区域 (主题卡片 + JSON 代码块，weight(1f) 自适应撑满剩余高度)
+                // 2. 中间滚动区域 (weight(1f, fill = false) 紧凑包裹内容，长消息时才开启内部滚动，底端零冗余留白)
                 Column(
                     modifier = Modifier
-                        .weight(1f)
                         .fillMaxWidth()
+                        .weight(1f, fill = false)
                         .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
@@ -803,17 +809,18 @@ private fun MessageDetailsModalDialog(
                         onClick = onDismiss,
                         modifier = Modifier
                             .weight(1f)
-                            .height(44.dp),
-                        shape = RoundedCornerShape(10.dp),
+                            .height(38.dp),
+                        shape = RoundedCornerShape(8.dp),
                         border = BorderStroke(0.8.dp, OutlineVariantLight),
                         colors = ButtonDefaults.outlinedButtonColors(
                             contentColor = PrimaryBlack
-                        )
+                        ),
+                        contentPadding = PaddingValues(0.dp)
                     ) {
                         Text(
                             text = "关闭",
                             style = TextStyle(
-                                fontSize = 13.sp,
+                                fontSize = 12.5.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = PrimaryBlack
                             )
@@ -824,12 +831,13 @@ private fun MessageDetailsModalDialog(
                         onClick = onLoadIntoPublish,
                         modifier = Modifier
                             .weight(1.3f)
-                            .height(44.dp),
-                        shape = RoundedCornerShape(10.dp),
+                            .height(38.dp),
+                        shape = RoundedCornerShape(8.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = PrimaryBlack,
                             contentColor = OnPrimaryWhite
                         ),
+                        contentPadding = PaddingValues(0.dp),
                         elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp)
                     ) {
                         Icon(

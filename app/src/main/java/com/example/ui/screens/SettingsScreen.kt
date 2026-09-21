@@ -1021,25 +1021,18 @@ fun SettingsScreen(
                         )
                     }
 
-                    Button(
-                        onClick = { viewModel.toggleConnection() },
-                        shape = RoundedCornerShape(8.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = PrimaryBlack,
-                            contentColor = OnPrimaryWhite
-                        ),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                        modifier = Modifier
-                            .height(32.dp)
-                            .testTag("reconnect_action_btn")
-                    ) {
-                        Text(
-                            text = if (connectionState == MqttConnectionState.CONNECTED) "断开测试" else "立即重连",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
-                        )
+                    // 状态指示微点
+                    val dotColor = when (connectionState) {
+                        MqttConnectionState.CONNECTED -> AccentEmerald
+                        MqttConnectionState.CONNECTING, MqttConnectionState.RECONNECTING -> Color(0xFFD97706)
+                        else -> OutlineGray
                     }
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .clip(CircleShape)
+                            .background(dotColor)
+                    )
                 }
 
                 // 1. Auto Reconnect switch
