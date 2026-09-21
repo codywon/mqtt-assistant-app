@@ -892,39 +892,6 @@ fun SettingsScreen(
                     )
                 }
 
-                // Auto Reconnect
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "自动重连",
-                            style = MaterialTheme.typography.labelMedium.copy(
-                                fontWeight = FontWeight.SemiBold,
-                                color = PrimaryBlack
-                            )
-                        )
-                        Text(
-                            text = "弱网或断线后启用指数避让算法持续重试",
-                            style = MaterialTheme.typography.bodySmall.copy(
-                                fontSize = 12.sp,
-                                color = OnSurfaceVariantGray
-                            )
-                        )
-                    }
-                    Switch(
-                        checked = config.autoReconnect,
-                        onCheckedChange = { viewModel.toggleAutoReconnect() },
-                        modifier = Modifier.testTag("auto_reconnect_switch"),
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = SurfaceContainerLowest,
-                            checkedTrackColor = PrimaryBlack
-                        )
-                    )
-                }
-
                 // TLS / SSL
                 Row(
                     modifier = Modifier.fillMaxWidth(),
