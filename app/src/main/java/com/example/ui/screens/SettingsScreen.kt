@@ -1003,23 +1003,6 @@ fun SettingsScreen(
                             )
                         )
                     }
-
-                    Box(
-                        modifier = Modifier
-                            .clip(CircleShape)
-                            .background(SurfaceContainerLow)
-                            .padding(horizontal = 8.dp, vertical = 3.dp)
-                    ) {
-                        Text(
-                            text = "生产级引擎",
-                            style = TextStyle(
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = PrimaryBlack
-                            )
-                        )
-                    }
                 }
 
                 // Status Banner
