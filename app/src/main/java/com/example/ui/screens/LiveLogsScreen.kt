@@ -111,6 +111,7 @@ fun LiveLogsScreen(
 
     var selectedDetailsPacket by remember { mutableStateOf<MqttLogPacket?>(null) }
     var isTopicFilterDialogVisible by remember { mutableStateOf(false) }
+    val totalFilterRules = includeFilters.size + excludeFilters.size
 
     val filteredPackets = packets.filter { packet ->
         val matchesAllowed = MqttTopicUtil.isTopicAllowed(packet.topic, includeFilters, excludeFilters)
@@ -192,7 +193,6 @@ fun LiveLogsScreen(
                     }
 
                     // 1. 主题过滤规则 (包含/排除) 纯净图标按钮 - 彻底去除灰底色块
-                    val totalFilterRules = includeFilters.size + excludeFilters.size
                     IconButton(
                         onClick = { isTopicFilterDialogVisible = true },
                         modifier = Modifier
