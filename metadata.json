@@ -1,0 +1,6 @@
+{
+  "name": "MQTT Assistant",
+  "description": "极简纯净版 MQTT 客户端，支持消息发布、主题订阅、实时日志流与服务器配置。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

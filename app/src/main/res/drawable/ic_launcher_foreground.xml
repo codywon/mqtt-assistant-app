@@ -1,0 +1,36 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Center node -->
+    <path
+        android:fillColor="#00E676"
+        android:pathData="M54,49a5,5 0 1,0 0.001,0z" />
+    <!-- Outer beacon broadcast rings -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3.2"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M43,38 A15,15 0 0,1 65,38" />
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3.2"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M35,30 A27,27 0 0,1 73,30" />
+    <!-- Connected telemetry nodes -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.8"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M54,54 L54,72 M54,64 L38,76 M54,64 L70,76" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,72a3.5,3.5 0 1,0 0.001,0z M38,76a3.5,3.5 0 1,0 0.001,0z M70,76a3.5,3.5 0 1,0 0.001,0z" />
+    <path
+        android:fillColor="#00E676"
+        android:pathData="M38,76a2,2 0 1,0 0.001,0z M70,76a2,2 0 1,0 0.001,0z" />
+</vector>

@@ -1,0 +1,104 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ "main", "master" ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: '选择构建类型 (debug / release / all)'
+        required: true
+        default: 'debug'
+        type: choice
+        options:
+          - debug
+          - release
+          - all
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Accept Android SDK Licenses
+        run: |
+          yes | sdkmanager --licenses || true
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.3.1'
+          cache-read-only: false
+
+      - name: Ensure Gradle Wrapper & Permissions
+        run: |
+          if [ ! -f "gradle/wrapper/gradle-wrapper.jar" ]; then
+            echo "Generating Gradle wrapper jar..."
+            gradle wrapper --gradle-version 9.3.1
+          fi
+          chmod +x gradlew
+
+      - name: Prepare Environment File
+        run: |
+          if [ ! -f ".env" ] && [ -f ".env.example" ]; then
+            cp .env.example .env
+          fi
+
+      - name: Build Debug APK
+        if: ${{ github.event.inputs.build_type == 'debug' || github.event.inputs.build_type == 'all' || github.event.inputs.build_type == '' }}
+        run: |
+          ./gradlew assembleDebug --stacktrace --no-daemon
+
+      - name: Build Release APK
+        if: ${{ github.event.inputs.build_type == 'release' || github.event.inputs.build_type == 'all' }}
+        run: |
+          ./gradlew assembleRelease --stacktrace --no-daemon || true
+
+      - name: Collect & Rename APK Files
+        run: |
+          mkdir -p output_apks
+          if [ -f "app/build/outputs/apk/debug/app-debug.apk" ]; then
+            cp app/build/outputs/apk/debug/app-debug.apk output_apks/MQTT-Assistant-debug.apk
+          fi
+          if [ -f "app/build/outputs/apk/release/app-release.apk" ]; then
+            cp app/build/outputs/apk/release/app-release.apk output_apks/MQTT-Assistant-release.apk
+          fi
+          if [ -f "app/build/outputs/apk/release/app-release-unsigned.apk" ]; then
+            cp app/build/outputs/apk/release/app-release-unsigned.apk output_apks/MQTT-Assistant-release-unsigned.apk
+          fi
+          echo "Collected APKs:"
+          ls -lh output_apks/
+
+      - name: Upload APK to Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: MQTT-Assistant-APK
+          path: output_apks/*.apk
+          retention-days: 30
+
+      - name: Create Release and Upload APK
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: output_apks/*.apk
+          generate_release_notes: true
