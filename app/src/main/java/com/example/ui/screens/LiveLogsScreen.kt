@@ -327,55 +327,11 @@ fun LiveLogsScreen(
                     if (totalFilterRules > 0) {
                         Text(
                             text = "过滤已生效 (${totalFilterRules}条规则)",
-                            style = TextStyle(fontSize = 10.5.sp, color = OnSurfaceVariantGray)
+                            style = TextStyle(fontSize = 10.5.sp, color = OnSurfaceVariantGray),
+                            modifier = Modifier.clickable { isTopicFilterDialogVisible = true }
                         )
                     }
                 }
-            }
-        }
-
-        // 过滤规则生效指示横幅 (参考 PC 客户端，支持通配符)
-        if (totalFilterRules > 0) {
-            val filterSummary = buildString {
-                if (excludeFilters.isNotEmpty()) append("已排除 ${excludeFilters.size} 项 ")
-                if (includeFilters.isNotEmpty()) append("已包含 ${includeFilters.size} 项")
-            }
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 2.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(SurfaceContainerLowest)
-                    .border(0.6.dp, SurfaceContainerDefault, RoundedCornerShape(8.dp))
-                    .clickable { isTopicFilterDialogVisible = true }
-                    .padding(horizontal = 12.dp, vertical = 7.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.FilterAlt,
-                        contentDescription = null,
-                        tint = PrimaryBlack,
-                        modifier = Modifier.size(14.dp)
-                    )
-                    Text(
-                        text = "过滤已生效: $filterSummary",
-                        style = TextStyle(
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = PrimaryBlack
-                        )
-                    )
-                }
-                Text(
-                    text = "配置规则 >",
-                    style = TextStyle(fontSize = 11.sp, color = OnSurfaceVariantGray, fontWeight = FontWeight.Medium)
-                )
             }
         }
 
