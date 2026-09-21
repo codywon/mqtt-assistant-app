@@ -183,6 +183,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 serverConfig.update { it.copy(isConnected = true) }
                 reconnectAttempt.value = 0
                 reconnectCountdown.value = 0
+                persistCurrentActiveBrokerProfile()
                 // Auto-subscribe all enabled subscriptions on the connected broker
                 viewModelScope.launch {
                     val activeSubs = subscriptions.value.filter { it.isEnabled }
@@ -216,6 +217,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
             if (result.isSuccess) {
                 connectionState.value = MqttConnectionState.CONNECTED
                 serverConfig.update { it.copy(isConnected = true) }
+                persistCurrentActiveBrokerProfile()
                 val activeSubs = subscriptions.value.filter { it.isEnabled }
                 activeSubs.forEach { sub ->
                     MqttClientManager.subscribe(sub.topic, sub.qos)
@@ -278,6 +280,40 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
         reconnectAttempt.value = 0
         reconnectCountdown.value = 0
         connectToBroker()
+    }
+
+    fun switchToNextBroker() {
+        val profiles = brokerProfiles.value
+        if (profiles.isEmpty()) return
+        if (profiles.size == 1) {
+            showToast("当前节点: ${profiles.first().name} (${profiles.first().host})")
+            return
+        }
+        val currentIndex = profiles.indexOfFirst { it.id == activeBrokerId.value }
+        val nextIndex = (currentIndex + 1).coerceAtLeast(0) % profiles.size
+        selectBroker(profiles[nextIndex].id)
+    }
+
+    fun persistCurrentActiveBrokerProfile() {
+        val activeId = activeBrokerId.value
+        storage.saveActiveBrokerId(activeId)
+        val currentProfiles = brokerProfiles.value.toMutableList()
+        val activeIndex = currentProfiles.indexOfFirst { it.id == activeId }
+        if (activeIndex >= 0) {
+            currentProfiles[activeIndex] = currentProfiles[activeIndex].copy(
+                host = serverConfig.value.host,
+                port = serverConfig.value.port,
+                clientId = serverConfig.value.clientId,
+                username = serverConfig.value.username,
+                password = serverConfig.value.password,
+                protocol = serverConfig.value.protocol,
+                cleanSession = serverConfig.value.cleanSession,
+                tlsEnabled = serverConfig.value.tlsEnabled,
+                keepAlive = serverConfig.value.keepAlive
+            )
+            brokerProfiles.value = currentProfiles
+            storage.saveBrokerProfiles(currentProfiles)
+        }
     }
 
     fun saveOrUpdateBroker(broker: BrokerProfile) {
@@ -917,17 +953,14 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
     }
 
     fun startAutoReconnectLoop() {
-        val maxAttempts = serverConfig.value.maxReconnectAttempts.coerceAtLeast(1)
-        if (reconnectAttempt.value >= maxAttempts) {
-            connectionState.value = MqttConnectionState.ERROR
-            showToast("已达最大重试次数 ($maxAttempts)，请检查网络或配置后手动连接")
-            return
-        }
+        if (!serverConfig.value.autoReconnect) return
         reconnectJob?.cancel()
         reconnectJob = viewModelScope.launch {
             connectionState.value = MqttConnectionState.RECONNECTING
             reconnectAttempt.value += 1
-            val interval = serverConfig.value.reconnectIntervalSeconds.coerceAtLeast(3)
+            // 工业级优雅退避重试：前 3 次使用用户设置间隔（默认 5s），后续按 10s 周期性重试，直到网络就绪连上
+            val baseSec = serverConfig.value.reconnectIntervalSeconds.coerceAtLeast(3)
+            val interval = if (reconnectAttempt.value <= 3) baseSec else 10
             for (sec in interval downTo 1) {
                 reconnectCountdown.value = sec
                 delay(1000)
@@ -939,19 +972,17 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 connectionState.value = MqttConnectionState.CONNECTED
                 serverConfig.update { it.copy(isConnected = true) }
                 reconnectAttempt.value = 0
+                persistCurrentActiveBrokerProfile()
                 val activeSubs = subscriptions.value.filter { it.isEnabled }
                 activeSubs.forEach { sub ->
                     MqttClientManager.subscribe(sub.topic, sub.qos)
                 }
-                showToast("断线自动重连成功！已恢复 ${activeSubs.size} 个有效主题订阅")
+                showToast("网络恢复，已自动重连 Broker！已恢复 ${activeSubs.size} 个主题订阅")
             } else {
                 connectionState.value = MqttConnectionState.DISCONNECTED
                 serverConfig.update { it.copy(isConnected = false) }
-                if (serverConfig.value.autoReconnect && reconnectAttempt.value < maxAttempts) {
+                if (serverConfig.value.autoReconnect) {
                     startAutoReconnectLoop()
-                } else {
-                    connectionState.value = MqttConnectionState.ERROR
-                    showToast("重试连接失败，已停止自动重连")
                 }
             }
         }

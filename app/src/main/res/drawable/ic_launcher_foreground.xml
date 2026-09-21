@@ -3,34 +3,72 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Center node -->
+
+    <!-- Bottom Data Transmission Bus Line -->
     <path
-        android:fillColor="#00E676"
-        android:pathData="M54,49a5,5 0 1,0 0.001,0z" />
-    <!-- Outer beacon broadcast rings -->
+        android:pathData="M39,71 L69,71"
+        android:strokeWidth="1.6"
+        android:strokeColor="#45FFFFFF"
+        android:strokeLineCap="round" />
+
+    <!-- Left Wing Ribbon: Futuristic "M" Pillar & Pub Flow -->
     <path
+        android:pathData="M34,71 L34,44 C34,40.5 37,37.5 41,37.5 C43.5,37.5 45.8,39 47.2,41.2 L54,52 L50.5,52 L44.8,42.8 C44.2,41.8 43.2,41.3 42,41.3 C40.3,41.3 39,42.6 39,44.3 L39,71 Z"
+        android:fillColor="#FFFFFF" />
+
+    <!-- Right Wing Ribbon: Futuristic "M" Pillar & Sub Flow -->
+    <path
+        android:pathData="M74,71 L74,44 C74,40.5 71,37.5 67,37.5 C64.5,37.5 62.2,39 60.8,41.2 L54,52 L57.5,52 L63.2,42.8 C63.8,41.8 64.8,41.3 66,41.3 C67.7,41.3 69,42.6 69,44.3 L69,71 Z"
+        android:fillColor="#E2E8F0" />
+
+    <!-- Central Precision Confluence Chevron -->
+    <path
+        android:pathData="M46.5,63 L54,52 L61.5,63 L58.5,65.5 L54,59.5 L49.5,65.5 Z"
+        android:fillColor="#FFFFFF" />
+
+    <!-- Central Broker Nexus Core Outer Glow Orbit -->
+    <path
+        android:pathData="M54,54m-5.5,0a5.5,5.5 0 1,1 11,0a5.5,5.5 0 1,1 -11,0"
+        android:strokeWidth="1.8"
+        android:strokeColor="#10B981"
+        android:fillColor="#0F1117" />
+
+    <!-- Central Broker Pulse Core (Emerald Energy Spot) -->
+    <path
+        android:pathData="M54,54m-2.8,0a2.8,2.8 0 1,1 5.6,0a2.8,2.8 0 1,1 -5.6,0"
+        android:fillColor="#34D399" />
+
+    <!-- Central Specular Highlight -->
+    <path
+        android:pathData="M53.2,53.2m-0.8,0a0.8,0.8 0 1,1 1.6,0a0.8,0.8 0 1,1 -1.6,0"
+        android:fillColor="#FFFFFF" />
+
+    <!-- Terminal Endpoints (Precision IoT Satellite Nodes) -->
+    <!-- Left Endpoint -->
+    <path
+        android:pathData="M34,71m-2.2,0a2.2,2.2 0 1,1 4.4,0a2.2,2.2 0 1,1 -4.4,0"
+        android:strokeWidth="1.2"
         android:strokeColor="#FFFFFF"
-        android:strokeWidth="3.2"
-        android:strokeLineCap="round"
-        android:fillColor="#00000000"
-        android:pathData="M43,38 A15,15 0 0,1 65,38" />
+        android:fillColor="#0F1117" />
     <path
+        android:pathData="M34,71m-1,0a1,1 0 1,1 2,0a1,1 0 1,1 -2,0"
+        android:fillColor="#10B981" />
+
+    <!-- Right Endpoint -->
+    <path
+        android:pathData="M74,71m-2.2,0a2.2,2.2 0 1,1 4.4,0a2.2,2.2 0 1,1 -4.4,0"
+        android:strokeWidth="1.2"
         android:strokeColor="#FFFFFF"
-        android:strokeWidth="3.2"
-        android:strokeLineCap="round"
-        android:fillColor="#00000000"
-        android:pathData="M35,30 A27,27 0 0,1 73,30" />
-    <!-- Connected telemetry nodes -->
+        android:fillColor="#0F1117" />
     <path
-        android:strokeColor="#FFFFFF"
-        android:strokeWidth="2.8"
-        android:strokeLineCap="round"
-        android:fillColor="#00000000"
-        android:pathData="M54,54 L54,72 M54,64 L38,76 M54,64 L70,76" />
+        android:pathData="M74,71m-1,0a1,1 0 1,1 2,0a1,1 0 1,1 -2,0"
+        android:fillColor="#10B981" />
+
+    <!-- Top Left & Right Peak Anchor Dots -->
     <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M54,72a3.5,3.5 0 1,0 0.001,0z M38,76a3.5,3.5 0 1,0 0.001,0z M70,76a3.5,3.5 0 1,0 0.001,0z" />
+        android:pathData="M41,37.5m-1.2,0a1.2,1.2 0 1,1 2.4,0a1.2,1.2 0 1,1 -2.4,0"
+        android:fillColor="#FFFFFF" />
     <path
-        android:fillColor="#00E676"
-        android:pathData="M38,76a2,2 0 1,0 0.001,0z M70,76a2,2 0 1,0 0.001,0z" />
+        android:pathData="M67,37.5m-1.2,0a1.2,1.2 0 1,1 2.4,0a1.2,1.2 0 1,1 -2.4,0"
+        android:fillColor="#FFFFFF" />
 </vector>

@@ -25,8 +25,10 @@ import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Podcasts
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.material3.ripple
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -67,8 +69,7 @@ fun AppTopBar(
     brokerHost: String,
     reconnectCountdown: Int = 0,
     onBadgeClick: () -> Unit = {},
-    onRefresh: () -> Unit,
-    onProfileClick: () -> Unit
+    onSwitchBroker: () -> Unit = {}
 ) {
     Surface(
         modifier = Modifier
@@ -93,7 +94,7 @@ fun AppTopBar(
                     Text(
                         text = "MQTT Assistant",
                         style = MaterialTheme.typography.titleMedium.copy(
-                            fontSize = 18.sp,
+                            fontSize = 17.sp,
                             fontWeight = FontWeight.Bold,
                             color = PrimaryBlack,
                             letterSpacing = (-0.3).sp
@@ -102,23 +103,23 @@ fun AppTopBar(
                         overflow = TextOverflow.Ellipsis
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    // Broker badge
+                    // Broker badge (单一权威连接状态与一键重连/断开控制)
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
                             .clip(CircleShape)
                             .background(SurfaceContainerLow)
                             .clickable(onClick = onBadgeClick)
-                            .padding(horizontal = 8.dp, vertical = 3.dp)
+                            .padding(horizontal = 9.dp, vertical = 4.dp)
                             .testTag("top_broker_badge")
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(6.dp)
+                                .size(7.dp)
                                 .clip(CircleShape)
                                 .background(
                                     when (connectionState) {
-                                        MqttConnectionState.CONNECTED -> PrimaryBlack
+                                        MqttConnectionState.CONNECTED -> Color(0xFF10B981)
                                         MqttConnectionState.CONNECTING,
                                         MqttConnectionState.RECONNECTING -> PrimaryBlack.copy(alpha = 0.4f)
                                         else -> Color.Gray
@@ -130,14 +131,15 @@ fun AppTopBar(
                             MqttConnectionState.CONNECTED -> brokerHost
                             MqttConnectionState.CONNECTING -> "正在连接..."
                             MqttConnectionState.RECONNECTING -> "重连中 (${reconnectCountdown}s)"
-                            MqttConnectionState.DISCONNECTED -> "未连接 · 轻触重连"
-                            MqttConnectionState.ERROR -> "连接异常 · 轻触重连"
+                            MqttConnectionState.DISCONNECTED -> "未连接 · 点击连接"
+                            MqttConnectionState.ERROR -> "连接失败 · 点击重试"
                         }
                         Text(
                             text = badgeText,
                             style = MaterialTheme.typography.labelSmall.copy(
-                                fontSize = 11.sp,
-                                color = OnSurfaceVariantGray
+                                fontSize = 11.5.sp,
+                                fontFamily = FontFamily.Monospace,
+                                color = if (connectionState == MqttConnectionState.CONNECTED) PrimaryBlack else OnSurfaceVariantGray
                             ),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
@@ -145,42 +147,22 @@ fun AppTopBar(
                     }
                 }
 
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                // 右侧：仅保留实用的“快速切换 Broker 节点”操作，彻底去除重复的刷新图标
+                IconButton(
+                    onClick = onSwitchBroker,
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(SurfaceContainerLow)
+                        .testTag("top_switch_broker_btn")
+                        .semantics { contentDescription = "切换 Broker 节点" }
                 ) {
-                    IconButton(
-                        onClick = onRefresh,
-                        modifier = Modifier
-                            .size(38.dp)
-                            .testTag("top_refresh_btn")
-                            .semantics { contentDescription = "刷新服务状态" }
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Refresh,
-                            contentDescription = "刷新",
-                            tint = OnSurfaceVariantGray,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-
-                    Box(
-                        modifier = Modifier
-                            .size(32.dp)
-                            .clip(CircleShape)
-                            .background(PrimaryBlack)
-                            .clickable(onClick = onProfileClick)
-                            .testTag("top_profile_btn")
-                            .semantics { contentDescription = "用户信息" },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Person,
-                            contentDescription = "用户",
-                            tint = OnPrimaryWhite,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
+                    Icon(
+                        imageVector = Icons.Default.SwapHoriz,
+                        contentDescription = "切换节点",
+                        tint = PrimaryBlack,
+                        modifier = Modifier.size(19.dp)
+                    )
                 }
             }
             HorizontalDivider(color = SurfaceContainerDefault, thickness = 0.5.dp)

@@ -125,15 +125,8 @@ fun MqttAssistantApp(
                 onBadgeClick = {
                     viewModel.toggleConnection()
                 },
-                onRefresh = {
-                    if (serverConfig.isConnected) {
-                        viewModel.showToast("Broker 连接正常: ${serverConfig.host}")
-                    } else {
-                        viewModel.triggerManualReconnect()
-                    }
-                },
-                onProfileClick = {
-                    viewModel.showToast("用户: ${serverConfig.username} (${serverConfig.clientId})")
+                onSwitchBroker = {
+                    viewModel.switchToNextBroker()
                 }
             )
         },
