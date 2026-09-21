@@ -43,6 +43,7 @@ import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Tag
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -121,6 +122,7 @@ fun SubscribeScreen(
     // State for modal dialog (creating or editing subscription)
     var isDialogVisible by remember { mutableStateOf(false) }
     var editingItem by remember { mutableStateOf<SubscriptionItem?>(null) }
+    var itemToDelete by remember { mutableStateOf<SubscriptionItem?>(null) }
 
     // State for PC-grade Topic Filter Rules (Include / Exclude)
     var isTopicFilterDialogVisible by remember { mutableStateOf(false) }
@@ -338,10 +340,63 @@ fun SubscribeScreen(
                         viewModel.showToast("已复制主题: ${sub.topic}")
                     },
                     onEdit = { openEditDialog(sub) },
-                    onDelete = { viewModel.removeSubscription(sub.id) }
+                    onDelete = { itemToDelete = sub }
                 )
             }
         }
+    }
+
+    // Confirmation Dialog for Safe Deletion (Prevents accidental deletion)
+    itemToDelete?.let { target ->
+        AlertDialog(
+            onDismissRequest = { itemToDelete = null },
+            shape = RoundedCornerShape(16.dp),
+            containerColor = SurfaceContainerLowest,
+            title = {
+                Text(
+                    text = "确认删除订阅？",
+                    style = TextStyle(
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = PrimaryBlack
+                    )
+                )
+            },
+            text = {
+                Text(
+                    text = "确定要删除订阅「${target.topic}」吗？删除后将停止接收该主题的报文推送并移除相关统计。",
+                    style = TextStyle(
+                        fontSize = 13.5.sp,
+                        lineHeight = 20.sp,
+                        color = OnSurfaceDark
+                    )
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.removeSubscription(target.id)
+                        itemToDelete = null
+                        viewModel.showToast("已删除订阅: ${target.topic}")
+                    },
+                    shape = RoundedCornerShape(8.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = PrimaryBlack,
+                        contentColor = OnPrimaryWhite
+                    )
+                ) {
+                    Text("确认删除", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { itemToDelete = null },
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text("取消", color = OnSurfaceVariantGray)
+                }
+            }
+        )
     }
 
     // Modal Dialog for Editing or Adding a Subscription
@@ -503,10 +558,16 @@ private fun SubscriptionItemCard(
                 )
 
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(onClick = onCopy, modifier = Modifier.size(28.dp)) {
+                    IconButton(
+                        onClick = onCopy,
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .background(SurfaceContainerLow)
+                    ) {
                         Icon(
                             imageVector = Icons.Default.ContentCopy,
                             contentDescription = "复制主题",
@@ -514,7 +575,13 @@ private fun SubscriptionItemCard(
                             modifier = Modifier.size(15.dp)
                         )
                     }
-                    IconButton(onClick = onEdit, modifier = Modifier.size(28.dp)) {
+                    IconButton(
+                        onClick = onEdit,
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .background(SurfaceContainerLow)
+                    ) {
                         Icon(
                             imageVector = Icons.Default.Edit,
                             contentDescription = "编辑订阅",
@@ -522,7 +589,13 @@ private fun SubscriptionItemCard(
                             modifier = Modifier.size(16.dp)
                         )
                     }
-                    IconButton(onClick = onDelete, modifier = Modifier.size(28.dp)) {
+                    IconButton(
+                        onClick = onDelete,
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .background(SurfaceContainerLow)
+                    ) {
                         Icon(
                             imageVector = Icons.Default.Delete,
                             contentDescription = "删除订阅",

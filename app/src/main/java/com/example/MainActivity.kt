@@ -75,8 +75,8 @@ fun MqttAssistantApp(
 ) {
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
-    val currentRoute = navBackStackEntry?.destination?.route ?: AppScreen.Publish.route
-    val currentScreen = AppScreen.values().find { it.route == currentRoute } ?: AppScreen.Publish
+    val currentRoute = navBackStackEntry?.destination?.route ?: AppScreen.LiveLogs.route
+    val currentScreen = AppScreen.values().find { it.route == currentRoute } ?: AppScreen.LiveLogs
 
     val serverConfig by viewModel.serverConfig.collectAsState()
     val connectionState by viewModel.connectionState.collectAsState()
@@ -186,7 +186,7 @@ fun MqttAssistantApp(
     ) { innerPadding ->
         NavHost(
             navController = navController,
-            startDestination = AppScreen.Publish.route,
+            startDestination = AppScreen.LiveLogs.route,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding),

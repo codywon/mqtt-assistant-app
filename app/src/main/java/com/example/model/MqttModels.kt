@@ -6,27 +6,27 @@ enum class AppScreen(
     val navLabel: String,
     val testTag: String
 ) {
+    LiveLogs(
+        route = "live-logs",
+        title = "消息 - MQTT Assistant",
+        navLabel = "消息",
+        testTag = "live-logs"
+    ),
     Publish(
         route = "publish",
-        title = "发布 (极简纯净版) - MQTT Assistant",
+        title = "发布 - MQTT Assistant",
         navLabel = "发布",
         testTag = "publish"
     ),
     Subscribe(
         route = "subscribe",
-        title = "订阅 (极简纯净版) - MQTT Assistant",
+        title = "订阅 - MQTT Assistant",
         navLabel = "订阅",
         testTag = "subscribe"
     ),
-    LiveLogs(
-        route = "live-logs",
-        title = "实时日志 (极简纯净版) - MQTT Assistant",
-        navLabel = "实时日志",
-        testTag = "live-logs"
-    ),
     Settings(
         route = "settings",
-        title = "设置 (极简纯净版) - MQTT Assistant",
+        title = "设置 - MQTT Assistant",
         navLabel = "设置",
         testTag = "settings"
     )

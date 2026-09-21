@@ -37,7 +37,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
 
     private val storage = MqttStorageRepository(application.applicationContext)
 
-    private val _currentScreen = MutableStateFlow(AppScreen.Publish)
+    private val _currentScreen = MutableStateFlow(AppScreen.LiveLogs)
     val currentScreen: StateFlow<AppScreen> = _currentScreen.asStateFlow()
 
     private val _toastEvent = MutableSharedFlow<String>(extraBufferCapacity = 1)

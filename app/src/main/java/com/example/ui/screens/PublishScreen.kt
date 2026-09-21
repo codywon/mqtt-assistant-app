@@ -373,23 +373,49 @@ private fun PublishPresetCard(
                 )
             }
 
-            // Row 3: Character count + Actions (Guaranteed single line, never wrapping!)
+            // Row 3: Remark name tag + Character count + Actions
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text(
-                    text = "${preset.payload.length} 字符 · ${if (preset.name.isNotBlank()) preset.name else "配置"}",
-                    style = TextStyle(
-                        fontSize = 11.5.sp,
-                        color = OnSurfaceVariantGray
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.weight(1f, fill = false)
+                ) {
+                    if (preset.name.isNotBlank()) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(SurfaceContainerLow)
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = preset.name,
+                                style = TextStyle(
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = PrimaryBlack
+                                ),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                    Text(
+                        text = "${preset.payload.length} 字符",
+                        style = TextStyle(
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 11.5.sp,
+                            color = OnSurfaceVariantGray
+                        )
                     )
-                )
+                }
 
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     // Copy
                     IconButton(
@@ -487,15 +513,6 @@ private fun PublishConfigModalDialog(
         if (topic.isBlank()) null else MqttTopicUtil.validatePublishTopic(topic.trim())
     }
 
-    val quickPresets = listOf(
-        "OTA升级" to ("Voice_Reminder/Set_OTA_url/TH02D0CF130657D4" to """{"ota_url": "https://ota.codywon.top:9443/BSG.bin", "size": 1048576, "md5": "a1b2c3d4"}"""),
-        "秤重配置" to ("scale_config/865269078444663" to """{"scale": "74.8"}"""),
-        "语音播报" to ("Voice_Reminder/Voice_Msg_cmd/TH02D0CF130657D4" to """{"id": "afb7fb2f48484da5be7bdc6c2b7609df", "type": "play", "vol": 80}"""),
-        "设备音量" to ("Voice_Reminder/Device_Vol/TH02D0CF130657D4" to """{"vol": 90}"""),
-        "断路器设置" to ("college/breaker/control/THFC012CCCBDDC" to """{"schema_version": 1, "action": "set_config", "config_reset": false}"""),
-        "空JSON" to ("device/test/command" to "{}")
-    )
-
     fun formatJson() {
         val current = payload.trim()
         try {
@@ -550,43 +567,6 @@ private fun PublishConfigModalDialog(
                     }
                 }
 
-                // Quick presets chips (6 presets)
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(
-                        text = "快捷常用载荷 (点按直接填入):",
-                        style = TextStyle(fontSize = 11.sp, color = OutlineGray)
-                    )
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        quickPresets.forEach { (label, data) ->
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .background(SurfaceContainerLow)
-                                    .clickable {
-                                        topic = data.first
-                                        payload = data.second
-                                        name = label
-                                    }
-                                    .padding(horizontal = 8.dp, vertical = 4.dp)
-                            ) {
-                                Text(
-                                    text = label,
-                                    style = TextStyle(
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        color = OnSurfaceDark
-                                    )
-                                )
-                            }
-                        }
-                    }
-                }
-
                 // Topic Input
                 Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Row(
@@ -634,6 +614,54 @@ private fun PublishConfigModalDialog(
                                 modifier = Modifier
                                     .size(16.dp)
                                     .clickable { topic = "" }
+                            )
+                        }
+                    }
+                }
+
+                // Remark / Name Input
+                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text(
+                        text = "备注名称",
+                        style = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = OnSurfaceDark)
+                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(40.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(SurfaceContainerLow)
+                            .padding(horizontal = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        BasicTextField(
+                            value = name,
+                            onValueChange = { name = it },
+                            modifier = Modifier.weight(1f),
+                            textStyle = TextStyle(
+                                fontSize = 12.5.sp,
+                                color = PrimaryBlack
+                            ),
+                            singleLine = true,
+                            cursorBrush = SolidColor(PrimaryBlack),
+                            decorationBox = { innerTextField ->
+                                if (name.isEmpty()) {
+                                    Text(
+                                        text = "可选，如：开关控制 / 设备状态上报",
+                                        style = TextStyle(fontSize = 12.sp, color = OutlineGray)
+                                    )
+                                }
+                                innerTextField()
+                            }
+                        )
+                        if (name.isNotEmpty()) {
+                            Icon(
+                                imageVector = Icons.Default.Cancel,
+                                contentDescription = "清除备注",
+                                tint = OutlineGray,
+                                modifier = Modifier
+                                    .size(16.dp)
+                                    .clickable { name = "" }
                             )
                         }
                     }

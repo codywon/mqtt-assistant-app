@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Podcasts
 import androidx.compose.material.icons.filled.Refresh
@@ -215,9 +216,9 @@ fun AppBottomNavBar(
                 AppScreen.values().forEach { screen ->
                     val isSelected = currentScreen == screen
                     val iconVector = when (screen) {
+                        AppScreen.LiveLogs -> Icons.Default.Inbox
                         AppScreen.Publish -> Icons.AutoMirrored.Filled.Send
                         AppScreen.Subscribe -> Icons.Default.Podcasts
-                        AppScreen.LiveLogs -> Icons.Default.Terminal
                         AppScreen.Settings -> Icons.Default.Tune
                     }
 
