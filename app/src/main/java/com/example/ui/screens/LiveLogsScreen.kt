@@ -27,6 +27,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.shape.CircleShape
@@ -142,6 +143,12 @@ fun LiveLogsScreen(
         }
     }
 
+    // 采用 macOS 终端/顶级聊天系统级 reverseLayout 倒序自吸底方案：
+    // index 0 天然锚定在可视区域最底部，新消息到来时平滑向上推入，彻底消灭测量时延造成的任何抖动与闪屏！
+    val reversedPackets = remember(filteredPackets) {
+        filteredPackets.asReversed()
+    }
+
     val onSelectPacket: (MqttLogPacket) -> Unit = remember {
         { packet -> selectedDetailsPacket = packet }
     }
@@ -158,19 +165,10 @@ fun LiveLogsScreen(
         }
     }
 
-    // 工业级防抖吸底引擎：加入 40ms 节流，在密集消息冲刷时合并瞬时跳动，彻底根除上下疯狂抽搐闪屏
-    LaunchedEffect(filteredPackets.size, isPaused) {
-        if (!isPaused && filteredPackets.isNotEmpty()) {
-            val targetIndex = filteredPackets.size - 1
-            kotlinx.coroutines.delay(40)
-            listState.scrollToItem(targetIndex)
-        }
-    }
-
-    // 初始进入或恢复时直接定位到最后一条最新消息
-    LaunchedEffect(Unit) {
-        if (filteredPackets.isNotEmpty()) {
-            listState.scrollToItem(filteredPackets.size - 1)
+    // 恢复播放时平滑回到最新一条 (index 0)
+    LaunchedEffect(isPaused) {
+        if (!isPaused && reversedPackets.isNotEmpty()) {
+            listState.animateScrollToItem(0)
         }
     }
 
@@ -371,12 +369,13 @@ fun LiveLogsScreen(
         ) {
             LazyColumn(
                 state = listState,
+                reverseLayout = true,
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                if (filteredPackets.isEmpty()) {
+                if (reversedPackets.isEmpty()) {
                     item {
                         Box(
                             modifier = Modifier
@@ -391,7 +390,7 @@ fun LiveLogsScreen(
                         }
                     }
                 } else {
-                    items(filteredPackets, key = { it.id }) { packet ->
+                    items(reversedPackets, key = { it.id }) { packet ->
                         CompactMessageCard(
                             packet = packet,
                             isJsonPretty = isJsonPretty,
@@ -403,12 +402,15 @@ fun LiveLogsScreen(
                 }
             }
 
-            // 悬浮快速“滚到底部最新”微按钮 (暂停滚动模式下展示，一键吸底并恢复自动滚动)
-            if (isPaused && filteredPackets.isNotEmpty()) {
+            // 悬浮快速“滚到底部最新”微按钮 (当离开底部最新消息或处于暂停模式时展示)
+            val isNotAtBottom by remember {
+                derivedStateOf { listState.firstVisibleItemIndex > 0 }
+            }
+            if ((isNotAtBottom || isPaused) && reversedPackets.isNotEmpty()) {
                 FloatingActionButton(
                     onClick = {
                         coroutineScope.launch {
-                            listState.animateScrollToItem(filteredPackets.size - 1)
+                            listState.animateScrollToItem(0)
                         }
                     },
                     modifier = Modifier
@@ -495,7 +497,8 @@ private fun CompactMessageCard(
     Card(
         shape = RoundedCornerShape(10.dp),
         colors = CardDefaults.cardColors(containerColor = SurfaceContainerLowest),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        border = BorderStroke(0.6.dp, OutlineVariantLight),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = { onCardClick(packet) })

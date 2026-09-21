@@ -189,14 +189,18 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 val firstPacket = incomingPacketChannel.receiveCatching().getOrNull() ?: break
                 batch.add(firstPacket)
 
-                // 40ms 极小缓冲窗口（人眼极致流畅），最多同时收集 100 条
-                val deadline = System.currentTimeMillis() + 40
-                while (System.currentTimeMillis() < deadline && batch.size < 100) {
-                    val next = incomingPacketChannel.tryReceive().getOrNull()
-                    if (next != null) {
+                // 纳秒级即时抽干通道中所有已排队的消息（零延迟即发即显）
+                while (batch.size < 200) {
+                    val next = incomingPacketChannel.tryReceive().getOrNull() ?: break
+                    batch.add(next)
+                }
+
+                // 若处于并发高频冲刷期（积压多条），微让步 8ms 汇聚，单条消息则 0ms 瞬间上屏
+                if (batch.size > 1 && batch.size < 100) {
+                    delay(8)
+                    while (batch.size < 200) {
+                        val next = incomingPacketChannel.tryReceive().getOrNull() ?: break
                         batch.add(next)
-                    } else {
-                        delay(5)
                     }
                 }
 

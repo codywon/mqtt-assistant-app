@@ -198,11 +198,14 @@ fun JsonCodeBlockView(
                 .border(0.8.dp, JsonSyntaxTheme.BorderColor, RoundedCornerShape(8.dp))
                 .padding(vertical = 8.dp, horizontal = 10.dp)
         ) {
-            Row(
-                modifier = Modifier
+            val rowModifier = if (maxLines == Int.MAX_VALUE) {
+                Modifier
                     .fillMaxWidth()
                     .horizontalScroll(rememberScrollState())
-            ) {
+            } else {
+                Modifier.fillMaxWidth()
+            }
+            Row(modifier = rowModifier) {
                 // 行号区（VS Code 经典灰色）
                 if (showLineNumbers && totalDisplayCount > 1) {
                     Column {
