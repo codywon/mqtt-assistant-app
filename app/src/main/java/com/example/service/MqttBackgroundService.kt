@@ -197,14 +197,26 @@ class MqttBackgroundService : Service() {
             while (isActive) {
                 delay(15_000L) // 每 15 秒检查并刷新一次活跃心跳
                 try {
-                    MqttClientManager.pingOrKeepAlive()
-
-                    // 确保 WakeLock 与 WifiLock 在后台始终持有
+                    // 1. 确保 WakeLock 与 WifiLock 在后台始终生效
                     wakeLock?.let {
                         if (!it.isHeld) it.acquire(60 * 1000L)
                     }
                     wifiLock?.let {
                         if (!it.isHeld) it.acquire()
+                    }
+
+                    // 2. 探活底层 Socket 心跳
+                    MqttClientManager.pingOrKeepAlive()
+
+                    // 3. 后台守护机制：若长连接在后台意外断开，立即静默自动拉起！
+                    if (!MqttClientManager.isConnected) {
+                        Log.d(TAG, "Background Guardian: detected MQTT disconnected, attempting silent reconnect...")
+                        val result = MqttClientManager.reconnectSilently()
+                        if (result.isSuccess) {
+                            Log.d(TAG, "Background Guardian: Silent reconnect succeeded!")
+                        } else {
+                            Log.w(TAG, "Background Guardian: Silent reconnect failed: ${result.exceptionOrNull()?.message}")
+                        }
                     }
                 } catch (e: Exception) {
                     Log.w(TAG, "Heartbeat iteration failed", e)

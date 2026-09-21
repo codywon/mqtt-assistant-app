@@ -2,6 +2,11 @@ package com.example.viewmodel
 
 import android.app.Application
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.MqttStorageRepository
@@ -138,9 +143,11 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
     )
     val isPasswordVisible = MutableStateFlow(false)
     val isSavingSettings = MutableStateFlow(false)
+    private var isManualDisconnecting = false
 
     init {
         setupMqttCallbacks()
+        registerNetworkCallback()
         if (serverConfig.value.host.isNotBlank()) {
             connectToBroker()
             if (serverConfig.value.backgroundKeepAliveEnabled) {
@@ -148,6 +155,30 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 MqttBackgroundService.startKeepAlive(application, brokerHost)
                 isForegroundKeepAliveRunning.value = true
             }
+        }
+    }
+
+    private fun registerNetworkCallback() {
+        try {
+            val cm = getApplication<Application>().getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            val request = NetworkRequest.Builder()
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                .build()
+            cm?.registerNetworkCallback(
+                request,
+                object : ConnectivityManager.NetworkCallback() {
+                    override fun onAvailable(network: Network) {
+                        Log.d("MqttAssistantViewModel", "NetworkCallback: Internet restored, checking connection...")
+                        if (!serverConfig.value.isConnected && !isManualDisconnecting && serverConfig.value.autoReconnect) {
+                            viewModelScope.launch(Dispatchers.Main) {
+                                startAutoReconnectLoop(isImmediate = true)
+                            }
+                        }
+                    }
+                }
+            )
+        } catch (e: Exception) {
+            Log.w("MqttAssistantViewModel", "Failed to register NetworkCallback", e)
         }
     }
 
@@ -215,6 +246,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
 
         MqttClientManager.onConnectionStateChanged = { isConn, cause ->
             if (isConn) {
+                isManualDisconnecting = false
                 connectionState.value = MqttConnectionState.CONNECTED
                 serverConfig.update { it.copy(isConnected = true) }
                 reconnectAttempt.value = 0
@@ -240,15 +272,16 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
             } else {
                 connectionState.value = MqttConnectionState.DISCONNECTED
                 serverConfig.update { it.copy(isConnected = false) }
-                // Only trigger auto-reconnect if it's an unexpected connection loss (cause != null)
-                if (cause != null && serverConfig.value.autoReconnect && reconnectJob?.isActive != true) {
-                    startAutoReconnectLoop()
+                // 只要非用户主动断开且开启了自动重连，立即以 isImmediate = true 毫秒级自愈发起重连！
+                if (!isManualDisconnecting && serverConfig.value.autoReconnect) {
+                    startAutoReconnectLoop(isImmediate = true)
                 }
             }
         }
     }
 
     fun connectToBroker() {
+        isManualDisconnecting = false
         if (serverConfig.value.host.isBlank()) {
             connectionState.value = MqttConnectionState.DISCONNECTED
             serverConfig.update { it.copy(isConnected = false) }
@@ -1035,10 +1068,11 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
     }
 
     fun triggerManualReconnect() {
+        isManualDisconnecting = false
         reconnectJob?.cancel()
         reconnectAttempt.value = 0
         reconnectCountdown.value = 0
-        reconnectJob = viewModelScope.launch {
+        viewModelScope.launch {
             connectionState.value = MqttConnectionState.CONNECTING
             showToast("正在连接至 ${serverConfig.value.host}:${serverConfig.value.port}...")
             val result = MqttClientManager.connect(serverConfig.value)
@@ -1062,25 +1096,38 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                     isTls = serverConfig.value.tlsEnabled
                 )
                 showToast("连接失败: $errorMsg")
-                if (serverConfig.value.autoReconnect) {
-                    startAutoReconnectLoop()
+                if (serverConfig.value.autoReconnect && !isManualDisconnecting) {
+                    startAutoReconnectLoop(isImmediate = false)
                 }
             }
         }
     }
 
-    fun startAutoReconnectLoop() {
-        if (!serverConfig.value.autoReconnect) return
+    /**
+     * 极速秒级自动重连自愈引擎：
+     * 1. 首次掉线或外部网络恢复/切回前台时，0秒等待立即发起重连！毫秒级恢复长连接；
+     * 2. 后续重试阶梯退避：第2次等1秒，第3次等2秒，最大封顶仅3秒（彻底废除过去 5s/10s 漫长无谓等待！）。
+     */
+    fun startAutoReconnectLoop(isImmediate: Boolean = false) {
+        if (!serverConfig.value.autoReconnect || isManualDisconnecting) return
         reconnectJob?.cancel()
         reconnectJob = viewModelScope.launch {
             connectionState.value = MqttConnectionState.RECONNECTING
             reconnectAttempt.value += 1
-            // 工业级优雅退避重试：前 3 次使用用户设置间隔（默认 5s），后续按 10s 周期性重试，直到网络就绪连上
-            val baseSec = serverConfig.value.reconnectIntervalSeconds.coerceAtLeast(3)
-            val interval = if (reconnectAttempt.value <= 3) baseSec else 10
-            for (sec in interval downTo 1) {
-                reconnectCountdown.value = sec
-                delay(1000)
+
+            val waitSec = if (isImmediate || reconnectAttempt.value <= 1) {
+                0
+            } else when (reconnectAttempt.value) {
+                2 -> 1
+                3 -> 2
+                else -> 3
+            }
+
+            if (waitSec > 0) {
+                for (sec in waitSec downTo 1) {
+                    reconnectCountdown.value = sec
+                    delay(1000)
+                }
             }
             reconnectCountdown.value = 0
             connectionState.value = MqttConnectionState.CONNECTING
@@ -1094,26 +1141,41 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 activeSubs.forEach { sub ->
                     MqttClientManager.subscribe(sub.topic, sub.qos)
                 }
-                showToast("网络恢复，已自动重连 Broker！已恢复 ${activeSubs.size} 个主题订阅")
+                showToast("连接已恢复，已同步 ${activeSubs.size} 个主题订阅")
             } else {
                 connectionState.value = MqttConnectionState.DISCONNECTED
                 serverConfig.update { it.copy(isConnected = false) }
-                if (serverConfig.value.autoReconnect) {
-                    startAutoReconnectLoop()
+                if (serverConfig.value.autoReconnect && !isManualDisconnecting) {
+                    startAutoReconnectLoop(isImmediate = false)
                 }
             }
         }
     }
 
+    /**
+     * 应用切回前台时即刻探活自愈：
+     * 解决“最小化打开其他程序再回来每次都断开/重连”的问题，只要发现未连接瞬间发起重连，不让用户等待。
+     */
+    fun onAppResume() {
+        if (!serverConfig.value.isConnected && !isManualDisconnecting && serverConfig.value.autoReconnect && serverConfig.value.host.isNotBlank()) {
+            Log.d("MqttAssistantViewModel", "onAppResume: app returned to foreground, probing immediate reconnect")
+            startAutoReconnectLoop(isImmediate = true)
+        }
+    }
+
     fun disconnectBroker(isManual: Boolean = true) {
+        if (isManual) {
+            isManualDisconnecting = true
+        }
         reconnectJob?.cancel()
+        reconnectCountdown.value = 0
         viewModelScope.launch {
             MqttClientManager.disconnect()
         }
         connectionState.value = MqttConnectionState.DISCONNECTED
         serverConfig.update { it.copy(isConnected = false) }
         if (!isManual && serverConfig.value.autoReconnect) {
-            startAutoReconnectLoop()
+            startAutoReconnectLoop(isImmediate = true)
         } else {
             MqttBackgroundService.stopKeepAlive(getApplication())
             isForegroundKeepAliveRunning.value = false

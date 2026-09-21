@@ -39,6 +39,9 @@ object MqttClientManager {
     private var mqttClient: MqttClient? = null
     private val connectMutex = Mutex()
 
+    var lastConfig: MqttServerConfig? = null
+        private set
+
     var onMessageReceived: ((topic: String, qos: Int, payload: ByteArray, retain: Boolean) -> Unit)? = null
     var onConnectionStateChanged: ((isConnected: Boolean, cause: Throwable?) -> Unit)? = null
 
@@ -103,11 +106,13 @@ object MqttClientManager {
                 // Assign reference immediately to eliminate race condition with connectComplete callbacks
                 mqttClient = client
 
+                lastConfig = config
+
                 val options = MqttConnectOptions().apply {
                     isCleanSession = config.cleanSession
-                    keepAliveInterval = config.keepAlive.coerceAtLeast(10)
-                    connectionTimeout = 15
-                    isAutomaticReconnect = false // Explicitly controlled by ViewModel
+                    keepAliveInterval = config.keepAlive.coerceIn(15, 60)
+                    connectionTimeout = 10 // 弱网下 10 秒快速超时，避免长时间挂起 Socket
+                    isAutomaticReconnect = true // 开启 Paho 底层秒级自动重连
 
                     if (config.username.isNotBlank()) {
                         userName = config.username.trim()
@@ -132,10 +137,8 @@ object MqttClientManager {
                 client.setCallback(object : MqttCallbackExtended {
                     override fun connectComplete(reconnect: Boolean, serverURI: String?) {
                         Log.d(TAG, "connectComplete: URI=$serverURI, reconnect=$reconnect")
-                        // When reconnecting automatically, notify ViewModel to resubscribe topics
-                        if (reconnect) {
-                            onConnectionStateChanged?.invoke(true, null)
-                        }
+                        // 底层重连成功后立即通知上层，上层恢复订阅
+                        onConnectionStateChanged?.invoke(true, null)
                     }
 
                     override fun connectionLost(cause: Throwable?) {
@@ -270,16 +273,45 @@ object MqttClientManager {
 
     /**
      * Active heartbeat check to keep TCP Socket alive and resilient in background.
+     * Checks connection status and triggers reconnect if socket has silently dropped.
      */
     fun pingOrKeepAlive() {
         try {
             val client = mqttClient
             if (client != null && client.isConnected) {
-                Log.d(TAG, "Heartbeat ping: MQTT client connection is active")
+                // 通过反射调用底层异步客户端的 checkPing 发送 PINGREQ 帧，强力保活 NAT 映射
+                try {
+                    val aClientField = MqttClient::class.java.getDeclaredField("aClient")
+                    aClientField.isAccessible = true
+                    val asyncClient = aClientField.get(client) as? org.eclipse.paho.client.mqttv3.MqttAsyncClient
+                    if (asyncClient != null && asyncClient.isConnected) {
+                        val pingMethod = org.eclipse.paho.client.mqttv3.MqttAsyncClient::class.java.getDeclaredMethod(
+                            "checkPing",
+                            Any::class.java,
+                            org.eclipse.paho.client.mqttv3.IMqttActionListener::class.java
+                        )
+                        pingMethod.isAccessible = true
+                        pingMethod.invoke(asyncClient, null, null)
+                        Log.d(TAG, "Heartbeat: Paho active ping frame dispatched")
+                    }
+                } catch (_: Exception) {
+                    Log.d(TAG, "Heartbeat check: MQTT client connection is active")
+                }
+            } else {
+                Log.d(TAG, "Heartbeat check: Connection lost in background, triggering state update")
+                onConnectionStateChanged?.invoke(false, null)
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Heartbeat ping failed", e)
+            Log.w(TAG, "Heartbeat ping check failed", e)
         }
+    }
+
+    /**
+     * 静默快速重连：供后台前台服务与生命周期唤醒时复用最近一次配置无感重连
+     */
+    suspend fun reconnectSilently(): Result<Unit> {
+        val cfg = lastConfig ?: return Result.failure(IllegalStateException("暂无历史 Broker 连接配置"))
+        return connect(cfg)
     }
 
     private fun disconnectInternal(isIntentional: Boolean) {

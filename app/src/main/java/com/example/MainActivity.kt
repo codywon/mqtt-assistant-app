@@ -57,9 +57,13 @@ import com.example.ui.screens.SubscribeScreen
 import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.theme.SurfaceCanvas
 import com.example.viewmodel.MqttAssistantViewModel
+import androidx.activity.viewModels
 import kotlinx.coroutines.flow.collectLatest
 
 class MainActivity : ComponentActivity() {
+
+    private val assistantViewModel: MqttAssistantViewModel by viewModels()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -72,9 +76,14 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             MyApplicationTheme {
-                MqttAssistantApp()
+                MqttAssistantApp(viewModel = assistantViewModel)
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        assistantViewModel.onAppResume()
     }
 }
 
