@@ -8,8 +8,8 @@
     <group
         android:pivotX="54"
         android:pivotY="52"
-        android:scaleX="0.70"
-        android:scaleY="0.70">
+        android:scaleX="0.60"
+        android:scaleY="0.60">
 
         <!-- Perfectly Centered Pure White Speech Bubble Body (No Antennas, Clean & Bold) -->
         <!-- Golden ratio bubble sized to 67% safe-zone for Android desktop mask -->

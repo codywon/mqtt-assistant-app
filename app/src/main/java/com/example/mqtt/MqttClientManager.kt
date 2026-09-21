@@ -445,6 +445,10 @@ class SniSSLSocketFactory(
         return host.matches(Regex("^(\\d{1,3}\\.){3}\\d{1,3}$")) || host.contains(":")
     }
 
+    override fun createSocket(): Socket {
+        return configureSocket(delegate.createSocket())
+    }
+
     override fun createSocket(s: Socket?, host: String?, port: Int, autoClose: Boolean): Socket {
         return configureSocket(delegate.createSocket(s, host, port, autoClose))
     }

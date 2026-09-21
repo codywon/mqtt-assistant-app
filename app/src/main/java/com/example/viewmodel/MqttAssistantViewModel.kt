@@ -1214,7 +1214,13 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
             } else {
                 connectionState.value = MqttConnectionState.DISCONNECTED
                 serverConfig.update { it.copy(isConnected = false) }
-                showToast("连接失败: ${result.exceptionOrNull()?.message}")
+                val errorMsg = MqttClientManager.getReadableErrorMessage(
+                    result.exceptionOrNull() ?: Exception("连接失败"),
+                    serverConfig.value.host,
+                    serverConfig.value.port,
+                    isTls = serverConfig.value.tlsEnabled
+                )
+                showToast("连接失败: $errorMsg")
             }
         }
     }
