@@ -109,7 +109,9 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 protocol = initialBroker.protocol,
                 cleanSession = initialBroker.cleanSession,
                 tlsEnabled = initialBroker.tlsEnabled,
-                keepAlive = initialBroker.keepAlive
+                keepAlive = initialBroker.keepAlive,
+                backgroundKeepAliveEnabled = storage.loadBackgroundKeepAlive(),
+                wakeLockEnabled = storage.loadWakeLock()
             )
         }
     )
@@ -987,7 +989,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
     fun toggleBackgroundKeepAlive(context: Context) {
         val next = !serverConfig.value.backgroundKeepAliveEnabled
         serverConfig.update { it.copy(backgroundKeepAliveEnabled = next) }
-        storage.saveServerConfig(serverConfig.value)
+        storage.saveBackgroundKeepAlive(next)
         if (next) {
             val brokerHost = "${serverConfig.value.host}:${serverConfig.value.port}"
             MqttBackgroundService.startKeepAlive(context, brokerHost)
@@ -1003,7 +1005,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
     fun toggleWakeLock() {
         val next = !serverConfig.value.wakeLockEnabled
         serverConfig.update { it.copy(wakeLockEnabled = next) }
-        storage.saveServerConfig(serverConfig.value)
+        storage.saveWakeLock(next)
         showToast(if (next) "已启用 CPU 唤醒锁 (WakeLock)" else "已停用 CPU 唤醒锁")
     }
 

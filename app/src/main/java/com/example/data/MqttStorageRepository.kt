@@ -379,4 +379,25 @@ class MqttStorageRepository(context: Context) {
             e.printStackTrace()
         }
     }
+
+    // ==========================================
+    // 5. KeepAlive & Background Settings Persistence
+    // ==========================================
+
+    fun loadBackgroundKeepAlive(): Boolean {
+        return prefs.getBoolean("key_background_keepalive_enabled", true)
+    }
+
+    fun saveBackgroundKeepAlive(enabled: Boolean) {
+        prefs.edit().putBoolean("key_background_keepalive_enabled", enabled).apply()
+    }
+
+    fun loadWakeLock(): Boolean {
+        return prefs.getBoolean("key_wake_lock_enabled", true)
+    }
+
+    fun saveWakeLock(enabled: Boolean) {
+        prefs.edit().putBoolean("key_wake_lock_enabled", enabled).apply()
+    }
 }
+
