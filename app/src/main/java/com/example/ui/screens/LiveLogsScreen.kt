@@ -124,18 +124,33 @@ fun LiveLogsScreen(
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
 
-    val filteredPackets = packets.filter { packet ->
-        val matchesAllowed = MqttTopicUtil.isTopicAllowed(packet.topic, includeFilters, excludeFilters)
-        val matchesQuery = filterQuery.isBlank() ||
-                packet.topic.contains(filterQuery, ignoreCase = true) ||
-                packet.payload.contains(filterQuery, ignoreCase = true)
-        matchesAllowed && matchesQuery
+    val filteredPackets = remember(packets, includeFilters, excludeFilters, filterQuery) {
+        if (filterQuery.isBlank() && includeFilters.isEmpty() && excludeFilters.isEmpty()) {
+            packets
+        } else {
+            packets.filter { packet ->
+                val matchesAllowed = MqttTopicUtil.isTopicAllowed(packet.topic, includeFilters, excludeFilters)
+                val matchesQuery = filterQuery.isBlank() ||
+                        packet.topic.contains(filterQuery, ignoreCase = true) ||
+                        packet.payload.contains(filterQuery, ignoreCase = true)
+                matchesAllowed && matchesQuery
+            }
+        }
     }
 
-    // 自动向下滚动：未暂停时，新消息到达自动平滑向下滚动至最底部，底部永远是最新一条
+    // 智能丝滑吸底机制：彻底消除高并发消息冲刷下的“动画打断剧烈抖动与闪屏”
     LaunchedEffect(filteredPackets.size, isPaused) {
         if (!isPaused && filteredPackets.isNotEmpty()) {
-            listState.animateScrollToItem(filteredPackets.size - 1)
+            val targetIndex = filteredPackets.size - 1
+            val lastVisibleIndex = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            val distance = targetIndex - lastVisibleIndex
+            if (distance > 2) {
+                // 并发爆发涌入多条，直接无感瞬时吸底，避免动画频繁被打断重启而引发的剧烈上下抽搐/闪屏
+                listState.scrollToItem(targetIndex)
+            } else {
+                // 低频单条平滑微吸附
+                listState.animateScrollToItem(targetIndex)
+            }
         }
     }
 

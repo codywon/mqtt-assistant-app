@@ -756,7 +756,7 @@ private fun SubscriptionConfigModalDialog(
                             decorationBox = { innerTextField ->
                                 if (name.isEmpty()) {
                                     Text(
-                                        text = "可选，如: 高校设备流 / 断路器监控",
+                                        text = "可选，如：网关 / 雷达",
                                         style = TextStyle(fontSize = 12.sp, color = OutlineGray)
                                     )
                                 }

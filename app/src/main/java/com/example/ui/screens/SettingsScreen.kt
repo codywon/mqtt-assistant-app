@@ -1,6 +1,9 @@
 package com.example.ui.screens
 
 import android.content.Intent
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -34,6 +37,7 @@ import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.FileDownload
+import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.FolderShared
 import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.Key
@@ -43,6 +47,7 @@ import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.PersonOutline
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Router
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.VerifiedUser
@@ -125,6 +130,14 @@ fun SettingsScreen(
     val brokerProfiles by viewModel.brokerProfiles.collectAsState()
     val activeBrokerId by viewModel.activeBrokerId.collectAsState()
     val isExporting by viewModel.isExporting.collectAsState()
+    val isExportingConfig by viewModel.isExportingConfig.collectAsState()
+    val isImportingConfig by viewModel.isImportingConfig.collectAsState()
+
+    val configPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let { viewModel.importConfiguration(context, it) }
+    }
 
     var showBrokerDialog by remember { mutableStateOf(false) }
     var editingBroker by remember { mutableStateOf<BrokerProfile?>(null) }
@@ -1347,91 +1360,210 @@ fun SettingsScreen(
                     }
                 }
 
-                // Storage management: Clean & Export Excel
+                // Storage management: Clean & Export Excel (1:1 对称等宽利落排布)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "报文与存储管理",
-                            style = MaterialTheme.typography.labelMedium.copy(
-                                fontWeight = FontWeight.SemiBold,
-                                color = PrimaryBlack
-                            )
+                    // 清理空间按钮
+                    OutlinedButton(
+                        onClick = { viewModel.clearAllData() },
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, OutlineGray.copy(alpha = 0.5f)),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = OnSurfaceVariantGray
+                        ),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(38.dp)
+                            .testTag("clear_all_data_btn")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.DeleteSweep,
+                            contentDescription = "清理空间",
+                            modifier = Modifier.size(16.dp),
+                            tint = OnSurfaceVariantGray
                         )
+                        Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = "支持导出 Excel 或清理占用空间",
-                            style = MaterialTheme.typography.bodySmall.copy(
-                                fontSize = 11.5.sp,
+                            text = "清理空间",
+                            style = TextStyle(
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 12.sp,
                                 color = OnSurfaceVariantGray
                             )
                         )
                     }
 
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                    // 导出 Excel 按钮
+                    Button(
+                        onClick = { viewModel.exportPacketsToExcel(context) },
+                        enabled = !isExporting,
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = PrimaryBlack,
+                            contentColor = OnPrimaryWhite
+                        ),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(38.dp)
+                            .testTag("export_excel_btn")
                     ) {
-                        // 清理占用空间按钮
-                        OutlinedButton(
-                            onClick = { viewModel.clearAllData() },
-                            shape = RoundedCornerShape(8.dp),
-                            border = BorderStroke(1.dp, OutlineGray.copy(alpha = 0.5f)),
-                            colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = OnSurfaceVariantGray
-                            ),
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
-                            modifier = Modifier
-                                .height(36.dp)
-                                .testTag("clear_all_data_btn")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.DeleteSweep,
-                                contentDescription = "清理空间",
-                                modifier = Modifier.size(15.dp),
-                                tint = OnSurfaceVariantGray
+                        Icon(
+                            imageVector = Icons.Default.FileDownload,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = if (isExporting) "导出中..." else "导出 Excel",
+                            style = TextStyle(
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 12.sp
                             )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "清理",
-                                style = TextStyle(
-                                    fontWeight = FontWeight.SemiBold,
-                                    fontSize = 11.5.sp,
-                                    color = OnSurfaceVariantGray
-                                )
-                            )
-                        }
+                        )
+                    }
+                }
+            }
+        }
 
-                        // 导出 Excel 按钮
-                        Button(
-                            onClick = { viewModel.exportPacketsToExcel(context) },
-                            enabled = !isExporting,
-                            shape = RoundedCornerShape(8.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = PrimaryBlack,
-                                contentColor = OnPrimaryWhite
-                            ),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+        // 5.5 Configuration Backup & Restore Card (JSON Export/Import)
+        Card(
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = SurfaceContainerLowest),
+            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
                             modifier = Modifier
-                                .height(36.dp)
-                                .testTag("export_excel_btn")
+                                .size(28.dp)
+                                .background(SurfaceContainerLow, CircleShape),
+                            contentAlignment = Alignment.Center
                         ) {
                             Icon(
-                                imageVector = Icons.Default.FileDownload,
+                                imageVector = Icons.Default.FolderShared,
                                 contentDescription = null,
-                                modifier = Modifier.size(15.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = if (isExporting) "导出中..." else "导出 Excel",
-                                style = TextStyle(
-                                    fontWeight = FontWeight.SemiBold,
-                                    fontSize = 11.5.sp
-                                )
+                                tint = PrimaryBlack,
+                                modifier = Modifier.size(16.dp)
                             )
                         }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "配置备份与迁移",
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = PrimaryBlack
+                            )
+                        )
+                    }
+
+                    // JSON Tag
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = SurfaceContainerLow
+                    ) {
+                        Text(
+                            text = "JSON 格式",
+                            style = TextStyle(
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = OnSurfaceVariantGray
+                            ),
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                        )
+                    }
+                }
+
+                Text(
+                    text = "一键导出或恢复所有服务器节点、发布预设、订阅主题与高级设置，换机或重装无需重配。",
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        fontSize = 12.sp,
+                        color = OnSurfaceVariantGray,
+                        lineHeight = 16.sp
+                    )
+                )
+
+                // Buttons: 导入配置 (Outlined) & 导出配置 (Primary Solid) 1:1 对称等宽
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // 导入配置
+                    OutlinedButton(
+                        onClick = { configPickerLauncher.launch("application/json") },
+                        enabled = !isImportingConfig,
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, OutlineGray.copy(alpha = 0.5f)),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = PrimaryBlack
+                        ),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(38.dp)
+                            .testTag("import_config_btn")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.FileUpload,
+                            contentDescription = "导入配置",
+                            modifier = Modifier.size(16.dp),
+                            tint = PrimaryBlack
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = if (isImportingConfig) "导入中..." else "导入配置",
+                            style = TextStyle(
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 12.sp,
+                                color = PrimaryBlack
+                            )
+                        )
+                    }
+
+                    // 导出配置
+                    Button(
+                        onClick = { viewModel.exportConfiguration(context) },
+                        enabled = !isExportingConfig,
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = PrimaryBlack,
+                            contentColor = OnPrimaryWhite
+                        ),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(38.dp)
+                            .testTag("export_config_btn")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Share,
+                            contentDescription = "导出配置",
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = if (isExportingConfig) "导出中..." else "导出配置",
+                            style = TextStyle(
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 12.sp
+                            )
+                        )
                     }
                 }
             }

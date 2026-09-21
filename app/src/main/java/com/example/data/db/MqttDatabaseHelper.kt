@@ -284,23 +284,36 @@ class MqttDatabaseHelper(context: Context) : SQLiteOpenHelper(
     // =========================================================================
 
     fun insertPacket(packet: MqttLogPacket, maxBuffer: Int = 10000) {
-        val db = writableDatabase
-        val cv = ContentValues().apply {
-            put("id", packet.id)
-            put("topic", packet.topic)
-            put("qos", packet.qos)
-            put("packetSeq", packet.packetSeq)
-            put("timestamp", packet.timestamp)
-            put("payload", packet.payload)
-            put("devInfo", packet.devInfo)
-            put("sizeText", packet.sizeText)
-            put("category", packet.category)
-            put("dotColorHex", packet.dotColorHex)
-            put("created_at", System.currentTimeMillis())
-        }
-        db.insertWithOnConflict(TABLE_PACKETS, null, cv, SQLiteDatabase.CONFLICT_REPLACE)
+        insertPackets(listOf(packet), maxBuffer)
+    }
 
-        // 超过阈值时自动修剪历史记录，实现 10000 条安全循环轮转落盘
+    fun insertPackets(packets: List<MqttLogPacket>, maxBuffer: Int = 10000) {
+        if (packets.isEmpty()) return
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            for (packet in packets) {
+                val cv = ContentValues().apply {
+                    put("id", packet.id)
+                    put("topic", packet.topic)
+                    put("qos", packet.qos)
+                    put("packetSeq", packet.packetSeq)
+                    put("timestamp", packet.timestamp)
+                    put("payload", packet.payload)
+                    put("devInfo", packet.devInfo)
+                    put("sizeText", packet.sizeText)
+                    put("category", packet.category)
+                    put("dotColorHex", packet.dotColorHex)
+                    put("created_at", System.currentTimeMillis())
+                }
+                db.insertWithOnConflict(TABLE_PACKETS, null, cv, SQLiteDatabase.CONFLICT_REPLACE)
+            }
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+
+        // 仅在数据累积量较大时异步或按需修剪历史记录，避免单条逐次全表扫描
         if (maxBuffer > 0) {
             try {
                 db.execSQL(

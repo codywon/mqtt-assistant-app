@@ -234,6 +234,10 @@ class MqttStorageRepository(context: Context) {
         dbHelper.insertPacket(packet, maxBuffer)
     }
 
+    fun savePackets(packets: List<MqttLogPacket>, maxBuffer: Int = 10000) {
+        dbHelper.insertPackets(packets, maxBuffer)
+    }
+
     fun loadRecentPackets(limit: Int = 300): List<MqttLogPacket> {
         return dbHelper.loadRecentPackets(limit)
     }

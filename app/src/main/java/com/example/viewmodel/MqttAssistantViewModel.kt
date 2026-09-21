@@ -6,7 +6,9 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
+import android.net.Uri
 import android.util.Log
+import com.example.util.ConfigBackupHelper
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.MqttStorageRepository
@@ -33,6 +35,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -144,8 +148,10 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
     val isPasswordVisible = MutableStateFlow(false)
     val isSavingSettings = MutableStateFlow(false)
     private var isManualDisconnecting = false
+    private val incomingPacketChannel = Channel<MqttLogPacket>(capacity = Channel.UNLIMITED)
 
     init {
+        startPacketBatchCollector()
         setupMqttCallbacks()
         registerNetworkCallback()
         if (serverConfig.value.host.isNotBlank()) {
@@ -154,6 +160,82 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 val brokerHost = "${serverConfig.value.host}:${serverConfig.value.port}"
                 MqttBackgroundService.startKeepAlive(application, brokerHost)
                 isForegroundKeepAliveRunning.value = true
+            }
+        }
+    }
+
+    /**
+     * 高性能报文聚合通道（40ms 窗口批处理）：
+     * 无论瞬间并发冲刷多少条报文，聚合在 40ms 窗口（对应手机 60Hz/120Hz 丝滑刷新率）内合并更新：
+     * 1. 批量触发一次 StateFlow 发射，彻底消除 Compose 重组雪崩和滚动条剧烈打断闪屏；
+     * 2. 单次事务批量写入 SQLite 数据库，消除磁盘锁竞争与卡顿；
+     * 3. 批量聚合订阅主题消息计数。
+     */
+    private fun startPacketBatchCollector() {
+        viewModelScope.launch(Dispatchers.Default) {
+            val batch = mutableListOf<MqttLogPacket>()
+            while (isActive) {
+                val firstPacket = incomingPacketChannel.receiveCatching().getOrNull() ?: break
+                batch.add(firstPacket)
+
+                // 40ms 极小缓冲窗口（人眼极致流畅），最多同时收集 100 条
+                val deadline = System.currentTimeMillis() + 40
+                while (System.currentTimeMillis() < deadline && batch.size < 100) {
+                    val next = incomingPacketChannel.tryReceive().getOrNull()
+                    if (next != null) {
+                        batch.add(next)
+                    } else {
+                        delay(5)
+                    }
+                }
+
+                val currentBatch = batch.toList()
+                batch.clear()
+                val maxBuffer = serverConfig.value.bufferThreshold
+
+                // 1. 批量更新 livePackets 与订阅条目计数 (主线程一次性发射)
+                withContext(Dispatchers.Main) {
+                    livePackets.update { current ->
+                        (current + currentBatch).takeLast(maxBuffer)
+                    }
+
+                    val topicCounts = currentBatch.groupBy { it.topic }
+                    subscriptions.update { list ->
+                        list.map { sub ->
+                            if (sub.isEnabled) {
+                                val matchedCount = topicCounts.entries.sumOf { (topic, packets) ->
+                                    if (MqttTopicUtil.matchesMqttTopic(sub.topic, topic)) packets.size else 0
+                                }
+                                if (matchedCount > 0) {
+                                    sub.copy(
+                                        msgCount = sub.msgCount + matchedCount,
+                                        lastTimeText = "刚刚"
+                                    )
+                                } else sub
+                            } else sub
+                        }
+                    }
+                }
+
+                // 2. 异步批量单事务入库 SQLite
+                withContext(Dispatchers.IO) {
+                    storage.savePackets(currentBatch, maxBuffer)
+                }
+
+                // 3. 更新通知栏
+                if (MqttBackgroundService.isRunning) {
+                    val lastPacket = currentBatch.lastOrNull()
+                    if (lastPacket != null) {
+                        val host = serverConfig.value.host
+                        val brokerLabel = if (host.isNotBlank()) "${host}:${serverConfig.value.port}" else ""
+                        MqttBackgroundService.updateNotification(
+                            context = getApplication(),
+                            brokerHost = brokerLabel,
+                            count = packetSeqCounter,
+                            latestTopic = lastPacket.topic
+                        )
+                    }
+                }
             }
         }
     }
@@ -212,36 +294,8 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 dotColorHex = dotColor
             )
 
-            // 消息接收永不中断：无论是否暂停自动滚动，均持续存入数据库并追加在列表底部
-            livePackets.update { current ->
-                (current + packet).takeLast(serverConfig.value.bufferThreshold)
-            }
-            viewModelScope.launch(Dispatchers.IO) {
-                storage.savePacket(packet, serverConfig.value.bufferThreshold)
-            }
-
-            subscriptions.update { list ->
-                list.map { sub ->
-                    if (sub.isEnabled && MqttTopicUtil.matchesMqttTopic(sub.topic, topic)) {
-                        sub.copy(
-                            msgCount = sub.msgCount + 1,
-                            lastTimeText = "刚刚"
-                        )
-                    } else sub
-                }
-            }
-
-            // 更新常驻通知栏中的统计报文数与最新主题
-            if (MqttBackgroundService.isRunning) {
-                val host = serverConfig.value.host
-                val brokerLabel = if (host.isNotBlank()) "${host}:${serverConfig.value.port}" else ""
-                MqttBackgroundService.updateNotification(
-                    context = getApplication(),
-                    brokerHost = brokerLabel,
-                    count = packetSeqCounter,
-                    latestTopic = topic
-                )
-            }
+            // 发送到高性能聚合管道，无阻塞极速返回
+            incomingPacketChannel.trySend(packet)
         }
 
         MqttClientManager.onConnectionStateChanged = { isConn, cause ->
@@ -1383,6 +1437,134 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 showToast("保存异常: ${e.localizedMessage}")
             } finally {
                 isSavingSettings.value = false
+            }
+        }
+    }
+
+    val isExportingConfig = MutableStateFlow(false)
+    val isImportingConfig = MutableStateFlow(false)
+
+    /**
+     * 全量导出配置为标准 JSON 格式并调起系统分享 / 另存为
+     * 包含：全部 Broker 节点、发布预设、订阅规则、高级参数及主题过滤规则
+     */
+    fun exportConfiguration(context: Context) {
+        if (isExportingConfig.value) return
+        isExportingConfig.value = true
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val file = ConfigBackupHelper.exportConfigToJson(
+                    context = context,
+                    profiles = brokerProfiles.value,
+                    activeId = activeBrokerId.value,
+                    presets = publishPresets.value,
+                    subs = subscriptions.value,
+                    serverConfig = serverConfig.value,
+                    includeFilters = includeTopicFilters.value,
+                    excludeFilters = excludeTopicFilters.value
+                )
+                withContext(Dispatchers.Main) {
+                    isExportingConfig.value = false
+                    showToast("配置已成功导出为 JSON 文件")
+                    ConfigBackupHelper.shareBackupFile(context, file)
+                }
+            } catch (e: Exception) {
+                Log.e("MqttAssistantViewModel", "Failed to export config", e)
+                withContext(Dispatchers.Main) {
+                    isExportingConfig.value = false
+                    showToast("导出配置失败: ${e.localizedMessage}")
+                }
+            }
+        }
+    }
+
+    /**
+     * 从外部选择的 JSON 文件中全量解析并恢复配置
+     */
+    fun importConfiguration(context: Context, uri: Uri) {
+        if (isImportingConfig.value) return
+        isImportingConfig.value = true
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val jsonString = context.contentResolver.openInputStream(uri)?.use { stream ->
+                    stream.bufferedReader(Charsets.UTF_8).readText()
+                } ?: throw IllegalArgumentException("无法读取文件内容")
+
+                val backup = ConfigBackupHelper.parseBackupJson(jsonString)
+
+                // 1. 恢复 Broker 节点
+                if (backup.brokerProfiles.isNotEmpty()) {
+                    storage.saveBrokerProfiles(backup.brokerProfiles)
+                    brokerProfiles.value = backup.brokerProfiles
+                }
+
+                // 2. 恢复激活 Broker
+                val activeId = if (backup.activeBrokerId.isNotBlank() && backup.brokerProfiles.any { it.id == backup.activeBrokerId }) {
+                    backup.activeBrokerId
+                } else {
+                    backup.brokerProfiles.firstOrNull()?.id ?: ""
+                }
+                if (activeId.isNotBlank()) {
+                    storage.saveActiveBrokerId(activeId)
+                    activeBrokerId.value = activeId
+                    val activeBroker = backup.brokerProfiles.find { it.id == activeId }
+                    if (activeBroker != null) {
+                        serverConfig.update {
+                            it.copy(
+                                activeProfileId = activeBroker.id,
+                                host = activeBroker.host,
+                                port = activeBroker.port,
+                                clientId = activeBroker.clientId,
+                                username = activeBroker.username,
+                                password = activeBroker.password,
+                                protocol = activeBroker.protocol,
+                                cleanSession = activeBroker.cleanSession,
+                                tlsEnabled = activeBroker.tlsEnabled,
+                                keepAlive = activeBroker.keepAlive
+                            )
+                        }
+                    }
+                }
+
+                // 3. 恢复发布预设
+                if (backup.publishPresets.isNotEmpty()) {
+                    storage.savePublishPresets(backup.publishPresets)
+                    publishPresets.value = backup.publishPresets
+                }
+
+                // 4. 恢复订阅条目
+                if (backup.subscriptions.isNotEmpty()) {
+                    storage.saveSubscriptions(backup.subscriptions)
+                    subscriptions.value = backup.subscriptions
+                }
+
+                // 5. 恢复全局设置与过滤规则
+                storage.saveBackgroundKeepAlive(backup.backgroundKeepAlive)
+                storage.saveWakeLock(backup.wakeLockEnabled)
+                storage.saveIncludeTopicFilters(backup.includeFilters)
+                storage.saveExcludeTopicFilters(backup.excludeFilters)
+                includeTopicFilters.value = backup.includeFilters
+                excludeTopicFilters.value = backup.excludeFilters
+
+                serverConfig.update {
+                    it.copy(
+                        autoRotate = backup.autoRotate,
+                        bufferThreshold = backup.bufferThreshold,
+                        backgroundKeepAliveEnabled = backup.backgroundKeepAlive,
+                        wakeLockEnabled = backup.wakeLockEnabled
+                    )
+                }
+
+                withContext(Dispatchers.Main) {
+                    isImportingConfig.value = false
+                    showToast("配置导入成功：恢复 ${backup.brokerProfiles.size} 个节点、${backup.publishPresets.size} 条预设、${backup.subscriptions.size} 条订阅")
+                }
+            } catch (e: Exception) {
+                Log.e("MqttAssistantViewModel", "Failed to import config", e)
+                withContext(Dispatchers.Main) {
+                    isImportingConfig.value = false
+                    showToast("导入失败: ${e.localizedMessage ?: "备份文件解析异常"}")
+                }
             }
         }
     }
