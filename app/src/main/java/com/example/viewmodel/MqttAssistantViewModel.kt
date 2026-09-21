@@ -16,6 +16,7 @@ import com.example.model.SubscriptionItem
 import com.example.mqtt.MqttClientManager
 import com.example.service.MqttBackgroundService
 import com.example.util.MqttTopicUtil
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
