@@ -1,48 +1,36 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
   <defs>
-    <!-- Premium Titanium Obsidian Black Gradient -->
+    <!-- Deep Obsidian Black Gradient -->
     <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#161922" />
-      <stop offset="50%" stop-color="#0E1017" />
-      <stop offset="100%" stop-color="#08090D" />
+      <stop offset="0%" stop-color="#141416" />
+      <stop offset="50%" stop-color="#0E0E10" />
+      <stop offset="100%" stop-color="#08080A" />
     </linearGradient>
-    <filter id="subtleGlow" x="-10%" y="-10%" width="120%" height="120%">
-      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#000000" flood-opacity="0.45" />
-    </filter>
   </defs>
 
-  <!-- Background Squircle (Apple/Android Standard Superellipse) -->
-  <rect width="512" height="512" rx="115" ry="115" fill="url(#bgGradient)" />
+  <!-- Background Squircle (Pure Black Superellipse, Matching User Image) -->
+  <rect width="512" height="512" rx="120" ry="120" fill="url(#bgGradient)" />
 
-  <!-- Subtle Outer Edge Ring -->
-  <rect width="510" height="510" x="1" y="1" rx="114" ry="114" fill="none" stroke="#FFFFFF" stroke-opacity="0.08" stroke-width="2" />
+  <!-- 1. Pure White Speech Bubble Body -->
+  <!-- Centered, Generous, Soft Curves -->
+  <rect x="96" y="146" width="320" height="206" rx="88" ry="88" fill="#FFFFFF" />
 
-  <!-- Main Speech Bubble & Waves Group -->
-  <g filter="url(#subtleGlow)">
-    <!-- 1. Pure White Speech Bubble Body -->
-    <rect x="88" y="160" width="308" height="216" rx="72" ry="72" fill="#FFFFFF" />
+  <!-- 2. Speech Bubble Tail on Bottom-Left -->
+  <path d="M 125,320 L 125,385 C 125,392 135,396 142,390 L 205,352 Z" fill="#FFFFFF" />
 
-    <!-- 2. Speech Bubble Tail -->
-    <path d="M 110,345 L 82,410 C 80,415 88,420 95,417 L 175,372 Z" fill="#FFFFFF" />
-
-    <!-- 3. Signal Wave 1 (Inner Wave) -->
-    <path d="M 345,170 A 130,130 0 0,1 428,245" fill="none" stroke="#FFFFFF" stroke-width="22" stroke-linecap="round" />
-
-    <!-- 4. Signal Wave 2 (Outer Wave) -->
-    <path d="M 370,126 A 180,180 0 0,1 475,225" fill="none" stroke="#FFFFFF" stroke-width="22" stroke-linecap="round" />
-
-    <!-- 5. "MQTT" Crisp Typographic Cutout -->
+  <!-- 3. "MQTT" Typographic Cutout -->
+  <g fill="#0C0C0E">
     <!-- M -->
-    <path d="M 136,305 L 136,232 L 155,232 L 174,272 L 193,232 L 212,232 L 212,305 L 197,305 L 197,258 L 179,295 L 169,295 L 151,258 L 151,305 Z" fill="#0D0F14" />
-    
+    <path d="M 128,300 L 128,190 L 151,190 L 174,238 L 197,190 L 220,190 L 220,300 L 200,300 L 200,225 L 180,268 L 168,268 L 148,225 L 148,300 Z" />
+
     <!-- Q -->
-    <path d="M 226,268.5 C 226,246 238,232 258,232 C 278,232 290,246 290,268.5 C 290,291 278,305 258,305 C 238,305 226,291 226,268.5 Z M 242.5,268.5 C 242.5,283 248.5,292.5 258,292.5 C 267.5,292.5 273.5,283 273.5,268.5 C 273.5,254 267.5,244.5 258,244.5 C 248.5,244.5 242.5,254 242.5,268.5 Z" fill="#0D0F14" />
-    <path d="M 268,288 L 291,313 L 281,320 L 259,297 Z" fill="#0D0F14" />
+    <path d="M 235,245 C 235,212 250,190 278,190 C 306,190 321,212 321,245 C 321,278 306,300 278,300 C 250,300 235,278 235,245 Z M 256,245 C 256,268 264,281 278,281 C 292,281 300,268 300,245 C 300,222 292,209 278,209 C 264,209 256,222 256,245 Z" />
+    <path d="M 290,272 L 320,307 L 307,317 L 280,285 Z" />
 
     <!-- T (First) -->
-    <path d="M 296,232 L 334,232 L 334,247 L 323,247 L 323,305 L 307,305 L 307,247 L 296,247 Z" fill="#0D0F14" />
+    <path d="M 328,190 L 372,190 L 372,210 L 360,210 L 360,300 L 340,300 L 340,210 L 328,210 Z" />
 
     <!-- T (Second) -->
-    <path d="M 338,232 L 376,232 L 376,247 L 365,247 L 365,305 L 349,305 L 349,247 L 338,247 Z" fill="#0D0F14" />
+    <path d="M 378,190 L 422,190 L 422,210 L 410,210 L 410,300 L 390,300 L 390,210 L 378,210 Z" />
   </g>
 </svg>
