@@ -361,30 +361,42 @@ private fun PublishPresetCard(
                 }
             }
 
-            // Row 2: Payload Preview (Code-style)
-            Box(
+            // Row 2: Payload Preview (Refined Modern Code-style)
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(8.dp))
+                    .background(SurfaceContainerLow.copy(alpha = 0.6f))
                     .border(
-                        width = 0.8.dp,
+                        width = 0.7.dp,
                         color = SurfaceContainerDefault,
                         shape = RoundedCornerShape(8.dp)
                     )
-                    .background(SurfaceContainerLowest)
                     .clickable { onCopy() }
-                    .padding(horizontal = 12.dp, vertical = 8.dp)
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
+                // Vertical accent bar for code block
+                Box(
+                    modifier = Modifier
+                        .width(2.5.dp)
+                        .height(28.dp)
+                        .clip(RoundedCornerShape(1.dp))
+                        .background(PrimaryBlack.copy(alpha = 0.35f))
+                )
+                Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = preset.payload.replace("\n", " ").trim(),
                     style = TextStyle(
                         fontFamily = FontFamily.Monospace,
-                        fontSize = 12.5.sp,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
                         lineHeight = 18.sp,
-                        color = OnSurfaceDark
+                        color = PrimaryBlack
                     ),
                     maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
                 )
             }
 
@@ -776,10 +788,15 @@ private fun PublishConfigModalDialog(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(115.dp)
+                            .height(125.dp)
                             .clip(RoundedCornerShape(8.dp))
-                            .background(SurfaceContainerLow)
-                            .padding(8.dp)
+                            .border(
+                                width = 0.7.dp,
+                                color = SurfaceContainerDefault,
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                            .background(SurfaceContainerLow.copy(alpha = 0.5f))
+                            .padding(10.dp)
                     ) {
                         BasicTextField(
                             value = payload,
@@ -787,7 +804,8 @@ private fun PublishConfigModalDialog(
                             modifier = Modifier.fillMaxSize(),
                             textStyle = TextStyle(
                                 fontFamily = FontFamily.Monospace,
-                                fontSize = 12.sp,
+                                fontSize = 13.sp,
+                                lineHeight = 18.sp,
                                 color = PrimaryBlack
                             ),
                             cursorBrush = SolidColor(PrimaryBlack)

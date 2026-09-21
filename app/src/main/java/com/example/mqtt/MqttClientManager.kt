@@ -96,6 +96,8 @@ object MqttClientManager {
 
                 val persistence = MemoryPersistence()
                 val client = MqttClient(brokerUrl, clientId, persistence)
+                // Assign reference immediately to eliminate race condition with connectComplete callbacks
+                mqttClient = client
 
                 val options = MqttConnectOptions().apply {
                     isCleanSession = config.cleanSession
@@ -125,7 +127,10 @@ object MqttClientManager {
                 client.setCallback(object : MqttCallbackExtended {
                     override fun connectComplete(reconnect: Boolean, serverURI: String?) {
                         Log.d(TAG, "connectComplete: URI=$serverURI, reconnect=$reconnect")
-                        onConnectionStateChanged?.invoke(true, null)
+                        // When reconnecting automatically, notify ViewModel to resubscribe topics
+                        if (reconnect) {
+                            onConnectionStateChanged?.invoke(true, null)
+                        }
                     }
 
                     override fun connectionLost(cause: Throwable?) {
@@ -136,6 +141,7 @@ object MqttClientManager {
 
                     override fun messageArrived(topic: String, message: MqttMessage) {
                         try {
+                            Log.d(TAG, "messageArrived: topic=$topic, qos=${message.qos}, bytes=${message.payload?.size ?: 0}")
                             onMessageReceived?.invoke(
                                 topic,
                                 message.qos,
@@ -153,7 +159,6 @@ object MqttClientManager {
                 })
 
                 client.connect(options)
-                mqttClient = client
                 onConnectionStateChanged?.invoke(true, null)
                 Result.success(Unit)
             } catch (e: Throwable) {
@@ -289,12 +294,28 @@ object MqttClientManager {
         try {
             val client = mqttClient
             if (client != null && client.isConnected) {
-                if (topicsWithQos.isEmpty()) return@withContext Result.success(Unit)
-                val topicArray = topicsWithQos.map { it.first.trim() }.toTypedArray()
-                val qosArray = topicsWithQos.map { it.second }.toIntArray()
-                client.subscribe(topicArray, qosArray)
-                Log.d(TAG, "Batch subscribed to ${topicArray.size} topics: ${topicArray.joinToString()}")
-                Result.success(Unit)
+                val validList = topicsWithQos.filter { it.first.trim().isNotBlank() }
+                if (validList.isEmpty()) return@withContext Result.success(Unit)
+                try {
+                    val topicArray = validList.map { it.first.trim() }.toTypedArray()
+                    val qosArray = validList.map { it.second.coerceIn(0, 2) }.toIntArray()
+                    client.subscribe(topicArray, qosArray)
+                    Log.d(TAG, "Batch subscribed to ${topicArray.size} topics: ${topicArray.joinToString()}")
+                    Result.success(Unit)
+                } catch (e: Throwable) {
+                    Log.w(TAG, "Batch subscribe failed, falling back to individual subscriptions: ${e.message}")
+                    var hasAnySuccess = false
+                    for ((topic, qos) in validList) {
+                        try {
+                            client.subscribe(topic.trim(), qos.coerceIn(0, 2))
+                            Log.d(TAG, "Individual subscribe success: $topic (QoS $qos)")
+                            hasAnySuccess = true
+                        } catch (subErr: Exception) {
+                            Log.e(TAG, "Failed individual subscribe for $topic", subErr)
+                        }
+                    }
+                    if (hasAnySuccess) Result.success(Unit) else Result.failure(e)
+                }
             } else {
                 Result.failure(IllegalStateException("MQTT client is not connected"))
             }

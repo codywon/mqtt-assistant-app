@@ -157,31 +157,34 @@ class MqttStorageRepository(context: Context) {
     // ==========================================
 
     fun loadSubscriptions(): List<SubscriptionItem> {
-        val jsonString = prefs.getString(KEY_SUBSCRIPTIONS, null)
-        if (!jsonString.isNullOrBlank()) {
-            try {
-                val array = JSONArray(jsonString)
-                val list = mutableListOf<SubscriptionItem>()
-                for (i in 0 until array.length()) {
-                    val obj = array.getJSONObject(i)
-                    list.add(
-                        SubscriptionItem(
-                            id = obj.optString("id", "s$i"),
-                            topic = obj.optString("topic", ""),
-                            qos = obj.optInt("qos", 0),
-                            msgCount = obj.optInt("msgCount", 0),
-                            lastTimeText = obj.optString("lastTimeText", "等待数据"),
-                            isEnabled = obj.optBoolean("isEnabled", true),
-                            dotColorHex = obj.optLong("dotColorHex", 0xFF10B981),
-                            name = obj.optString("name", ""),
-                            retainHandling = obj.optInt("retainHandling", 0)
+        if (prefs.contains(KEY_SUBSCRIPTIONS)) {
+            val jsonString = prefs.getString(KEY_SUBSCRIPTIONS, null)
+            if (!jsonString.isNullOrBlank()) {
+                try {
+                    val array = JSONArray(jsonString)
+                    val list = mutableListOf<SubscriptionItem>()
+                    for (i in 0 until array.length()) {
+                        val obj = array.getJSONObject(i)
+                        list.add(
+                            SubscriptionItem(
+                                id = obj.optString("id", "s$i"),
+                                topic = obj.optString("topic", ""),
+                                qos = obj.optInt("qos", 0),
+                                msgCount = obj.optInt("msgCount", 0),
+                                lastTimeText = obj.optString("lastTimeText", "等待数据"),
+                                isEnabled = obj.optBoolean("isEnabled", true),
+                                dotColorHex = obj.optLong("dotColorHex", 0xFF10B981),
+                                name = obj.optString("name", ""),
+                                retainHandling = obj.optInt("retainHandling", 0)
+                            )
                         )
-                    )
+                    }
+                    return list
+                } catch (e: Exception) {
+                    e.printStackTrace()
                 }
-                if (list.isNotEmpty()) return list
-            } catch (e: Exception) {
-                e.printStackTrace()
             }
+            return emptyList()
         }
         return defaultSubscriptions()
     }
@@ -210,12 +213,7 @@ class MqttStorageRepository(context: Context) {
     }
 
     private fun defaultSubscriptions(): List<SubscriptionItem> = listOf(
-        SubscriptionItem("s0", "college/#", 0, 0, "等待数据", true, 0xFF10B981, name = "高校设备流"),
-        SubscriptionItem("s1", "Collect/#", 0, 0, "等待数据", true, 0xFF006C52, name = "Collect采集"),
-        SubscriptionItem("s2", "Set_OTA_url/#", 0, 0, "等待数据", true, 0xFF3980F4, name = "OTA升级"),
-        SubscriptionItem("s3", "Voice_Reminder/#", 0, 0, "等待数据", true, 0xFF8B5CF6, name = "语音指令"),
-        SubscriptionItem("s4", "scale_config/#", 0, 0, "等待数据", true, 0xFFF59E0B, name = "称重设备"),
-        SubscriptionItem("s5", "Sensor_Gateway/Telemetry", 0, 0, "等待数据", false, 0xFF747878, name = "传感器")
+        SubscriptionItem("s0", "testtopic/#", 0, 0, "等待数据", true, 0xFF10B981, name = "公共测试流")
     )
 
     // ==========================================
@@ -223,28 +221,31 @@ class MqttStorageRepository(context: Context) {
     // ==========================================
 
     fun loadPublishPresets(): List<PublishPreset> {
-        val jsonString = prefs.getString(KEY_PUBLISH_PRESETS, null)
-        if (!jsonString.isNullOrBlank()) {
-            try {
-                val array = JSONArray(jsonString)
-                val list = mutableListOf<PublishPreset>()
-                for (i in 0 until array.length()) {
-                    val obj = array.getJSONObject(i)
-                    list.add(
-                        PublishPreset(
-                            id = obj.optString("id", "p$i"),
-                            name = obj.optString("name", "配置 $i"),
-                            topic = obj.optString("topic", ""),
-                            qos = obj.optInt("qos", 0),
-                            retain = obj.optBoolean("retain", false),
-                            payload = obj.optString("payload", "{}")
+        if (prefs.contains(KEY_PUBLISH_PRESETS)) {
+            val jsonString = prefs.getString(KEY_PUBLISH_PRESETS, null)
+            if (!jsonString.isNullOrBlank()) {
+                try {
+                    val array = JSONArray(jsonString)
+                    val list = mutableListOf<PublishPreset>()
+                    for (i in 0 until array.length()) {
+                        val obj = array.getJSONObject(i)
+                        list.add(
+                            PublishPreset(
+                                id = obj.optString("id", "p$i"),
+                                name = obj.optString("name", "配置 $i"),
+                                topic = obj.optString("topic", ""),
+                                qos = obj.optInt("qos", 0),
+                                retain = obj.optBoolean("retain", false),
+                                payload = obj.optString("payload", "{}")
+                            )
                         )
-                    )
+                    }
+                    return list
+                } catch (e: Exception) {
+                    e.printStackTrace()
                 }
-                if (list.isNotEmpty()) return list
-            } catch (e: Exception) {
-                e.printStackTrace()
             }
+            return emptyList()
         }
         return defaultPublishPresets()
     }
@@ -272,51 +273,11 @@ class MqttStorageRepository(context: Context) {
     private fun defaultPublishPresets(): List<PublishPreset> = listOf(
         PublishPreset(
             id = "p0",
-            name = "断路器参数控制",
-            topic = "college/breaker/control/THFC012CCCBDDC",
+            name = "通用测试消息",
+            topic = "testtopic/1",
             qos = 0,
             retain = false,
-            payload = "{\n  \"schema_version\": 1,\n  \"action\": \"set_config\",\n  \"config_reset\": false\n}"
-        ),
-        PublishPreset(
-            id = "p1",
-            name = "OTA固件升级指令",
-            topic = "Voice_Reminder/Set_OTA_url/TH02D0CF130657D4",
-            qos = 0,
-            retain = false,
-            payload = "{\n  \"ota_url\": \"https://ota.codywon.top:9443/BSG.bin\",\n  \"size\": 1048576,\n  \"md5\": \"a1b2c3d4e5f60718\"\n}"
-        ),
-        PublishPreset(
-            id = "p2",
-            name = "秤重参数配置",
-            topic = "scale_config/865269078444663",
-            qos = 0,
-            retain = false,
-            payload = "{\n  \"scale\": \"74.8\",\n  \"device_id\": \"865269078444663\",\n  \"unit\": \"kg\"\n}"
-        ),
-        PublishPreset(
-            id = "p3",
-            name = "语音播报指令",
-            topic = "Voice_Reminder/Voice_Msg_cmd/TH02D0CF130657D4",
-            qos = 0,
-            retain = false,
-            payload = "{\n  \"id\": \"afb7fb2f48484da5be7bdc6c2b7609df\",\n  \"type\": \"play\",\n  \"vol\": 80,\n  \"msg\": \"设备正常工作中\"\n}"
-        ),
-        PublishPreset(
-            id = "p4",
-            name = "音量调节",
-            topic = "Voice_Reminder/Device_Vol/TH02D0CF130657D4",
-            qos = 0,
-            retain = false,
-            payload = "{\n  \"vol\": 90\n}"
-        ),
-        PublishPreset(
-            id = "p5",
-            name = "设备心跳探测",
-            topic = "college/device/ping",
-            qos = 0,
-            retain = false,
-            payload = "{\n  \"ping\": true,\n  \"timestamp\": 1726830000\n}"
+            payload = "{\n  \"msg\": \"hello mqtt\",\n  \"status\": \"online\"\n}"
         )
     )
 

@@ -342,6 +342,7 @@ fun SubscribeScreen(
                     item = sub,
                     onCardClick = { openEditDialog(sub) },
                     onToggle = { viewModel.toggleSubscription(sub.id) },
+                    onProbe = { viewModel.testPublishLoopback(sub) },
                     onCopy = {
                         clipboardManager.setPrimaryClip(ClipData.newPlainText("topic", sub.topic))
                         viewModel.showToast("已复制主题: ${sub.topic}")
@@ -443,6 +444,7 @@ private fun SubscriptionItemCard(
     item: SubscriptionItem,
     onCardClick: () -> Unit,
     onToggle: () -> Unit,
+    onProbe: () -> Unit,
     onCopy: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit
@@ -485,13 +487,14 @@ private fun SubscriptionItemCard(
                         style = TextStyle(
                             fontFamily = FontFamily.Monospace,
                             fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp,
+                            fontSize = 14.5.sp,
                             color = if (item.isEnabled) PrimaryBlack else OnSurfaceVariantGray
                         ),
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
                     // QoS Badge (Monochrome)
                     Box(
                         modifier = Modifier
@@ -503,10 +506,12 @@ private fun SubscriptionItemCard(
                             text = "QoS ${item.qos}",
                             style = TextStyle(
                                 fontFamily = FontFamily.Monospace,
-                                fontSize = 11.sp,
+                                fontSize = 10.5.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = OnSurfaceDark
-                            )
+                            ),
+                            maxLines = 1,
+                            softWrap = false
                         )
                     }
 
@@ -526,7 +531,9 @@ private fun SubscriptionItemCard(
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.SemiBold,
                                     color = OnSurfaceVariantGray
-                                )
+                                ),
+                                maxLines = 1,
+                                softWrap = false
                             )
                         }
                     }
@@ -592,6 +599,18 @@ private fun SubscriptionItemCard(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    IconButton(
+                        onClick = onProbe,
+                        modifier = Modifier.size(28.dp),
+                        enabled = item.isEnabled
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Bolt,
+                            contentDescription = "自测探针",
+                            tint = if (item.isEnabled) PrimaryBlack else OutlineGray,
+                            modifier = Modifier.size(15.dp)
+                        )
+                    }
                     IconButton(
                         onClick = onCopy,
                         modifier = Modifier.size(28.dp)
@@ -1130,7 +1149,7 @@ private fun SubscriptionConfigModalDialog(
                                     lastTimeText = initialItem?.lastTimeText ?: "刚刚",
                                     isEnabled = isEnabled,
                                     dotColorHex = dotColorHex,
-                                    name = name.ifBlank { trimmedTopic.substringBefore('/') },
+                                    name = name.trim(),
                                     retainHandling = retainHandling
                                 )
                                 onSave(savedItem)

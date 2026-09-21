@@ -130,49 +130,48 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
 
     private fun setupMqttCallbacks() {
         MqttClientManager.onMessageReceived = { topic, qos, payloadBytes, retain ->
-            // PC-Grade Topic Filtering: Exclude rules have highest priority!
-            if (MqttTopicUtil.isTopicAllowed(topic, includeTopicFilters.value, excludeTopicFilters.value) && !isRecordingPaused.value) {
-                val timeStr = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date())
-                val payloadString = try {
-                    String(payloadBytes, Charsets.UTF_8)
-                } catch (e: Exception) {
-                    payloadBytes.joinToString(" ") { "%02X".format(it) }
-                }
-                packetSeqCounter++
-                val seq = "#%04d".format(packetSeqCounter)
+            val timeStr = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date())
+            val payloadString = try {
+                String(payloadBytes, Charsets.UTF_8)
+            } catch (e: Exception) {
+                payloadBytes.joinToString(" ") { "%02X".format(it) }
+            }
+            packetSeqCounter++
+            val seq = "#%04d".format(packetSeqCounter)
 
-                val matchingSub = subscriptions.value.firstOrNull { sub ->
-                    MqttTopicUtil.matchesMqttTopic(sub.topic, topic)
-                }
-                val dotColor = matchingSub?.dotColorHex ?: 0xFF10B981
-                val cat = matchingSub?.name?.ifBlank { matchingSub.topic } ?: topic.substringBefore('/')
+            val matchingSub = subscriptions.value.firstOrNull { sub ->
+                MqttTopicUtil.matchesMqttTopic(sub.topic, topic)
+            }
+            val dotColor = matchingSub?.dotColorHex ?: 0xFF10B981
+            val cat = matchingSub?.name?.ifBlank { null } ?: topic.substringBefore('/')
 
-                val packet = MqttLogPacket(
-                    id = UUID.randomUUID().toString(),
-                    topic = topic,
-                    qos = qos,
-                    packetSeq = seq,
-                    timestamp = timeStr,
-                    payload = payloadString,
-                    devInfo = "SUB · ${payloadBytes.size}B" + if (retain) " · Retain" else "",
-                    sizeText = "${payloadBytes.size}B",
-                    category = cat,
-                    dotColorHex = dotColor
-                )
+            val packet = MqttLogPacket(
+                id = UUID.randomUUID().toString(),
+                topic = topic,
+                qos = qos,
+                packetSeq = seq,
+                timestamp = timeStr,
+                payload = payloadString,
+                devInfo = "SUB · ${payloadBytes.size}B" + if (retain) " · Retain" else "",
+                sizeText = "${payloadBytes.size}B",
+                category = cat,
+                dotColorHex = dotColor
+            )
 
+            if (!isRecordingPaused.value) {
                 livePackets.update { current ->
                     (listOf(packet) + current).take(serverConfig.value.bufferThreshold)
                 }
+            }
 
-                subscriptions.update { list ->
-                    list.map { sub ->
-                        if (sub.isEnabled && MqttTopicUtil.matchesMqttTopic(sub.topic, topic)) {
-                            sub.copy(
-                                msgCount = sub.msgCount + 1,
-                                lastTimeText = "刚刚"
-                            )
-                        } else sub
-                    }
+            subscriptions.update { list ->
+                list.map { sub ->
+                    if (sub.isEnabled && MqttTopicUtil.matchesMqttTopic(sub.topic, topic)) {
+                        sub.copy(
+                            msgCount = sub.msgCount + 1,
+                            lastTimeText = "刚刚"
+                        )
+                    } else sub
                 }
             }
         }
@@ -549,6 +548,17 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
             livePackets.update { (listOf(packet) + it).take(serverConfig.value.bufferThreshold) }
 
             if (result.isSuccess) {
+                // If any enabled subscription matches the published topic, update stats immediately
+                subscriptions.update { list ->
+                    list.map { sub ->
+                        if (sub.isEnabled && MqttTopicUtil.matchesMqttTopic(sub.topic, topic)) {
+                            sub.copy(
+                                msgCount = sub.msgCount + 1,
+                                lastTimeText = "刚刚"
+                            )
+                        } else sub
+                    }
+                }
                 publishFeedback.value = "已送达 Broker"
                 showToast("发布成功: $topic")
             } else {
@@ -647,28 +657,46 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
         }
     }
 
-    fun testPublishLoopback() {
+    fun testPublishLoopback(targetSub: SubscriptionItem? = null) {
         if (!serverConfig.value.isConnected) {
             showToast("请先等待或点击顶部连接 Broker 再进行自测")
             return
         }
-        val firstSub = subscriptions.value.firstOrNull { it.isEnabled }
-        val targetTopic = if (firstSub != null) {
-            firstSub.topic.replace("/#", "/test_probe").replace("/+", "/test_probe")
+        val target = targetSub ?: subscriptions.value.firstOrNull { it.isEnabled }
+        val targetTopic = if (target != null) {
+            val raw = target.topic.trim()
+            when {
+                raw == "#" -> "testtopic/probe"
+                raw.endsWith("/#") -> raw.removeSuffix("/#") + "/probe"
+                raw.contains("/+/") -> raw.replace("/+/", "/probe/")
+                raw.endsWith("/+") -> raw.removeSuffix("/+") + "/probe"
+                else -> raw
+            }
         } else {
-            "college/test_probe"
+            "testtopic/probe"
         }
-        val timeNow = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
-        val testPayload = """{"event":"loopback_test","topic":"$targetTopic","status":"online","time":"$timeNow"}"""
+        val timeNow = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date())
+        val testPayload = """{"event":"probe_test","target_topic":"$targetTopic","time":"$timeNow"}"""
         viewModelScope.launch {
             val result = MqttClientManager.publish(
                 topic = targetTopic,
                 payload = testPayload.toByteArray(Charsets.UTF_8),
-                qos = 0,
+                qos = target?.qos ?: 0,
                 retain = false
             )
             if (result.isSuccess) {
-                showToast("自测报文已发送至 $targetTopic，请查看消息流")
+                // Instantly register stats feedback on matching subscription
+                subscriptions.update { list ->
+                    list.map { sub ->
+                        if (sub.isEnabled && MqttTopicUtil.matchesMqttTopic(sub.topic, targetTopic)) {
+                            sub.copy(
+                                msgCount = sub.msgCount + 1,
+                                lastTimeText = "刚刚"
+                            )
+                        } else sub
+                    }
+                }
+                showToast("自测报文已发送至 $targetTopic")
             } else {
                 showToast("自测发送异常: ${result.exceptionOrNull()?.message}")
             }
@@ -682,11 +710,11 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
         name: String = "",
         retainHandling: Int = 0
     ) {
-        var topic = (customTopic ?: newSubTopic.value).trim()
+        val topic = (customTopic ?: newSubTopic.value).trim()
         val targetQos = qos ?: newSubQos.value
-        val isDefault = topic.isBlank()
-        if (isDefault) {
-            topic = "college/#"
+        if (topic.isBlank()) {
+            showToast("请输入订阅主题 (例如 testtopic/#)")
+            return
         }
         val validation = MqttTopicUtil.validateSubscriptionTopic(topic)
         if (!validation.isValid) {
@@ -704,7 +732,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
             lastTimeText = "等待数据",
             isEnabled = true,
             dotColorHex = color,
-            name = name.ifBlank { topic.substringBefore('/') },
+            name = name.trim(),
             retainHandling = retainHandling
         )
         subscriptions.update { listOf(newItem) + it }
