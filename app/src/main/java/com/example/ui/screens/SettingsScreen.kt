@@ -1347,7 +1347,7 @@ fun SettingsScreen(
                     }
                 }
 
-                // Export Excel Action (替换清理历史记录)
+                // Storage management: Clean & Export Excel
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -1355,14 +1355,14 @@ fun SettingsScreen(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "报文数据导出",
+                            text = "报文与存储管理",
                             style = MaterialTheme.typography.labelMedium.copy(
                                 fontWeight = FontWeight.SemiBold,
                                 color = PrimaryBlack
                             )
                         )
                         Text(
-                            text = "导出为标准 Excel 表格 (.xlsx)",
+                            text = "支持导出 Excel 或清理占用空间",
                             style = MaterialTheme.typography.bodySmall.copy(
                                 fontSize = 11.5.sp,
                                 color = OnSurfaceVariantGray
@@ -1370,31 +1370,68 @@ fun SettingsScreen(
                         )
                     }
 
-                    Button(
-                        onClick = { viewModel.exportPacketsToExcel(context) },
-                        enabled = !isExporting,
-                        shape = RoundedCornerShape(8.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = PrimaryBlack,
-                            contentColor = OnPrimaryWhite
-                        ),
-                        modifier = Modifier
-                            .height(36.dp)
-                            .testTag("export_excel_btn")
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.FileDownload,
-                            contentDescription = null,
-                            modifier = Modifier.size(15.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = if (isExporting) "导出中..." else "导出 Excel",
-                            style = TextStyle(
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 11.5.sp
+                        // 清理占用空间按钮
+                        OutlinedButton(
+                            onClick = { viewModel.clearAllData() },
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, OutlineGray.copy(alpha = 0.5f)),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = OnSurfaceVariantGray
+                            ),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                            modifier = Modifier
+                                .height(36.dp)
+                                .testTag("clear_all_data_btn")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.DeleteSweep,
+                                contentDescription = "清理空间",
+                                modifier = Modifier.size(15.dp),
+                                tint = OnSurfaceVariantGray
                             )
-                        )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "清理",
+                                style = TextStyle(
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 11.5.sp,
+                                    color = OnSurfaceVariantGray
+                                )
+                            )
+                        }
+
+                        // 导出 Excel 按钮
+                        Button(
+                            onClick = { viewModel.exportPacketsToExcel(context) },
+                            enabled = !isExporting,
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = PrimaryBlack,
+                                contentColor = OnPrimaryWhite
+                            ),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                            modifier = Modifier
+                                .height(36.dp)
+                                .testTag("export_excel_btn")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.FileDownload,
+                                contentDescription = null,
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = if (isExporting) "导出中..." else "导出 Excel",
+                                style = TextStyle(
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 11.5.sp
+                                )
+                            )
+                        }
                     }
                 }
             }

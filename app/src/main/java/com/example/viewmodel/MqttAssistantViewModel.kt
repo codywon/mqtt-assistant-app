@@ -1317,51 +1317,72 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
 
     fun saveAndApplySettings() {
         viewModelScope.launch {
-            isSavingSettings.value = true
-            showToast("正在保存并重新连接 Broker...")
+            try {
+                isSavingSettings.value = true
 
-            // Update the active broker profile in storage with current form values
-            val activeId = activeBrokerId.value
-            val currentProfiles = brokerProfiles.value.toMutableList()
-            val activeIndex = currentProfiles.indexOfFirst { it.id == activeId }
-            if (activeIndex >= 0) {
-                val current = currentProfiles[activeIndex]
-                currentProfiles[activeIndex] = current.copy(
-                    host = serverConfig.value.host,
-                    port = serverConfig.value.port,
-                    clientId = serverConfig.value.clientId,
-                    username = serverConfig.value.username,
-                    password = serverConfig.value.password,
-                    protocol = serverConfig.value.protocol,
-                    cleanSession = serverConfig.value.cleanSession,
-                    tlsEnabled = serverConfig.value.tlsEnabled,
-                    keepAlive = serverConfig.value.keepAlive
-                )
-                brokerProfiles.value = currentProfiles
-                storage.saveBrokerProfiles(currentProfiles)
-            }
-
-            MqttClientManager.disconnect()
-            val result = MqttClientManager.connect(serverConfig.value)
-            isSavingSettings.value = false
-            if (result.isSuccess) {
-                connectionState.value = MqttConnectionState.CONNECTED
-                serverConfig.update { it.copy(isConnected = true) }
-                val activeSubs = subscriptions.value.filter { it.isEnabled }
-                activeSubs.forEach { sub ->
-                    MqttClientManager.subscribe(sub.topic, sub.qos)
+                // 1. 本地数据库瞬间持久化落盘 (SQLite)
+                val activeId = activeBrokerId.value
+                val currentProfiles = brokerProfiles.value.toMutableList()
+                val activeIndex = currentProfiles.indexOfFirst { it.id == activeId }
+                if (activeIndex >= 0) {
+                    val current = currentProfiles[activeIndex]
+                    currentProfiles[activeIndex] = current.copy(
+                        host = serverConfig.value.host,
+                        port = serverConfig.value.port,
+                        clientId = serverConfig.value.clientId,
+                        username = serverConfig.value.username,
+                        password = serverConfig.value.password,
+                        protocol = serverConfig.value.protocol,
+                        cleanSession = serverConfig.value.cleanSession,
+                        tlsEnabled = serverConfig.value.tlsEnabled,
+                        keepAlive = serverConfig.value.keepAlive
+                    )
+                    brokerProfiles.value = currentProfiles
+                    storage.saveBrokerProfiles(currentProfiles)
                 }
-                showToast("已成功保存并连接至 ${serverConfig.value.host}:${serverConfig.value.port} (已激活 ${activeSubs.size} 个订阅)")
-            } else {
-                connectionState.value = MqttConnectionState.DISCONNECTED
-                serverConfig.update { it.copy(isConnected = false) }
-                val errorMsg = MqttClientManager.getReadableErrorMessage(
-                    result.exceptionOrNull() ?: Exception("连接失败"),
-                    serverConfig.value.host,
-                    serverConfig.value.port,
-                    isTls = serverConfig.value.tlsEnabled
-                )
-                showToast("连接失败: $errorMsg")
+
+                // 2. 本地保存完成，立即解除按钮 loading 状态，绝不卡住界面
+                isSavingSettings.value = false
+                showToast("配置已成功保存并立即生效")
+
+                // 3. 异步应用连接：平滑重启长连接，不阻碍主界面交互
+                isManualDisconnecting = false
+                reconnectJob?.cancel()
+                reconnectCountdown.value = 0
+                connectionState.value = MqttConnectionState.CONNECTING
+
+                val result = withContext(Dispatchers.IO) {
+                    MqttClientManager.disconnect()
+                    MqttClientManager.connect(serverConfig.value)
+                }
+
+                if (result.isSuccess) {
+                    connectionState.value = MqttConnectionState.CONNECTED
+                    serverConfig.update { it.copy(isConnected = true) }
+                    val activeSubs = subscriptions.value.filter { it.isEnabled }
+                    activeSubs.forEach { sub ->
+                        MqttClientManager.subscribe(sub.topic, sub.qos)
+                    }
+                    showToast("已连接 Broker: ${serverConfig.value.host}:${serverConfig.value.port}")
+                } else {
+                    connectionState.value = MqttConnectionState.DISCONNECTED
+                    serverConfig.update { it.copy(isConnected = false) }
+                    val errorMsg = MqttClientManager.getReadableErrorMessage(
+                        result.exceptionOrNull() ?: Exception("连接失败"),
+                        serverConfig.value.host,
+                        serverConfig.value.port,
+                        isTls = serverConfig.value.tlsEnabled
+                    )
+                    showToast("连接未成功: $errorMsg")
+                    if (serverConfig.value.autoReconnect) {
+                        startAutoReconnectLoop(isImmediate = false)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("MqttAssistantViewModel", "Error saving settings", e)
+                showToast("保存异常: ${e.localizedMessage}")
+            } finally {
+                isSavingSettings.value = false
             }
         }
     }
