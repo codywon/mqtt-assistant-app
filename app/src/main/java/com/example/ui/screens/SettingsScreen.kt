@@ -934,7 +934,7 @@ fun SettingsScreen(
                             )
                         )
                         Text(
-                            text = "启用安全双向证书/CA密钥通道",
+                            text = "启用 SSL/TLS 加密通道 (自动信任自签名证书)",
                             style = MaterialTheme.typography.bodySmall.copy(
                                 fontSize = 12.sp,
                                 color = OnSurfaceVariantGray
@@ -1218,98 +1218,6 @@ fun SettingsScreen(
             }
         }
 
-        // 6. MQTT Topic Wildcards Reference Standard
-        Card(
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = SurfaceContainerLowest),
-            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(28.dp)
-                            .clip(CircleShape)
-                            .background(PrimaryBlack),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Tune,
-                            contentDescription = null,
-                            tint = OnPrimaryWhite,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-                    Text(
-                        text = "MQTT 标准通配符规范",
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = FontWeight.Bold,
-                            color = PrimaryBlack,
-                            fontSize = 15.sp
-                        )
-                    )
-                }
-
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(SurfaceContainerLow)
-                        .padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Row(verticalAlignment = Alignment.Top) {
-                        Text(
-                            text = "+ 单级通配符: ",
-                            style = TextStyle(
-                                fontFamily = FontFamily.Monospace,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp,
-                                color = PrimaryBlack
-                            )
-                        )
-                        Text(
-                            text = "仅匹配一个层级。例如 'sensor/+/temp' 匹配 'sensor/room1/temp'，但不匹配 'sensor/room1/floor2/temp'。",
-                            style = TextStyle(fontSize = 12.sp, color = OnSurfaceVariantGray)
-                        )
-                    }
-                    HorizontalDivider(color = SurfaceContainerDefault, thickness = 0.5.dp)
-                    Row(verticalAlignment = Alignment.Top) {
-                        Text(
-                            text = "# 多级通配符: ",
-                            style = TextStyle(
-                                fontFamily = FontFamily.Monospace,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp,
-                                color = PrimaryBlack
-                            )
-                        )
-                        Text(
-                            text = "匹配任意层级。必须独占且置于主题最末端，例如 'sensor/#' 匹配 'sensor/room1' 及 'sensor/room1/temp/history'。",
-                            style = TextStyle(fontSize = 12.sp, color = OnSurfaceVariantGray)
-                        )
-                    }
-                    HorizontalDivider(color = SurfaceContainerDefault, thickness = 0.5.dp)
-                    Text(
-                        text = "⚠ 规范提示: 通配符 (+, #) 仅用于订阅过滤 (Subscribe)，严禁用于发布主题 (Publish)。",
-                        style = TextStyle(
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = PrimaryBlack
-                        )
-                    )
-                }
-            }
-        }
-
         // 7. Log & Data Storage
         Card(
             shape = RoundedCornerShape(20.dp),
@@ -1361,7 +1269,7 @@ fun SettingsScreen(
                             .padding(horizontal = 8.dp, vertical = 3.dp)
                     ) {
                         Text(
-                            text = "Tauri SQLite",
+                            text = "SharedPreferences",
                             style = TextStyle(
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 11.sp,
@@ -1581,7 +1489,7 @@ fun SettingsScreen(
                     modifier = Modifier.size(15.dp)
                 )
                 Text(
-                    text = "MQTT Assistant v1.0.0 (Tauri + Rust Native Engine)",
+                    text = "MQTT Assistant v1.0.0 (Android Native)",
                     style = MaterialTheme.typography.labelSmall.copy(
                         fontSize = 11.sp,
                         color = OnSurfaceVariantGray
@@ -1589,7 +1497,7 @@ fun SettingsScreen(
                 )
             }
             Text(
-                text = "轻量 · 极速 · 毫秒级心跳保活",
+                text = "Powered by codywon",
                 style = MaterialTheme.typography.labelSmall.copy(
                     fontSize = 11.sp,
                     color = OnSurfaceVariantGray.copy(alpha = 0.7f)

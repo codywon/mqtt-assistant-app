@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -352,21 +353,27 @@ private fun PublishPresetCard(
                 }
             }
 
-            // Row 2: Payload Preview Capsule
+            // Row 2: Payload Preview (Code-style)
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(SurfaceContainerLow)
+                    .clip(RoundedCornerShape(8.dp))
+                    .border(
+                        width = 0.8.dp,
+                        color = SurfaceContainerDefault,
+                        shape = RoundedCornerShape(8.dp)
+                    )
+                    .background(SurfaceContainerLowest)
                     .clickable { onCopy() }
-                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
             ) {
                 Text(
                     text = preset.payload.replace("\n", " ").trim(),
                     style = TextStyle(
                         fontFamily = FontFamily.Monospace,
-                        fontSize = 12.sp,
-                        color = OnSurfaceVariantGray
+                        fontSize = 12.5.sp,
+                        lineHeight = 18.sp,
+                        color = OnSurfaceDark
                     ),
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis

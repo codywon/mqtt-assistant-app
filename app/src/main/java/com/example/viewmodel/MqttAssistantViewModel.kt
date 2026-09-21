@@ -384,7 +384,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 category = preset.name.ifBlank { preset.topic.substringBefore('/') },
                 dotColorHex = dotColor
             )
-            livePackets.update { listOf(packet) + it }
+            livePackets.update { (listOf(packet) + it).take(serverConfig.value.bufferThreshold) }
 
             // Match against subscriptions
             subscriptions.update { list ->
@@ -514,7 +514,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 category = topic.substringBefore('/'),
                 dotColorHex = dotColor
             )
-            livePackets.update { listOf(packet) + it }
+            livePackets.update { (listOf(packet) + it).take(serverConfig.value.bufferThreshold) }
 
             if (result.isSuccess) {
                 publishFeedback.value = "已送达 Broker"

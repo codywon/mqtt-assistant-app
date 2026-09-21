@@ -541,7 +541,21 @@ private fun SubscriptionItemCard(
                 )
             }
 
-            // Row 2: Metrics and Action Buttons
+            // Row 2: Alias name (if set)
+            if (item.name.isNotBlank()) {
+                Text(
+                    text = item.name,
+                    style = TextStyle(
+                        fontSize = 12.5.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = OnSurfaceVariantGray
+                    ),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            // Row 3: Metrics and Action Buttons
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
