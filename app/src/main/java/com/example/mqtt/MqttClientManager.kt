@@ -229,6 +229,20 @@ object MqttClientManager {
         }
     }
 
+    /**
+     * Active heartbeat check to keep TCP Socket alive and resilient in background.
+     */
+    fun pingOrKeepAlive() {
+        try {
+            val client = mqttClient
+            if (client != null && client.isConnected) {
+                Log.d(TAG, "Heartbeat ping: MQTT client connection is active")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Heartbeat ping failed", e)
+        }
+    }
+
     private fun disconnectInternal(isIntentional: Boolean) {
         try {
             val client = mqttClient

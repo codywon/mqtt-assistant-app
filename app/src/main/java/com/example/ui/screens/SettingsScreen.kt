@@ -1169,6 +1169,51 @@ fun SettingsScreen(
                         )
                     )
                 }
+
+                // 4. Ignore Battery Optimizations
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "忽略电池优化 (防系统杀后台)",
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontWeight = FontWeight.SemiBold,
+                                color = PrimaryBlack
+                            )
+                        )
+                        Text(
+                            text = "申请无限制后台电源策略，彻底杜绝程序最小化被厂商系统冻结",
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontSize = 12.sp,
+                                color = OnSurfaceVariantGray
+                            )
+                        )
+                    }
+                    Button(
+                        onClick = {
+                            try {
+                                val intent = Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                                context.startActivity(intent)
+                            } catch (e: Exception) {
+                                try {
+                                    val intent = Intent(android.provider.Settings.ACTION_SETTINGS)
+                                    context.startActivity(intent)
+                                } catch (_: Exception) {}
+                            }
+                        },
+                        shape = RoundedCornerShape(6.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = PrimaryBlack,
+                            contentColor = OnPrimaryWhite
+                        ),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                    ) {
+                        Text("去设置", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
             }
         }
 

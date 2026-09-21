@@ -119,6 +119,11 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
     init {
         setupMqttCallbacks()
         connectToBroker()
+        if (serverConfig.value.backgroundKeepAliveEnabled) {
+            val brokerHost = "${serverConfig.value.host}:${serverConfig.value.port}"
+            MqttBackgroundService.startKeepAlive(application, brokerHost)
+            isForegroundKeepAliveRunning.value = true
+        }
     }
 
     private fun setupMqttCallbacks() {
@@ -183,6 +188,12 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                         MqttClientManager.subscribe(sub.topic, sub.qos)
                     }
                 }
+                // Auto start foreground keepalive service for persistent background connection
+                if (serverConfig.value.backgroundKeepAliveEnabled) {
+                    val brokerHost = "${serverConfig.value.host}:${serverConfig.value.port}"
+                    MqttBackgroundService.startKeepAlive(getApplication(), brokerHost)
+                    isForegroundKeepAliveRunning.value = true
+                }
             } else {
                 connectionState.value = MqttConnectionState.DISCONNECTED
                 serverConfig.update { it.copy(isConnected = false) }
@@ -206,6 +217,11 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 val activeSubs = subscriptions.value.filter { it.isEnabled }
                 activeSubs.forEach { sub ->
                     MqttClientManager.subscribe(sub.topic, sub.qos)
+                }
+                if (serverConfig.value.backgroundKeepAliveEnabled) {
+                    val brokerHost = "${serverConfig.value.host}:${serverConfig.value.port}"
+                    MqttBackgroundService.startKeepAlive(getApplication(), brokerHost)
+                    isForegroundKeepAliveRunning.value = true
                 }
                 showToast("已连接至 ${serverConfig.value.host}:${serverConfig.value.port} (已激活 ${activeSubs.size} 个主题)")
             } else {
@@ -949,6 +965,8 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
         if (!isManual && serverConfig.value.autoReconnect) {
             startAutoReconnectLoop()
         } else {
+            MqttBackgroundService.stopKeepAlive(getApplication())
+            isForegroundKeepAliveRunning.value = false
             showToast("已断开与 Broker 的连接")
         }
     }
@@ -969,8 +987,10 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
     fun toggleBackgroundKeepAlive(context: Context) {
         val next = !serverConfig.value.backgroundKeepAliveEnabled
         serverConfig.update { it.copy(backgroundKeepAliveEnabled = next) }
+        storage.saveServerConfig(serverConfig.value)
         if (next) {
-            MqttBackgroundService.startKeepAlive(context)
+            val brokerHost = "${serverConfig.value.host}:${serverConfig.value.port}"
+            MqttBackgroundService.startKeepAlive(context, brokerHost)
             isForegroundKeepAliveRunning.value = true
             showToast("已启用后台常驻保活服务 (Foreground Service)")
         } else {
@@ -983,6 +1003,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
     fun toggleWakeLock() {
         val next = !serverConfig.value.wakeLockEnabled
         serverConfig.update { it.copy(wakeLockEnabled = next) }
+        storage.saveServerConfig(serverConfig.value)
         showToast(if (next) "已启用 CPU 唤醒锁 (WakeLock)" else "已停用 CPU 唤醒锁")
     }
 

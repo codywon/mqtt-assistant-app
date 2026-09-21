@@ -8,11 +8,14 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.example.MainActivity
+import com.example.mqtt.MqttClientManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -22,37 +25,43 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 /**
- * Production-grade MQTT Foreground Service providing background keep-alive,
- * persistent heartbeat ping loop, and CPU WakeLock resilience when the app
- * is backgrounded or device screen is locked.
+ * 生产级 Android MQTT 前台保活服务：
+ * 1. 启动为 Foreground Service (通知栏常驻)，防止系统在应用最小化或息屏时挂起进程；
+ * 2. 组合持有 CPU WakeLock 与 Wi-Fi Lock，防止 Wi-Fi 芯片和 Socket 进入省电休眠；
+ * 3. 周期性 (15秒) 执行活跃心跳检查与状态刷新，确保长连接持续健康。
  */
 class MqttBackgroundService : Service() {
 
     private val serviceScope = CoroutineScope(Dispatchers.IO + Job())
     private var wakeLock: PowerManager.WakeLock? = null
+    private var wifiLock: WifiManager.WifiLock? = null
     private var heartbeatJob: Job? = null
 
     companion object {
+        private const val TAG = "MqttBgService"
         const val CHANNEL_ID = "mqtt_keepalive_channel"
         const val NOTIFICATION_ID = 10086
         const val ACTION_START = "com.example.service.ACTION_START"
         const val ACTION_STOP = "com.example.service.ACTION_STOP"
+        const val EXTRA_BROKER = "EXTRA_BROKER"
 
         var isRunning: Boolean = false
             private set
 
-        fun startKeepAlive(context: Context) {
+        fun startKeepAlive(context: Context, brokerHost: String = "MQTT Broker") {
             try {
                 val intent = Intent(context, MqttBackgroundService::class.java).apply {
                     action = ACTION_START
+                    putExtra(EXTRA_BROKER, brokerHost)
                 }
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     context.startForegroundService(intent)
                 } else {
                     context.startService(intent)
                 }
+                Log.d(TAG, "Requested startKeepAlive for $brokerHost")
             } catch (e: Exception) {
-                e.printStackTrace()
+                Log.e(TAG, "Failed to start keep alive service", e)
             }
         }
 
@@ -62,8 +71,9 @@ class MqttBackgroundService : Service() {
                     action = ACTION_STOP
                 }
                 context.stopService(intent)
+                Log.d(TAG, "Requested stopKeepAlive")
             } catch (e: Exception) {
-                e.printStackTrace()
+                Log.e(TAG, "Failed to stop keep alive service", e)
             }
         }
     }
@@ -80,26 +90,23 @@ class MqttBackgroundService : Service() {
         }
 
         isRunning = true
-        acquireWakeLock()
-        val brokerHost = intent?.getStringExtra("EXTRA_BROKER") ?: "MQTT Broker"
-        val notification = buildForegroundNotification("MQTT Assistant 生产级常驻保活中 · $brokerHost")
+        acquireWakeAndWifiLocks()
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+        val brokerHost = intent?.getStringExtra(EXTRA_BROKER) ?: "MQTT Broker"
+        val notification = buildForegroundNotification("已保持后台常驻连接 · $brokerHost")
+
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 startForeground(
                     NOTIFICATION_ID,
                     notification,
                     ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
                 )
             } else {
-                startForeground(
-                    NOTIFICATION_ID,
-                    notification,
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-                )
+                startForeground(NOTIFICATION_ID, notification)
             }
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error starting foreground service", e)
         }
 
         startHeartbeatLoop()
@@ -107,7 +114,7 @@ class MqttBackgroundService : Service() {
         return START_STICKY
     }
 
-    private fun acquireWakeLock() {
+    private fun acquireWakeAndWifiLocks() {
         try {
             if (wakeLock == null) {
                 val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
@@ -116,26 +123,44 @@ class MqttBackgroundService : Service() {
                     "MqttAssistant:KeepAliveLock"
                 ).apply {
                     setReferenceCounted(false)
-                    acquire(10 * 60 * 1000L) // 10 minutes safety timeout, periodically refreshed
+                    acquire(24 * 60 * 60 * 1000L) // 24小时长期保活
                 }
+                Log.d(TAG, "Acquired PARTIAL_WAKE_LOCK")
+            }
+
+            if (wifiLock == null) {
+                val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+                wifiLock = wifiManager?.createWifiLock(
+                    WifiManager.WIFI_MODE_FULL_HIGH_PERF,
+                    "MqttAssistant:WifiKeepAliveLock"
+                )?.apply {
+                    setReferenceCounted(false)
+                    acquire()
+                }
+                Log.d(TAG, "Acquired WIFI_MODE_FULL_HIGH_PERF Lock")
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.w(TAG, "Error acquiring wake/wifi locks", e)
         }
     }
 
     private fun startHeartbeatLoop() {
         heartbeatJob?.cancel()
         heartbeatJob = serviceScope.launch {
-            var count = 0
             while (isActive) {
-                delay(30_000L) // 30s heartbeat interval
-                count++
-                // Refresh WakeLock to prevent system timeout
-                wakeLock?.let {
-                    if (!it.isHeld) {
-                        it.acquire(10 * 60 * 1000L)
+                delay(15_000L) // 每 15 秒检查并刷新一次活跃心跳
+                try {
+                    MqttClientManager.pingOrKeepAlive()
+
+                    // 确保 WakeLock 与 WifiLock 在后台始终持有
+                    wakeLock?.let {
+                        if (!it.isHeld) it.acquire(60 * 1000L)
                     }
+                    wifiLock?.let {
+                        if (!it.isHeld) it.acquire()
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Heartbeat iteration failed", e)
                 }
             }
         }
@@ -145,10 +170,10 @@ class MqttBackgroundService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "MQTT 保活服务",
+                "MQTT 助手长连接常驻服务",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "维持 MQTT 客户端后台连接与心跳"
+                description = "确保应用最小化或息屏时维持 MQTT 长连接与实时接收"
                 setShowBadge(false)
             }
             val manager = getSystemService(NotificationManager::class.java)
@@ -168,12 +193,13 @@ class MqttBackgroundService : Service() {
         )
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("MQTT Assistant · 生产级长连接常驻")
+            .setContentTitle("MQTT 助手 · 正在后台保持连接")
             .setContentText(contentText)
             .setSmallIcon(android.R.drawable.stat_notify_sync)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .build()
     }
 
@@ -186,8 +212,12 @@ class MqttBackgroundService : Service() {
             wakeLock?.let {
                 if (it.isHeld) it.release()
             }
+            wifiLock?.let {
+                if (it.isHeld) it.release()
+            }
+            Log.d(TAG, "Released wake and wifi locks")
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.w(TAG, "Error releasing locks", e)
         }
     }
 
