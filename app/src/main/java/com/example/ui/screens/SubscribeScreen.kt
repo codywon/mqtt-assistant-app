@@ -30,14 +30,11 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.FilterAlt
-import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.RestartAlt
@@ -110,8 +107,6 @@ fun SubscribeScreen(
 
     val subscriptions by viewModel.subscriptions.collectAsState()
     val searchQuery by viewModel.subSearchQuery.collectAsState()
-    val includeFilters by viewModel.includeTopicFilters.collectAsState()
-    val excludeFilters by viewModel.excludeTopicFilters.collectAsState()
 
     val runningCount = subscriptions.count { it.isEnabled }
     val totalCount = subscriptions.size
@@ -124,9 +119,6 @@ fun SubscribeScreen(
     var isDialogVisible by remember { mutableStateOf(false) }
     var editingItem by remember { mutableStateOf<SubscriptionItem?>(null) }
     var itemToDelete by remember { mutableStateOf<SubscriptionItem?>(null) }
-
-    // State for PC-grade Topic Filter Rules (Include / Exclude)
-    var isTopicFilterDialogVisible by remember { mutableStateOf(false) }
 
     fun openCreateDialog() {
         editingItem = null
@@ -146,14 +138,14 @@ fun SubscribeScreen(
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
 
-        // Clean, practical action header: Search + Add Subscription + Topic Filters + Quick controls
+        // 顶部操作栏：极简设计，搜索框 + 新建订阅按钮，无杂乱底色
         item {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 // Search field
                 Row(
@@ -161,7 +153,8 @@ fun SubscribeScreen(
                         .weight(1f)
                         .height(38.dp)
                         .clip(RoundedCornerShape(8.dp))
-                        .background(SurfaceContainerLow)
+                        .background(SurfaceContainerLow.copy(alpha = 0.5f))
+                        .border(0.6.dp, SurfaceContainerDefault, RoundedCornerShape(8.dp))
                         .padding(horizontal = 10.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -184,7 +177,7 @@ fun SubscribeScreen(
                         decorationBox = { innerTextField ->
                             if (searchQuery.isEmpty()) {
                                 Text(
-                                    text = "搜索已订阅...",
+                                    text = "搜索已订阅主题...",
                                     style = TextStyle(fontSize = 12.sp, color = OutlineGray)
                                 )
                             }
@@ -203,37 +196,7 @@ fun SubscribeScreen(
                     }
                 }
 
-                // Topic Filter Rules Button (Reference PC Client)
-                val totalFiltersCount = includeFilters.size + excludeFilters.size
-                Button(
-                    onClick = { isTopicFilterDialogVisible = true },
-                    shape = RoundedCornerShape(8.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (totalFiltersCount > 0) PrimaryBlack else SurfaceContainerLow,
-                        contentColor = if (totalFiltersCount > 0) OnPrimaryWhite else PrimaryBlack
-                    ),
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
-                    modifier = Modifier
-                        .height(38.dp)
-                        .testTag("open_topic_filter_dialog_btn")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.FilterList,
-                        contentDescription = null,
-                        modifier = Modifier.size(15.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = if (totalFiltersCount > 0) "过滤 ($totalFiltersCount)" else "过滤",
-                        style = TextStyle(
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (totalFiltersCount > 0) Color.White else PrimaryBlack
-                        )
-                    )
-                }
-
-                // Add button
+                // Add button: 统一纯净样式
                 Button(
                     onClick = { openCreateDialog() },
                     shape = RoundedCornerShape(8.dp),
@@ -241,7 +204,7 @@ fun SubscribeScreen(
                         containerColor = PrimaryBlack,
                         contentColor = OnPrimaryWhite
                     ),
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
                     modifier = Modifier
                         .height(38.dp)
                         .testTag("open_add_sub_dialog_btn")
@@ -249,74 +212,18 @@ fun SubscribeScreen(
                     Icon(
                         imageVector = Icons.Default.Add,
                         contentDescription = null,
-                        tint = Color.White,
+                        tint = OnPrimaryWhite,
                         modifier = Modifier.size(16.dp)
                     )
-                    Spacer(modifier = Modifier.width(2.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = "新建",
+                        text = "新建订阅",
                         style = TextStyle(
-                            fontSize = 12.sp,
+                            fontSize = 12.5.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color.White
+                            color = OnPrimaryWhite
                         )
                     )
-                }
-
-                // Link self-test & probe button
-                IconButton(
-                    onClick = { viewModel.testPublishLoopback() },
-                    modifier = Modifier
-                        .size(38.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(SurfaceContainerLow)
-                        .testTag("sub_test_loopback_btn")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Bolt,
-                        contentDescription = "自测接收",
-                        tint = PrimaryBlack,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-            }
-        }
-
-        // Active Topic Filter Rules Banner (Monochrome)
-        if (includeFilters.isNotEmpty() || excludeFilters.isNotEmpty()) {
-            item {
-                Card(
-                    shape = RoundedCornerShape(10.dp),
-                    colors = CardDefaults.cardColors(containerColor = SurfaceContainerLowest),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { isTopicFilterDialogVisible = true }
-                        .testTag("active_topic_filter_banner")
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Icon(Icons.Default.FilterAlt, contentDescription = null, tint = PrimaryBlack, modifier = Modifier.size(16.dp))
-                            val filterSummary = buildString {
-                                if (excludeFilters.isNotEmpty()) append("已排除 ${excludeFilters.size} 项 ")
-                                if (includeFilters.isNotEmpty()) append("已包含 ${includeFilters.size} 项")
-                            }
-                            Text(
-                                text = "过滤已生效: $filterSummary (支持通配符)",
-                                style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = PrimaryBlack)
-                            )
-                        }
-                        Text(
-                            text = "配置 >",
-                            style = TextStyle(fontSize = 11.sp, color = OnSurfaceVariantGray, fontWeight = FontWeight.Medium)
-                        )
-                    }
                 }
             }
         }
@@ -342,7 +249,6 @@ fun SubscribeScreen(
                     item = sub,
                     onCardClick = { openEditDialog(sub) },
                     onToggle = { viewModel.toggleSubscription(sub.id) },
-                    onProbe = { viewModel.testPublishLoopback(sub) },
                     onCopy = {
                         clipboardManager.setPrimaryClip(ClipData.newPlainText("topic", sub.topic))
                         viewModel.showToast("已复制主题: ${sub.topic}")
@@ -422,21 +328,6 @@ fun SubscribeScreen(
             }
         )
     }
-
-    // Modal Dialog for PC-Grade Topic Filters (Include / Exclude)
-    if (isTopicFilterDialogVisible) {
-        TopicFilterRulesModalDialog(
-            includeFilters = includeFilters,
-            excludeFilters = excludeFilters,
-            onAddInclude = { viewModel.addIncludeTopicFilter(it) },
-            onRemoveInclude = { viewModel.removeIncludeTopicFilter(it) },
-            onClearIncludes = { viewModel.clearIncludeTopicFilters() },
-            onAddExclude = { viewModel.addExcludeTopicFilter(it) },
-            onRemoveExclude = { viewModel.removeExcludeTopicFilter(it) },
-            onClearExcludes = { viewModel.clearExcludeTopicFilters() },
-            onDismiss = { isTopicFilterDialogVisible = false }
-        )
-    }
 }
 
 @Composable
@@ -444,7 +335,6 @@ private fun SubscriptionItemCard(
     item: SubscriptionItem,
     onCardClick: () -> Unit,
     onToggle: () -> Unit,
-    onProbe: () -> Unit,
     onCopy: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit
@@ -594,23 +484,11 @@ private fun SubscriptionItemCard(
                     )
                 }
 
-                // Bottom right: Compact action buttons
+                // Bottom right: Compact action buttons (纯净无闪电，只有复制/编辑/删除)
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(
-                        onClick = onProbe,
-                        modifier = Modifier.size(28.dp),
-                        enabled = item.isEnabled
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Bolt,
-                            contentDescription = "自测探针",
-                            tint = if (item.isEnabled) PrimaryBlack else OutlineGray,
-                            modifier = Modifier.size(15.dp)
-                        )
-                    }
                     IconButton(
                         onClick = onCopy,
                         modifier = Modifier.size(28.dp)
@@ -1181,310 +1059,3 @@ private fun SubscriptionConfigModalDialog(
     }
 }
 
-/**
- * PC-Grade Topic Filter Rules Dialog (Includes and Excludes with Wildcard Support).
- * Strictly Monochrome per user requirements.
- */
-@Composable
-private fun TopicFilterRulesModalDialog(
-    includeFilters: List<String>,
-    excludeFilters: List<String>,
-    onAddInclude: (String) -> Unit,
-    onRemoveInclude: (Int) -> Unit,
-    onClearIncludes: () -> Unit,
-    onAddExclude: (String) -> Unit,
-    onRemoveExclude: (Int) -> Unit,
-    onClearExcludes: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    var activeTab by remember { mutableStateOf("exclude") } // "exclude" or "include"
-    var inputPattern by remember { mutableStateOf("") }
-
-    val isExclude = activeTab == "exclude"
-    val currentList = if (isExclude) excludeFilters else includeFilters
-
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
-    ) {
-        Surface(
-            shape = RoundedCornerShape(20.dp),
-            color = SurfaceContainerLowest,
-            modifier = Modifier
-                .fillMaxWidth(0.94f)
-                .padding(vertical = 24.dp),
-            shadowElevation = 8.dp
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                // Header
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "主题过滤条件 (参考 PC 端)",
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = FontWeight.Bold,
-                            color = PrimaryBlack,
-                            fontSize = 16.sp
-                        )
-                    )
-                    IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
-                        Icon(Icons.Default.Close, contentDescription = "关闭", tint = OnSurfaceVariantGray, modifier = Modifier.size(18.dp))
-                    }
-                }
-
-                HorizontalDivider(color = SurfaceContainerDefault, thickness = 0.5.dp)
-
-                // Segment Tabs: Exclude Tab (Recommended / Priority) vs Include Tab
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(38.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(SurfaceContainerLow)
-                        .padding(2.dp),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    listOf(
-                        "exclude" to "排除条件 (${excludeFilters.size})",
-                        "include" to "包含条件 (${includeFilters.size})"
-                    ).forEach { (tabKey, tabLabel) ->
-                        val selected = activeTab == tabKey
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(if (selected) PrimaryBlack else Color.Transparent)
-                                .clickable {
-                                    activeTab = tabKey
-                                    inputPattern = ""
-                                }
-                                .padding(vertical = 6.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = tabLabel,
-                                style = TextStyle(
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = if (selected) OnPrimaryWhite else OnSurfaceVariantGray
-                                )
-                            )
-                        }
-                    }
-                }
-
-                // Input field + Add button
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(42.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(SurfaceContainerLow)
-                            .padding(horizontal = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        BasicTextField(
-                            value = inputPattern,
-                            onValueChange = { inputPattern = it },
-                            modifier = Modifier.weight(1f).testTag("filter_pattern_input"),
-                            textStyle = TextStyle(
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 13.sp,
-                                color = PrimaryBlack,
-                                fontWeight = FontWeight.Medium
-                            ),
-                            singleLine = true,
-                            cursorBrush = SolidColor(PrimaryBlack),
-                            decorationBox = { innerTextField ->
-                                if (inputPattern.isEmpty()) {
-                                    Text(
-                                        text = if (isExclude) "输入排除主题，支持 + 和 #" else "输入包含主题，支持 + 和 #",
-                                        style = TextStyle(fontSize = 12.sp, color = OutlineGray)
-                                    )
-                                }
-                                innerTextField()
-                            }
-                        )
-                        if (inputPattern.isNotEmpty()) {
-                            IconButton(onClick = { inputPattern = "" }, modifier = Modifier.size(20.dp)) {
-                                Icon(Icons.Default.Close, contentDescription = null, tint = OutlineGray, modifier = Modifier.size(14.dp))
-                            }
-                        }
-                    }
-
-                    Button(
-                        onClick = {
-                            val trimmed = inputPattern.trim()
-                            if (trimmed.isNotEmpty()) {
-                                if (isExclude) onAddExclude(trimmed) else onAddInclude(trimmed)
-                                inputPattern = ""
-                            }
-                        },
-                        enabled = inputPattern.isNotBlank(),
-                        shape = RoundedCornerShape(8.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = PrimaryBlack,
-                            contentColor = OnPrimaryWhite,
-                            disabledContainerColor = SurfaceContainerLow,
-                            disabledContentColor = OutlineGray
-                        ),
-                        modifier = Modifier.height(42.dp).testTag("filter_pattern_add_btn")
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(2.dp))
-                        Text("添加", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
-
-                // Wildcard helper chips
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(text = "快捷通配符:", style = TextStyle(fontSize = 11.sp, color = OutlineGray))
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(SurfaceContainerLow)
-                            .clickable {
-                                val t = inputPattern.trim()
-                                inputPattern = if (t.isEmpty()) "+" else if (t.endsWith("/")) "$t+" else "$t/+"
-                            }
-                            .padding(horizontal = 8.dp, vertical = 2.dp)
-                    ) {
-                        Text("+ 单级通配", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = PrimaryBlack))
-                    }
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(SurfaceContainerLow)
-                            .clickable {
-                                val t = inputPattern.trim()
-                                inputPattern = if (t.isEmpty()) "#" else if (t.endsWith("/")) "$t#" else "$t/#"
-                            }
-                            .padding(horizontal = 8.dp, vertical = 2.dp)
-                    ) {
-                        Text("# 多级通配 (末端)", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = PrimaryBlack))
-                    }
-                }
-
-                // Description hint
-                Text(
-                    text = if (isExclude) {
-                        "★ 排除条件优先级最高！匹配排除规则的消息将被直接丢弃隐藏。\n示例: Collect/dlt_data/# 或 college/ping/#"
-                    } else {
-                        "★ 包含条件：若配置了包含规则，仅接收并记录匹配包含规则的消息。\n示例: sensor/+/temp 或 college/#"
-                    },
-                    style = TextStyle(fontSize = 11.sp, color = OnSurfaceVariantGray, lineHeight = 16.sp)
-                )
-
-                // List header & Clear button
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "已添加 ${currentList.size} 个${if (isExclude) "排除" else "包含"}条件",
-                        style = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = PrimaryBlack)
-                    )
-                    if (currentList.isNotEmpty()) {
-                        TextButton(
-                            onClick = { if (isExclude) onClearExcludes() else onClearIncludes() },
-                            contentPadding = PaddingValues(0.dp)
-                        ) {
-                            Text("清空全部", fontSize = 11.sp, color = OnSurfaceVariantGray)
-                        }
-                    }
-                }
-
-                // List of tag filters
-                if (currentList.isEmpty()) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(SurfaceContainerLow)
-                            .padding(vertical = 20.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = if (isExclude) "暂无排除条件，添加后将隐藏匹配的日志" else "暂无包含条件，添加后将只显示匹配的日志",
-                            style = TextStyle(fontSize = 12.sp, color = OutlineGray)
-                        )
-                    }
-                } else {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(140.dp)
-                            .verticalScroll(rememberScrollState()),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        currentList.forEachIndexed { index, pattern ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(SurfaceContainerLow)
-                                    .padding(horizontal = 10.dp, vertical = 6.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(6.dp)
-                                            .clip(CircleShape)
-                                            .background(PrimaryBlack)
-                                    )
-                                    Text(
-                                        text = pattern,
-                                        style = TextStyle(
-                                            fontFamily = FontFamily.Monospace,
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = PrimaryBlack
-                                        )
-                                    )
-                                }
-                                IconButton(
-                                    onClick = { if (isExclude) onRemoveExclude(index) else onRemoveInclude(index) },
-                                    modifier = Modifier.size(22.dp)
-                                ) {
-                                    Icon(Icons.Default.Close, contentDescription = "删除条件", tint = OnSurfaceVariantGray, modifier = Modifier.size(14.dp))
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(4.dp))
-
-                // Close Button
-                Button(
-                    onClick = onDismiss,
-                    shape = RoundedCornerShape(8.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlack, contentColor = OnPrimaryWhite),
-                    modifier = Modifier.fillMaxWidth().height(42.dp)
-                ) {
-                    Text("完成", fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                }
-            }
-        }
-    }
-}

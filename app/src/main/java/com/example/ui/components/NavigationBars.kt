@@ -147,13 +147,11 @@ fun AppTopBar(
                     }
                 }
 
-                // 右侧：仅保留实用的“快速切换 Broker 节点”操作，彻底去除重复的刷新图标
+                // 右侧：纯净极简的“快速切换 Broker 节点”图标，无多余灰底
                 IconButton(
                     onClick = onSwitchBroker,
                     modifier = Modifier
-                        .size(32.dp)
-                        .clip(CircleShape)
-                        .background(SurfaceContainerLow)
+                        .size(34.dp)
                         .testTag("top_switch_broker_btn")
                         .semantics { contentDescription = "切换 Broker 节点" }
                 ) {
@@ -161,7 +159,7 @@ fun AppTopBar(
                         imageVector = Icons.Default.SwapHoriz,
                         contentDescription = "切换节点",
                         tint = PrimaryBlack,
-                        modifier = Modifier.size(17.dp)
+                        modifier = Modifier.size(19.dp)
                     )
                 }
             }

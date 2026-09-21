@@ -10,6 +10,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -22,13 +23,18 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.FilterAlt
+import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -42,6 +48,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -103,6 +110,7 @@ fun LiveLogsScreen(
     val excludeFilters by viewModel.excludeTopicFilters.collectAsState()
 
     var selectedDetailsPacket by remember { mutableStateOf<MqttLogPacket?>(null) }
+    var isTopicFilterDialogVisible by remember { mutableStateOf(false) }
 
     val filteredPackets = packets.filter { packet ->
         val matchesAllowed = MqttTopicUtil.isTopicAllowed(packet.topic, includeFilters, excludeFilters)
@@ -117,11 +125,11 @@ fun LiveLogsScreen(
             .fillMaxSize()
             .background(SurfaceCanvas)
     ) {
-        // 1. 常驻顶部控制栏 (Fixed Top Header: 输入框常驻，避免消息多了难以翻回)
+        // 1. 常驻顶部控制栏 (Clean, Monochrome, Minimalist ChatGPT Aesthetic)
         Surface(
             modifier = Modifier.fillMaxWidth(),
             color = SurfaceContainerLowest,
-            shadowElevation = 2.dp
+            shadowElevation = 1.dp
         ) {
             Column(
                 modifier = Modifier
@@ -132,23 +140,24 @@ fun LiveLogsScreen(
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    // Search Input (常驻搜索框)
+                    // Search Input (常驻极简搜索框，无厚重灰底)
                     Row(
                         modifier = Modifier
                             .weight(1f)
-                            .height(38.dp)
+                            .height(36.dp)
                             .clip(RoundedCornerShape(8.dp))
-                            .background(SurfaceContainerLow)
-                            .padding(horizontal = 10.dp),
+                            .background(SurfaceContainerLow.copy(alpha = 0.5f))
+                            .border(0.6.dp, SurfaceContainerDefault, RoundedCornerShape(8.dp))
+                            .padding(horizontal = 9.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
                             imageVector = Icons.Default.Search,
                             contentDescription = null,
                             tint = OutlineGray,
-                            modifier = Modifier.size(16.dp)
+                            modifier = Modifier.size(15.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         BasicTextField(
@@ -157,14 +166,14 @@ fun LiveLogsScreen(
                             modifier = Modifier
                                 .weight(1f)
                                 .testTag("log_filter_input"),
-                            textStyle = TextStyle(fontSize = 13.sp, color = PrimaryBlack),
+                            textStyle = TextStyle(fontSize = 12.5.sp, color = PrimaryBlack),
                             cursorBrush = SolidColor(PrimaryBlack),
                             singleLine = true,
                             decorationBox = { innerTextField ->
                                 if (filterQuery.isEmpty()) {
                                     Text(
-                                        text = "搜索主题或报文载荷...",
-                                        style = TextStyle(fontSize = 13.sp, color = OutlineGray)
+                                        text = "搜索主题或报文...",
+                                        style = TextStyle(fontSize = 12.sp, color = OutlineGray)
                                     )
                                 }
                                 innerTextField()
@@ -176,61 +185,87 @@ fun LiveLogsScreen(
                                 contentDescription = "清空过滤",
                                 tint = OutlineGray,
                                 modifier = Modifier
-                                    .size(16.dp)
+                                    .size(15.dp)
                                     .clickable { viewModel.logFilterQuery.value = "" }
                             )
                         }
                     }
 
-                    // VS Code / GitHub JSON 格式化开关
+                    // 1. 主题过滤规则 (包含/排除) 纯净图标按钮 - 彻底去除灰底色块
+                    val totalFilterRules = includeFilters.size + excludeFilters.size
+                    IconButton(
+                        onClick = { isTopicFilterDialogVisible = true },
+                        modifier = Modifier
+                            .size(36.dp)
+                            .testTag("log_filter_rules_btn")
+                    ) {
+                        Box(contentAlignment = Alignment.TopEnd) {
+                            Icon(
+                                imageVector = Icons.Default.FilterList,
+                                contentDescription = "主题过滤规则",
+                                tint = if (totalFilterRules > 0) PrimaryBlack else OnSurfaceVariantGray,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            if (totalFilterRules > 0) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.dp)
+                                        .clip(CircleShape)
+                                        .background(PrimaryBlack)
+                                )
+                            }
+                        }
+                    }
+
+                    // 2. JSON 格式化纯净轻量开关 - 无厚重灰底积木
                     Box(
                         modifier = Modifier
-                            .height(38.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(if (isJsonPretty) PrimaryBlack else SurfaceContainerLow)
+                            .height(28.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .border(
+                                width = if (isJsonPretty) 1.dp else 0.5.dp,
+                                color = if (isJsonPretty) PrimaryBlack else SurfaceContainerDefault,
+                                shape = RoundedCornerShape(6.dp)
+                            )
                             .clickable { viewModel.toggleJsonPretty() }
-                            .padding(horizontal = 10.dp),
+                            .padding(horizontal = 7.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
                             text = "JSON",
                             style = TextStyle(
                                 fontFamily = FontFamily.Monospace,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (isJsonPretty) OnPrimaryWhite else PrimaryBlack
+                                fontSize = 11.5.sp,
+                                fontWeight = if (isJsonPretty) FontWeight.Bold else FontWeight.Medium,
+                                color = if (isJsonPretty) PrimaryBlack else OnSurfaceVariantGray
                             )
                         )
                     }
 
-                    // 暂停 / 继续 流接收
+                    // 3. 暂停 / 继续 流接收 - 纯净图标，无灰底方块
                     IconButton(
                         onClick = { viewModel.toggleStreamPause() },
                         modifier = Modifier
-                            .size(38.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(SurfaceContainerLow)
+                            .size(36.dp)
                             .testTag("stream_pause_toggle_btn")
                     ) {
                         Icon(
                             imageVector = if (isPaused) Icons.Default.PlayArrow else Icons.Default.Pause,
                             contentDescription = if (isPaused) "继续接收" else "暂停接收",
-                            tint = PrimaryBlack,
+                            tint = if (isPaused) Color(0xFFDC2626) else PrimaryBlack,
                             modifier = Modifier.size(18.dp)
                         )
                     }
 
-                    // 清空消息
+                    // 4. 清空消息 - 纯净图标，无灰底方块
                     IconButton(
                         onClick = { viewModel.clearLogStream() },
                         modifier = Modifier
-                            .size(38.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(SurfaceContainerLow)
+                            .size(36.dp)
                             .testTag("stream_clear_btn")
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Delete,
+                            imageVector = Icons.Default.DeleteOutline,
                             contentDescription = "清空报文",
                             tint = OnSurfaceVariantGray,
                             modifier = Modifier.size(18.dp)
@@ -253,13 +288,58 @@ fun LiveLogsScreen(
                             color = if (isPaused) OutlineGray else AccentEmerald
                         )
                     )
-                    if (includeFilters.isNotEmpty() || excludeFilters.isNotEmpty()) {
+                    if (totalFilterRules > 0) {
                         Text(
-                            text = "包含${includeFilters.size}项 / 排除${excludeFilters.size}项规则已生效",
+                            text = "过滤已生效 (${totalFilterRules}条规则)",
                             style = TextStyle(fontSize = 10.5.sp, color = OnSurfaceVariantGray)
                         )
                     }
                 }
+            }
+        }
+
+        // 过滤规则生效指示横幅 (参考 PC 客户端，支持通配符)
+        if (totalFilterRules > 0) {
+            val filterSummary = buildString {
+                if (excludeFilters.isNotEmpty()) append("已排除 ${excludeFilters.size} 项 ")
+                if (includeFilters.isNotEmpty()) append("已包含 ${includeFilters.size} 项")
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 2.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(SurfaceContainerLowest)
+                    .border(0.6.dp, SurfaceContainerDefault, RoundedCornerShape(8.dp))
+                    .clickable { isTopicFilterDialogVisible = true }
+                    .padding(horizontal = 12.dp, vertical = 7.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.FilterAlt,
+                        contentDescription = null,
+                        tint = PrimaryBlack,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Text(
+                        text = "过滤已生效: $filterSummary",
+                        style = TextStyle(
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = PrimaryBlack
+                        )
+                    )
+                }
+                Text(
+                    text = "配置规则 >",
+                    style = TextStyle(fontSize = 11.sp, color = OnSurfaceVariantGray, fontWeight = FontWeight.Medium)
+                )
             }
         }
 
@@ -329,6 +409,21 @@ fun LiveLogsScreen(
                 selectedDetailsPacket = null
                 viewModel.showToast("已载入至发布页配置")
             }
+        )
+    }
+
+    // 4. PC级主题过滤规则弹窗 (包含/排除通配符)
+    if (isTopicFilterDialogVisible) {
+        TopicFilterRulesModalDialog(
+            includeFilters = includeFilters,
+            excludeFilters = excludeFilters,
+            onAddInclude = { viewModel.addIncludeTopicFilter(it) },
+            onRemoveInclude = { viewModel.removeIncludeTopicFilter(it) },
+            onClearIncludes = { viewModel.clearIncludeTopicFilters() },
+            onAddExclude = { viewModel.addExcludeTopicFilter(it) },
+            onRemoveExclude = { viewModel.removeExcludeTopicFilter(it) },
+            onClearExcludes = { viewModel.clearExcludeTopicFilters() },
+            onDismiss = { isTopicFilterDialogVisible = false }
         )
     }
 }
@@ -607,27 +702,44 @@ private fun MessageDetailsModalDialog(
 
                 HorizontalDivider(color = OutlineVariantLight, thickness = 0.5.dp)
 
-                // Actions Bottom
+                // Actions Bottom: 等高 44.dp，严格对齐与纯净工业质感
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    TextButton(
+                    OutlinedButton(
                         onClick = onDismiss,
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(8.dp)
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(44.dp),
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(0.8.dp, OutlineVariantLight),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = PrimaryBlack
+                        )
                     ) {
-                        Text("关闭", color = OnSurfaceVariantGray)
+                        Text(
+                            text = "关闭",
+                            style = TextStyle(
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = PrimaryBlack
+                            )
+                        )
                     }
 
                     Button(
                         onClick = onLoadIntoPublish,
-                        modifier = Modifier.weight(1.5f),
-                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier
+                            .weight(1.3f)
+                            .height(44.dp),
+                        shape = RoundedCornerShape(10.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = PrimaryBlack,
                             contentColor = OnPrimaryWhite
-                        )
+                        ),
+                        elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Send,
@@ -635,7 +747,14 @@ private fun MessageDetailsModalDialog(
                             modifier = Modifier.size(15.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("载入至发布页", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text(
+                            text = "载入至发布页",
+                            style = TextStyle(
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = OnPrimaryWhite
+                            )
+                        )
                     }
                 }
             }
@@ -682,6 +801,316 @@ private fun DetailRow(
                         .size(14.dp)
                         .clickable(onClick = onCopy)
                 )
+            }
+        }
+    }
+}
+
+/**
+ * PC-Grade Topic Filter Rules Dialog (Includes and Excludes with Wildcard Support).
+ * Strictly Monochrome per user requirements.
+ */
+@Composable
+private fun TopicFilterRulesModalDialog(
+    includeFilters: List<String>,
+    excludeFilters: List<String>,
+    onAddInclude: (String) -> Unit,
+    onRemoveInclude: (Int) -> Unit,
+    onClearIncludes: () -> Unit,
+    onAddExclude: (String) -> Unit,
+    onRemoveExclude: (Int) -> Unit,
+    onClearExcludes: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    var activeTab by remember { mutableStateOf("exclude") } // "exclude" or "include"
+    var inputPattern by remember { mutableStateOf("") }
+
+    val isExclude = activeTab == "exclude"
+    val currentList = if (isExclude) excludeFilters else includeFilters
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = SurfaceContainerLowest,
+            modifier = Modifier
+                .fillMaxWidth(0.92f)
+                .padding(vertical = 20.dp),
+            shadowElevation = 8.dp
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "主题过滤规则 (消息筛选)",
+                        style = TextStyle(
+                            fontWeight = FontWeight.Bold,
+                            color = PrimaryBlack,
+                            fontSize = 16.sp
+                        )
+                    )
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Default.Close, contentDescription = "关闭", tint = OutlineGray, modifier = Modifier.size(18.dp))
+                    }
+                }
+
+                HorizontalDivider(color = OutlineVariantLight, thickness = 0.5.dp)
+
+                // Segment Tabs: Exclude Tab (Recommended / Priority) vs Include Tab
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(36.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(SurfaceContainerLow)
+                        .padding(2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    listOf(
+                        "exclude" to "排除规则 (${excludeFilters.size})",
+                        "include" to "包含规则 (${includeFilters.size})"
+                    ).forEach { (tabKey, tabLabel) ->
+                        val selected = activeTab == tabKey
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(if (selected) PrimaryBlack else Color.Transparent)
+                                .clickable {
+                                    activeTab = tabKey
+                                    inputPattern = ""
+                                }
+                                .padding(vertical = 6.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = tabLabel,
+                                style = TextStyle(
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (selected) OnPrimaryWhite else OnSurfaceVariantGray
+                                )
+                            )
+                        }
+                    }
+                }
+
+                // Input field + Add button (去除灰厚重感)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(42.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(SurfaceContainerLow.copy(alpha = 0.5f))
+                            .border(0.6.dp, SurfaceContainerDefault, RoundedCornerShape(8.dp))
+                            .padding(horizontal = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        BasicTextField(
+                            value = inputPattern,
+                            onValueChange = { inputPattern = it },
+                            modifier = Modifier.weight(1f).testTag("filter_pattern_input"),
+                            textStyle = TextStyle(
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 13.sp,
+                                color = PrimaryBlack,
+                                fontWeight = FontWeight.Medium
+                            ),
+                            singleLine = true,
+                            cursorBrush = SolidColor(PrimaryBlack),
+                            decorationBox = { innerTextField ->
+                                if (inputPattern.isEmpty()) {
+                                    Text(
+                                        text = if (isExclude) "输入排除主题，支持 + 和 #" else "输入包含主题，支持 + 和 #",
+                                        style = TextStyle(fontSize = 12.sp, color = OutlineGray)
+                                    )
+                                }
+                                innerTextField()
+                            }
+                        )
+                        if (inputPattern.isNotEmpty()) {
+                            IconButton(onClick = { inputPattern = "" }, modifier = Modifier.size(20.dp)) {
+                                Icon(Icons.Default.Close, contentDescription = null, tint = OutlineGray, modifier = Modifier.size(14.dp))
+                            }
+                        }
+                    }
+
+                    Button(
+                        onClick = {
+                            val trimmed = inputPattern.trim()
+                            if (trimmed.isNotEmpty()) {
+                                if (isExclude) onAddExclude(trimmed) else onAddInclude(trimmed)
+                                inputPattern = ""
+                            }
+                        },
+                        enabled = inputPattern.isNotBlank(),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = PrimaryBlack,
+                            contentColor = OnPrimaryWhite,
+                            disabledContainerColor = SurfaceContainerLow,
+                            disabledContentColor = OutlineGray
+                        ),
+                        modifier = Modifier.height(42.dp).testTag("filter_pattern_add_btn")
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(2.dp))
+                        Text("添加", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                // Wildcard helper chips
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(text = "快捷通配符:", style = TextStyle(fontSize = 11.sp, color = OutlineGray))
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(SurfaceContainerLow)
+                            .clickable {
+                                val t = inputPattern.trim()
+                                inputPattern = if (t.isEmpty()) "+" else if (t.endsWith("/")) "$t+" else "$t/+"
+                            }
+                            .padding(horizontal = 8.dp, vertical = 2.dp)
+                    ) {
+                        Text("+ 单级通配", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = PrimaryBlack))
+                    }
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(SurfaceContainerLow)
+                            .clickable {
+                                val t = inputPattern.trim()
+                                inputPattern = if (t.isEmpty()) "#" else if (t.endsWith("/")) "$t#" else "$t/#"
+                            }
+                            .padding(horizontal = 8.dp, vertical = 2.dp)
+                    ) {
+                        Text("# 多级通配 (末端)", style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = PrimaryBlack))
+                    }
+                }
+
+                // Description hint
+                Text(
+                    text = if (isExclude) {
+                        "★ 排除条件优先级最高：匹配规则的消息直接过滤隐藏。\n示例: test/ping/# 或 sensor/+/raw"
+                    } else {
+                        "★ 包含条件：配置后仅显示匹配此规则的消息。\n示例: device/+/status 或 topic/#"
+                    },
+                    style = TextStyle(fontSize = 11.sp, color = OnSurfaceVariantGray, lineHeight = 16.sp)
+                )
+
+                // List header & Clear button
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "已配置 ${currentList.size} 个${if (isExclude) "排除" else "包含"}条件",
+                        style = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = PrimaryBlack)
+                    )
+                    if (currentList.isNotEmpty()) {
+                        TextButton(
+                            onClick = { if (isExclude) onClearExcludes() else onClearIncludes() },
+                            contentPadding = PaddingValues(0.dp)
+                        ) {
+                            Text("清空全部", fontSize = 11.sp, color = OnSurfaceVariantGray)
+                        }
+                    }
+                }
+
+                // List of tag filters
+                if (currentList.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(SurfaceContainerLow.copy(alpha = 0.5f))
+                            .border(0.6.dp, SurfaceContainerDefault, RoundedCornerShape(8.dp))
+                            .padding(vertical = 20.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = if (isExclude) "暂无排除条件，添加后将隐藏匹配的消息" else "暂无包含条件，添加后将只显示匹配的消息",
+                            style = TextStyle(fontSize = 12.sp, color = OutlineGray)
+                        )
+                    }
+                } else {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(140.dp)
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        currentList.forEachIndexed { index, pattern ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(SurfaceContainerLow)
+                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(6.dp)
+                                            .clip(CircleShape)
+                                            .background(PrimaryBlack)
+                                    )
+                                    Text(
+                                        text = pattern,
+                                        style = TextStyle(
+                                            fontFamily = FontFamily.Monospace,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = PrimaryBlack
+                                        )
+                                    )
+                                }
+                                IconButton(
+                                    onClick = { if (isExclude) onRemoveExclude(index) else onRemoveInclude(index) },
+                                    modifier = Modifier.size(22.dp)
+                                ) {
+                                    Icon(Icons.Default.Close, contentDescription = "删除条件", tint = OnSurfaceVariantGray, modifier = Modifier.size(14.dp))
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                // Close Button
+                Button(
+                    onClick = onDismiss,
+                    shape = RoundedCornerShape(8.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlack, contentColor = OnPrimaryWhite),
+                    modifier = Modifier.fillMaxWidth().height(44.dp)
+                ) {
+                    Text("完成", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                }
             }
         }
     }
