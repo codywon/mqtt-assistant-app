@@ -73,6 +73,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.model.BrokerProfile
+import com.example.ui.theme.AccentEmerald
 import com.example.ui.theme.OutlineGray
 import java.util.UUID
 import androidx.compose.runtime.Composable
