@@ -79,6 +79,7 @@ import com.example.ui.theme.OutlineGray
 import com.example.ui.theme.OutlineVariantLight
 import com.example.ui.theme.PrimaryBlack
 import com.example.ui.theme.SurfaceCanvas
+import com.example.ui.theme.SurfaceContainerDefault
 import com.example.ui.theme.SurfaceContainerLow
 import com.example.ui.theme.SurfaceContainerLowest
 import com.example.viewmodel.MqttAssistantViewModel
