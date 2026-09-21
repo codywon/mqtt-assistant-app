@@ -16,6 +16,8 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.example.MainActivity
 import com.example.mqtt.MqttClientManager
+import android.app.AlarmManager
+import android.os.SystemClock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -44,6 +46,7 @@ class MqttBackgroundService : Service() {
         const val ACTION_START = "com.example.service.ACTION_START"
         const val ACTION_STOP = "com.example.service.ACTION_STOP"
         const val ACTION_UPDATE_STATS = "com.example.service.ACTION_UPDATE_STATS"
+        const val ACTION_PULSE_HEARTBEAT = "com.example.service.ACTION_PULSE_HEARTBEAT"
         const val EXTRA_BROKER = "EXTRA_BROKER"
         const val EXTRA_COUNT = "EXTRA_COUNT"
         const val EXTRA_TOPIC = "EXTRA_TOPIC"
@@ -119,8 +122,13 @@ class MqttBackgroundService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> {
+                cancelAlarmPulse()
                 stopSelf()
                 return START_NOT_STICKY
+            }
+            ACTION_PULSE_HEARTBEAT -> {
+                handlePulseHeartbeat()
+                return START_STICKY
             }
             ACTION_UPDATE_STATS -> {
                 val host = intent.getStringExtra(EXTRA_BROKER)
@@ -157,6 +165,7 @@ class MqttBackgroundService : Service() {
         }
 
         startHeartbeatLoop()
+        scheduleNextAlarmPulse()
 
         return START_STICKY
     }
@@ -286,9 +295,102 @@ class MqttBackgroundService : Service() {
         }
     }
 
+    private fun scheduleNextAlarmPulse() {
+        if (!isRunning) return
+        try {
+            val alarmManager = getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
+            val intent = Intent(this, MqttBackgroundService::class.java).apply {
+                action = ACTION_PULSE_HEARTBEAT
+            }
+            val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            } else {
+                PendingIntent.FLAG_UPDATE_CURRENT
+            }
+            val pendingIntent = PendingIntent.getService(this, 2001, intent, flags)
+            val triggerAtMillis = SystemClock.elapsedRealtime() + 25_000L // 25秒一次精准脉冲，穿透 Doze 并保活 NAT
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                alarmManager.setExactAndAllowWhileIdle(
+                    AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                    triggerAtMillis,
+                    pendingIntent
+                )
+            } else {
+                alarmManager.setExact(
+                    AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                    triggerAtMillis,
+                    pendingIntent
+                )
+            }
+            Log.d(TAG, "Scheduled next 25s Doze-piercing pulse alarm")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to schedule pulse alarm", e)
+        }
+    }
+
+    private fun cancelAlarmPulse() {
+        try {
+            val alarmManager = getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
+            val intent = Intent(this, MqttBackgroundService::class.java).apply {
+                action = ACTION_PULSE_HEARTBEAT
+            }
+            val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
+            } else {
+                PendingIntent.FLAG_NO_CREATE
+            }
+            val pi = PendingIntent.getService(this, 2001, intent, flags)
+            if (pi != null) {
+                alarmManager.cancel(pi)
+                pi.cancel()
+            }
+            Log.d(TAG, "Cancelled pulse alarm")
+        } catch (e: Exception) {
+            Log.w(TAG, "Error cancelling pulse alarm", e)
+        }
+    }
+
+    private fun handlePulseHeartbeat() {
+        if (!isRunning) return
+
+        // 临时唤醒锁：确保在低电耗模式唤醒后 CPU 至少维持 5 秒发完心跳或重连
+        try {
+            val powerManager = getSystemService(Context.POWER_SERVICE) as? PowerManager
+            val tempLock = powerManager?.newWakeLock(
+                PowerManager.PARTIAL_WAKE_LOCK,
+                "MqttAssistant:PulseTempLock"
+            )
+            tempLock?.acquire(5000L)
+        } catch (_: Exception) {}
+
+        serviceScope.launch {
+            try {
+                if (MqttClientManager.isConnected) {
+                    Log.d(TAG, "Pulse wake: Dispatching active MQTT ping...")
+                    MqttClientManager.pingOrKeepAlive()
+                } else {
+                    Log.d(TAG, "Pulse wake: Detected connection lost in sleep, silently restoring...")
+                    val res = MqttClientManager.reconnectSilently()
+                    if (res.isSuccess) {
+                        Log.d(TAG, "Pulse wake: Silently reconnected successfully in sleep")
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Error during pulse heartbeat", e)
+            } finally {
+                // 排期下一个脉冲
+                if (isRunning) {
+                    scheduleNextAlarmPulse()
+                }
+            }
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         isRunning = false
+        cancelAlarmPulse()
         heartbeatJob?.cancel()
         serviceScope.cancel()
         try {

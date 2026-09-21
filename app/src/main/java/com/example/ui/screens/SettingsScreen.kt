@@ -1167,13 +1167,20 @@ fun SettingsScreen(
                     Button(
                         onClick = {
                             try {
-                                val intent = Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                                val intent = Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                                    data = Uri.parse("package:${context.packageName}")
+                                }
                                 context.startActivity(intent)
                             } catch (e: Exception) {
                                 try {
-                                    val intent = Intent(android.provider.Settings.ACTION_SETTINGS)
+                                    val intent = Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
                                     context.startActivity(intent)
-                                } catch (_: Exception) {}
+                                } catch (_: Exception) {
+                                    try {
+                                        val intent = Intent(android.provider.Settings.ACTION_SETTINGS)
+                                        context.startActivity(intent)
+                                    } catch (_: Exception) {}
+                                }
                             }
                         },
                         modifier = Modifier
