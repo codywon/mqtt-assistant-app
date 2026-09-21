@@ -226,6 +226,51 @@ class MqttStorageRepository(context: Context) {
         dbHelper.saveSetting(KEY_WAKE_LOCK, enabled.toString())
     }
 
+    fun loadAutoReconnect(): Boolean {
+        val v = dbHelper.loadSetting("key_auto_reconnect", "true")
+        return v.toBooleanStrictOrNull() ?: true
+    }
+
+    fun saveAutoReconnect(enabled: Boolean) {
+        dbHelper.saveSetting("key_auto_reconnect", enabled.toString())
+    }
+
+    fun loadReconnectInterval(): Int {
+        val v = dbHelper.loadSetting("key_reconnect_interval", "5")
+        return v.toIntOrNull() ?: 5
+    }
+
+    fun saveReconnectInterval(sec: Int) {
+        dbHelper.saveSetting("key_reconnect_interval", sec.toString())
+    }
+
+    fun loadMaxReconnectAttempts(): Int {
+        val v = dbHelper.loadSetting("key_max_reconnect_attempts", "3")
+        return v.toIntOrNull() ?: 3
+    }
+
+    fun saveMaxReconnectAttempts(attempts: Int) {
+        dbHelper.saveSetting("key_max_reconnect_attempts", attempts.toString())
+    }
+
+    fun loadAutoRotate(): Boolean {
+        val v = dbHelper.loadSetting("key_auto_rotate", "true")
+        return v.toBooleanStrictOrNull() ?: true
+    }
+
+    fun saveAutoRotate(enabled: Boolean) {
+        dbHelper.saveSetting("key_auto_rotate", enabled.toString())
+    }
+
+    fun loadBufferThreshold(): Int {
+        val v = dbHelper.loadSetting("key_buffer_threshold", "10000")
+        return v.toIntOrNull() ?: 10000
+    }
+
+    fun saveBufferThreshold(threshold: Int) {
+        dbHelper.saveSetting("key_buffer_threshold", threshold.toString())
+    }
+
     // ==========================================
     // 6. MQTT Live & Historical Packets (SQLite)
     // ==========================================
@@ -248,5 +293,13 @@ class MqttStorageRepository(context: Context) {
 
     fun clearAllPackets() {
         dbHelper.clearAllPackets()
+    }
+
+    fun getPacketCount(): Long {
+        return dbHelper.getPacketCount()
+    }
+
+    fun getDatabaseSizeBytes(context: Context): Long {
+        return dbHelper.getDatabaseSizeBytes(context)
     }
 }

@@ -22,6 +22,9 @@ data class BackupData(
     val brokerProfiles: List<BrokerProfile>,
     val publishPresets: List<PublishPreset>,
     val subscriptions: List<SubscriptionItem>,
+    val autoReconnect: Boolean,
+    val reconnectIntervalSeconds: Int,
+    val maxReconnectAttempts: Int,
     val autoRotate: Boolean,
     val bufferThreshold: Int,
     val backgroundKeepAlive: Boolean,
@@ -43,13 +46,16 @@ object ConfigBackupHelper {
         excludeFilters: List<String>
     ): File {
         val root = JSONObject()
-        root.put("version", 1)
+        root.put("version", 2)
         root.put("app", "MQTT-Assistant")
         root.put("exportedAt", SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date()))
         root.put("activeBrokerId", activeId)
 
-        // 1. Global Settings
+        // 1. Global & Engine Settings
         val configObj = JSONObject().apply {
+            put("autoReconnect", serverConfig.autoReconnect)
+            put("reconnectIntervalSeconds", serverConfig.reconnectIntervalSeconds)
+            put("maxReconnectAttempts", serverConfig.maxReconnectAttempts)
             put("autoRotate", serverConfig.autoRotate)
             put("bufferThreshold", serverConfig.bufferThreshold)
             put("backgroundKeepAlive", serverConfig.backgroundKeepAliveEnabled)
@@ -216,7 +222,10 @@ object ConfigBackupHelper {
             }
         }
 
-        // 4. Global Settings
+        // 4. Global & Engine Settings
+        var autoReconnect = true
+        var reconnectIntervalSeconds = 5
+        var maxReconnectAttempts = 3
         var autoRotate = true
         var bufferThreshold = 10000
         var backgroundKeepAlive = true
@@ -226,6 +235,9 @@ object ConfigBackupHelper {
 
         if (root.has("globalSettings")) {
             val cfg = root.getJSONObject("globalSettings")
+            autoReconnect = cfg.optBoolean("autoReconnect", true)
+            reconnectIntervalSeconds = cfg.optInt("reconnectIntervalSeconds", 5)
+            maxReconnectAttempts = cfg.optInt("maxReconnectAttempts", 3)
             autoRotate = cfg.optBoolean("autoRotate", true)
             bufferThreshold = cfg.optInt("bufferThreshold", 10000)
             backgroundKeepAlive = cfg.optBoolean("backgroundKeepAlive", true)
@@ -248,6 +260,9 @@ object ConfigBackupHelper {
             brokerProfiles = profiles,
             publishPresets = presets,
             subscriptions = subs,
+            autoReconnect = autoReconnect,
+            reconnectIntervalSeconds = reconnectIntervalSeconds,
+            maxReconnectAttempts = maxReconnectAttempts,
             autoRotate = autoRotate,
             bufferThreshold = bufferThreshold,
             backgroundKeepAlive = backgroundKeepAlive,

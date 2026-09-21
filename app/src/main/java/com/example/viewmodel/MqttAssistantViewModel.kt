@@ -124,6 +124,11 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                     cleanSession = initialBroker.cleanSession,
                     tlsEnabled = initialBroker.tlsEnabled,
                     keepAlive = initialBroker.keepAlive,
+                    autoReconnect = storage.loadAutoReconnect(),
+                    reconnectIntervalSeconds = storage.loadReconnectInterval(),
+                    maxReconnectAttempts = storage.loadMaxReconnectAttempts(),
+                    autoRotate = storage.loadAutoRotate(),
+                    bufferThreshold = storage.loadBufferThreshold(),
                     backgroundKeepAliveEnabled = storage.loadBackgroundKeepAlive(),
                     wakeLockEnabled = storage.loadWakeLock()
                 )
@@ -139,6 +144,11 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                     cleanSession = true,
                     tlsEnabled = false,
                     keepAlive = 60,
+                    autoReconnect = storage.loadAutoReconnect(),
+                    reconnectIntervalSeconds = storage.loadReconnectInterval(),
+                    maxReconnectAttempts = storage.loadMaxReconnectAttempts(),
+                    autoRotate = storage.loadAutoRotate(),
+                    bufferThreshold = storage.loadBufferThreshold(),
                     backgroundKeepAliveEnabled = storage.loadBackgroundKeepAlive(),
                     wakeLockEnabled = storage.loadWakeLock()
                 )
@@ -154,6 +164,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
         startPacketBatchCollector()
         setupMqttCallbacks()
         registerNetworkCallback()
+        refreshStorageStats()
         if (serverConfig.value.host.isNotBlank()) {
             connectToBroker()
             if (serverConfig.value.backgroundKeepAliveEnabled) {
@@ -221,6 +232,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 withContext(Dispatchers.IO) {
                     storage.savePackets(currentBatch, maxBuffer)
                 }
+                refreshStorageStats()
 
                 // 3. 更新通知栏
                 if (MqttBackgroundService.isRunning) {
@@ -458,7 +470,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
         }
         storage.saveBrokerProfiles(brokerProfiles.value)
 
-        // If this broker is currently active, sync serverConfig
+        // If this broker is currently active, sync serverConfig and reconnect
         if (broker.id == activeBrokerId.value) {
             serverConfig.update {
                 it.copy(
@@ -473,6 +485,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                     keepAlive = broker.keepAlive
                 )
             }
+            triggerManualReconnect()
         }
         showToast("已保存 Broker 节点: ${broker.name}")
     }
@@ -1090,7 +1103,9 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
     }
 
     fun toggleAutoReconnect() {
-        serverConfig.update { it.copy(autoReconnect = !it.autoReconnect) }
+        val next = !serverConfig.value.autoReconnect
+        serverConfig.update { it.copy(autoReconnect = next) }
+        storage.saveAutoReconnect(next)
     }
 
     fun toggleTls() {
@@ -1113,12 +1128,27 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
     }
 
     fun toggleAutoRotate() {
-        serverConfig.update { it.copy(autoRotate = !it.autoRotate) }
+        val next = !serverConfig.value.autoRotate
+        serverConfig.update { it.copy(autoRotate = next) }
+        storage.saveAutoRotate(next)
     }
 
     fun updateBufferThreshold(thStr: String) {
         val th = thStr.toIntOrNull() ?: 10000
         serverConfig.update { it.copy(bufferThreshold = th) }
+        storage.saveBufferThreshold(th)
+    }
+
+    fun refreshStorageStats() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val count = storage.getPacketCount().toInt()
+            val bytes = storage.getDatabaseSizeBytes(getApplication())
+            val mb = bytes.toDouble() / (1024.0 * 1024.0)
+            val formattedMb = Math.round(mb * 100.0) / 100.0
+            withContext(Dispatchers.Main) {
+                serverConfig.update { it.copy(usedSpaceMb = formattedMb, packetCount = count) }
+            }
+        }
     }
 
     fun triggerManualReconnect() {
@@ -1277,8 +1307,10 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
         publishHistory.value = emptyList()
         livePackets.value = emptyList()
         packetSeqCounter = 0
-        storage.clearAllPackets()
-        serverConfig.update { it.copy(usedSpaceMb = 0.0, packetCount = 0) }
+        viewModelScope.launch(Dispatchers.IO) {
+            storage.clearAllPackets()
+            refreshStorageStats()
+        }
         if (MqttBackgroundService.isRunning) {
             val host = serverConfig.value.host
             val brokerLabel = if (host.isNotBlank()) "${host}:${serverConfig.value.port}" else ""
@@ -1289,7 +1321,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 latestTopic = null
             )
         }
-        showToast("本地历史日志与未发缓存已清空")
+        showToast("本地历史报文已清空，存储空间已物理收缩")
     }
 
     val isExporting = MutableStateFlow(false)
@@ -1539,6 +1571,11 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 }
 
                 // 5. 恢复全局设置与过滤规则
+                storage.saveAutoReconnect(backup.autoReconnect)
+                storage.saveReconnectInterval(backup.reconnectIntervalSeconds)
+                storage.saveMaxReconnectAttempts(backup.maxReconnectAttempts)
+                storage.saveAutoRotate(backup.autoRotate)
+                storage.saveBufferThreshold(backup.bufferThreshold)
                 storage.saveBackgroundKeepAlive(backup.backgroundKeepAlive)
                 storage.saveWakeLock(backup.wakeLockEnabled)
                 storage.saveIncludeTopicFilters(backup.includeFilters)
@@ -1548,12 +1585,17 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
 
                 serverConfig.update {
                     it.copy(
+                        autoReconnect = backup.autoReconnect,
+                        reconnectIntervalSeconds = backup.reconnectIntervalSeconds,
+                        maxReconnectAttempts = backup.maxReconnectAttempts,
                         autoRotate = backup.autoRotate,
                         bufferThreshold = backup.bufferThreshold,
                         backgroundKeepAliveEnabled = backup.backgroundKeepAlive,
                         wakeLockEnabled = backup.wakeLockEnabled
                     )
                 }
+
+                refreshStorageStats()
 
                 withContext(Dispatchers.Main) {
                     isImportingConfig.value = false

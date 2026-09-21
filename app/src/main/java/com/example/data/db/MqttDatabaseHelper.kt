@@ -414,6 +414,35 @@ class MqttDatabaseHelper(context: Context) : SQLiteOpenHelper(
     fun clearAllPackets() {
         val db = writableDatabase
         db.delete(TABLE_PACKETS, null, null)
+        try {
+            db.execSQL("VACUUM")
+        } catch (_: Exception) {}
+    }
+
+    fun getPacketCount(): Long {
+        val db = readableDatabase
+        val cursor = db.rawQuery("SELECT count(*) FROM $TABLE_PACKETS", null)
+        cursor.use { c ->
+            if (c.moveToFirst()) {
+                return c.getLong(0)
+            }
+        }
+        return 0L
+    }
+
+    fun getDatabaseSizeBytes(context: Context): Long {
+        var totalSize = 0L
+        try {
+            val dbFile = context.getDatabasePath(DATABASE_NAME)
+            if (dbFile != null && dbFile.exists()) {
+                totalSize += dbFile.length()
+                val walFile = java.io.File(dbFile.path + "-wal")
+                if (walFile.exists()) totalSize += walFile.length()
+                val shmFile = java.io.File(dbFile.path + "-shm")
+                if (shmFile.exists()) totalSize += shmFile.length()
+            }
+        } catch (_: Exception) {}
+        return totalSize
     }
 
     // =========================================================================
