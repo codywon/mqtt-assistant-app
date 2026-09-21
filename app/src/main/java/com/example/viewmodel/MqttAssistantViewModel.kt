@@ -124,11 +124,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
     private fun setupMqttCallbacks() {
         MqttClientManager.onMessageReceived = { topic, qos, payloadBytes, retain ->
             // PC-Grade Topic Filtering: Exclude rules have highest priority!
-            if (!MqttTopicUtil.isTopicAllowed(topic, includeTopicFilters.value, excludeTopicFilters.value)) {
-                return@onMessageReceived
-            }
-
-            if (!isRecordingPaused.value) {
+            if (MqttTopicUtil.isTopicAllowed(topic, includeTopicFilters.value, excludeTopicFilters.value) && !isRecordingPaused.value) {
                 val timeStr = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date())
                 val payloadString = try {
                     String(payloadBytes, Charsets.UTF_8)
