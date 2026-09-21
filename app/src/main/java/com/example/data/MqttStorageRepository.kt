@@ -230,12 +230,16 @@ class MqttStorageRepository(context: Context) {
     // 6. MQTT Live & Historical Packets (SQLite)
     // ==========================================
 
-    fun savePacket(packet: MqttLogPacket) {
-        dbHelper.insertPacket(packet)
+    fun savePacket(packet: MqttLogPacket, maxBuffer: Int = 10000) {
+        dbHelper.insertPacket(packet, maxBuffer)
     }
 
     fun loadRecentPackets(limit: Int = 300): List<MqttLogPacket> {
         return dbHelper.loadRecentPackets(limit)
+    }
+
+    fun loadAllPacketsForExport(limit: Int = 10000): List<Pair<MqttLogPacket, Long>> {
+        return dbHelper.loadAllPacketsForExport(limit)
     }
 
     fun clearAllPackets() {

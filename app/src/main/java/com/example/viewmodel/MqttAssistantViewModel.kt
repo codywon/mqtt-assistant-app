@@ -15,6 +15,8 @@ import com.example.model.PublishPreset
 import com.example.model.SubscriptionItem
 import com.example.mqtt.MqttClientManager
 import com.example.service.MqttBackgroundService
+import com.example.util.ExcelExportHelper
+import com.example.util.ExportPacketItem
 import com.example.util.MqttTopicUtil
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -27,6 +29,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.text.SimpleDateFormat
@@ -183,7 +186,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 (current + packet).takeLast(serverConfig.value.bufferThreshold)
             }
             viewModelScope.launch(Dispatchers.IO) {
-                storage.savePacket(packet)
+                storage.savePacket(packet, serverConfig.value.bufferThreshold)
             }
 
             subscriptions.update { list ->
@@ -462,7 +465,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 dotColorHex = dotColor
             )
             livePackets.update { (it + packet).takeLast(serverConfig.value.bufferThreshold) }
-            storage.savePacket(packet)
+            storage.savePacket(packet, serverConfig.value.bufferThreshold)
 
             // Match against subscriptions
             subscriptions.update { list ->
@@ -593,7 +596,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 dotColorHex = dotColor
             )
             livePackets.update { (it + packet).takeLast(serverConfig.value.bufferThreshold) }
-            storage.savePacket(packet)
+            storage.savePacket(packet, serverConfig.value.bufferThreshold)
 
             if (result.isSuccess) {
                 // If any enabled subscription matches the published topic, update stats immediately
@@ -1171,6 +1174,83 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
             )
         }
         showToast("本地历史日志与未发缓存已清空")
+    }
+
+    val isExporting = MutableStateFlow(false)
+
+    /**
+     * 导出全量报文为 Excel (.xlsx) 表格并调用系统能力打开/分享
+     * 格式：序号、主题、设备ID、消息内容、时间 (yyyy-M-d HH:mm:ss)
+     */
+    fun exportPacketsToExcel(context: Context) {
+        if (isExporting.value) return
+        isExporting.value = true
+        showToast("正在导出 Excel 报文，请稍候...")
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val limit = serverConfig.value.bufferThreshold.coerceAtLeast(1000)
+                val rawPairs = storage.loadAllPacketsForExport(limit)
+
+                val exportItems = if (rawPairs.isNotEmpty()) {
+                    rawPairs.mapIndexed { index, pair ->
+                        val packet = pair.first
+                        val createdAt = pair.second
+                        val timeStr = ExcelExportHelper.formatTimestamp(createdAt)
+                        val devId = ExcelExportHelper.extractDeviceId(
+                            packet.payload,
+                            packet.topic,
+                            serverConfig.value.clientId
+                        )
+                        ExportPacketItem(
+                            seqNumber = index + 1,
+                            topic = packet.topic,
+                            deviceId = devId,
+                            payload = packet.payload,
+                            timeFormatted = timeStr
+                        )
+                    }
+                } else {
+                    val currentMem = livePackets.value
+                    currentMem.mapIndexed { index, packet ->
+                        val devId = ExcelExportHelper.extractDeviceId(
+                            packet.payload,
+                            packet.topic,
+                            serverConfig.value.clientId
+                        )
+                        ExportPacketItem(
+                            seqNumber = index + 1,
+                            topic = packet.topic,
+                            deviceId = devId,
+                            payload = packet.payload,
+                            timeFormatted = ExcelExportHelper.formatTimestamp(System.currentTimeMillis())
+                        )
+                    }
+                }
+
+                if (exportItems.isEmpty()) {
+                    withContext(Dispatchers.Main) {
+                        isExporting.value = false
+                        showToast("当前暂无报文记录可导出")
+                    }
+                    return@launch
+                }
+
+                val file = ExcelExportHelper.exportToXlsx(context, exportItems)
+
+                withContext(Dispatchers.Main) {
+                    isExporting.value = false
+                    showToast("已生成 Excel 表格 (共 ${exportItems.size} 条记录)")
+                    ExcelExportHelper.shareExportedFile(context, file)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                withContext(Dispatchers.Main) {
+                    isExporting.value = false
+                    showToast("导出失败: ${e.localizedMessage}")
+                }
+            }
+        }
     }
 
     fun saveAndApplySettings() {

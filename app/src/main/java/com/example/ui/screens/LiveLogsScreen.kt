@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -691,15 +692,15 @@ private fun MessageDetailsModalDialog(
             elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
             modifier = Modifier
                 .fillMaxWidth(0.92f)
-                .padding(vertical = 20.dp)
+                .fillMaxHeight(0.85f)
+                .padding(vertical = 16.dp)
         ) {
             Column(
                 modifier = Modifier
+                    .fillMaxSize()
                     .padding(18.dp)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                // Header
+                // 1. 顶部固定 Header (标题与关闭按钮常驻)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -725,88 +726,101 @@ private fun MessageDetailsModalDialog(
                     }
                 }
 
-                // Clean Topic Section (支持多行完整换行，整块区域点击直接复制主题)
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // 2. 中间独立平滑滚动区域 (主题卡片 + JSON 代码块，weight(1f) 自适应撑满剩余高度)
                 Column(
                     modifier = Modifier
+                        .weight(1f)
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(SurfaceContainerLow)
-                        .clickable(onClick = onCopyTopic)
-                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
+                    // Clean Topic Section (支持多行完整换行，整块区域点击直接复制主题)
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(SurfaceContainerLow)
+                            .clickable(onClick = onCopyTopic)
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "主题 (点击可直接复制)",
+                                style = TextStyle(
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = OnSurfaceVariantGray
+                                )
+                            )
+                            Icon(
+                                imageVector = Icons.Default.ContentCopy,
+                                contentDescription = "复制主题",
+                                tint = OutlineGray,
+                                modifier = Modifier.size(13.dp)
+                            )
+                        }
+
+                        // 与消息卡片完全一致的多行换行主题呈现，支持任意层级主题
+                        Text(
+                            text = packet.topic,
+                            style = TextStyle(
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.5.sp,
+                                lineHeight = 18.sp,
+                                color = PrimaryBlack
+                            )
+                        )
+                    }
+
+                    // Message Payload Header with 复制消息 button
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "主题 (点击可直接复制)",
+                            text = "完整消息内容",
                             style = TextStyle(
-                                fontSize = 11.5.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = OnSurfaceVariantGray
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = PrimaryBlack
                             )
                         )
-                        Icon(
-                            imageVector = Icons.Default.ContentCopy,
-                            contentDescription = "复制主题",
-                            tint = OutlineGray,
-                            modifier = Modifier.size(13.dp)
-                        )
+                        TextButton(onClick = onCopyPayload) {
+                            Icon(
+                                imageVector = Icons.Default.ContentCopy,
+                                contentDescription = null,
+                                tint = PrimaryBlack,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("复制消息", fontSize = 12.sp, color = PrimaryBlack, fontWeight = FontWeight.Bold)
+                        }
                     }
 
-                    // 与消息卡片完全一致的多行换行主题呈现，支持任意层级主题
-                    Text(
-                        text = packet.topic,
-                        style = TextStyle(
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.5.sp,
-                            lineHeight = 18.sp,
-                            color = PrimaryBlack
-                        )
+                    // Full VS Code / GitHub JSON Highlighter View
+                    JsonCodeBlockView(
+                        rawText = packet.payload,
+                        isJsonPretty = isJsonPretty,
+                        showLineNumbers = true,
+                        maxLines = Int.MAX_VALUE,
+                        modifier = Modifier.fillMaxWidth()
                     )
                 }
 
-                // Message Payload Header with 复制消息 button
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "完整消息内容",
-                        style = TextStyle(
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = PrimaryBlack
-                        )
-                    )
-                    TextButton(onClick = onCopyPayload) {
-                        Icon(
-                            imageVector = Icons.Default.ContentCopy,
-                            contentDescription = null,
-                            tint = PrimaryBlack,
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("复制消息", fontSize = 12.sp, color = PrimaryBlack, fontWeight = FontWeight.Bold)
-                    }
-                }
-
-                // Full VS Code / GitHub JSON Highlighter View
-                JsonCodeBlockView(
-                    rawText = packet.payload,
-                    isJsonPretty = isJsonPretty,
-                    showLineNumbers = true,
-                    maxLines = Int.MAX_VALUE,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
+                Spacer(modifier = Modifier.height(10.dp))
                 HorizontalDivider(color = OutlineVariantLight, thickness = 0.5.dp)
+                Spacer(modifier = Modifier.height(10.dp))
 
-                // Actions Bottom: 等高 44.dp，严格对齐与纯净工业质感
+                // 3. 底部绝对常驻操作栏 (关闭, 载入至发布页) - 无论内容多长，100% 完整显示在底部，绝不被截断
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),

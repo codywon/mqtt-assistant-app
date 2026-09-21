@@ -283,7 +283,7 @@ class MqttDatabaseHelper(context: Context) : SQLiteOpenHelper(
     // MQTT Packets History CRUD (Persistent Logs)
     // =========================================================================
 
-    fun insertPacket(packet: MqttLogPacket) {
+    fun insertPacket(packet: MqttLogPacket, maxBuffer: Int = 10000) {
         val db = writableDatabase
         val cv = ContentValues().apply {
             put("id", packet.id)
@@ -299,6 +299,19 @@ class MqttDatabaseHelper(context: Context) : SQLiteOpenHelper(
             put("created_at", System.currentTimeMillis())
         }
         db.insertWithOnConflict(TABLE_PACKETS, null, cv, SQLiteDatabase.CONFLICT_REPLACE)
+
+        // 超过阈值时自动修剪历史记录，实现 10000 条安全循环轮转落盘
+        if (maxBuffer > 0) {
+            try {
+                db.execSQL(
+                    """
+                    DELETE FROM $TABLE_PACKETS WHERE id NOT IN (
+                        SELECT id FROM $TABLE_PACKETS ORDER BY created_at DESC LIMIT $maxBuffer
+                    )
+                    """.trimIndent()
+                )
+            } catch (_: Exception) {}
+        }
     }
 
     fun loadRecentPackets(limit: Int = 300): List<MqttLogPacket> {
@@ -330,6 +343,56 @@ class MqttDatabaseHelper(context: Context) : SQLiteOpenHelper(
                         dotColorHex = c.getLong(c.getColumnIndexOrThrow("dotColorHex"))
                     )
                 )
+            }
+        }
+        return list
+    }
+
+    /**
+     * 加载全部报文用于导出 Excel（按创建时间正序排列）
+     * 返回 (MqttLogPacket, createdAtMillis)
+     */
+    fun loadAllPacketsForExport(limit: Int = 10000): List<Pair<MqttLogPacket, Long>> {
+        val list = mutableListOf<Pair<MqttLogPacket, Long>>()
+        val db = readableDatabase
+        val cursor = db.query(
+            TABLE_PACKETS,
+            null,
+            null,
+            null,
+            null,
+            null,
+            "created_at ASC",
+            limit.toString()
+        )
+        cursor.use { c ->
+            val idCol = c.getColumnIndexOrThrow("id")
+            val topicCol = c.getColumnIndexOrThrow("topic")
+            val qosCol = c.getColumnIndexOrThrow("qos")
+            val seqCol = c.getColumnIndexOrThrow("packetSeq")
+            val tsCol = c.getColumnIndexOrThrow("timestamp")
+            val payloadCol = c.getColumnIndexOrThrow("payload")
+            val devInfoCol = c.getColumnIndexOrThrow("devInfo")
+            val sizeCol = c.getColumnIndexOrThrow("sizeText")
+            val catCol = c.getColumnIndexOrThrow("category")
+            val colorCol = c.getColumnIndexOrThrow("dotColorHex")
+            val createdCol = c.getColumnIndexOrThrow("created_at")
+
+            while (c.moveToNext()) {
+                val packet = MqttLogPacket(
+                    id = c.getString(idCol),
+                    topic = c.getString(topicCol),
+                    qos = c.getInt(qosCol),
+                    packetSeq = c.getString(seqCol),
+                    timestamp = c.getString(tsCol),
+                    payload = c.getString(payloadCol),
+                    devInfo = c.getString(devInfoCol),
+                    sizeText = c.getString(sizeCol),
+                    category = c.getString(catCol),
+                    dotColorHex = c.getLong(colorCol)
+                )
+                val createdAt = c.getLong(createdCol)
+                list.add(Pair(packet, createdAt))
             }
         }
         return list

@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FolderShared
 import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.Key
@@ -123,6 +124,7 @@ fun SettingsScreen(
     val isSaving by viewModel.isSavingSettings.collectAsState()
     val brokerProfiles by viewModel.brokerProfiles.collectAsState()
     val activeBrokerId by viewModel.activeBrokerId.collectAsState()
+    val isExporting by viewModel.isExporting.collectAsState()
 
     var showBrokerDialog by remember { mutableStateOf(false) }
     var editingBroker by remember { mutableStateOf<BrokerProfile?>(null) }
@@ -1276,22 +1278,6 @@ fun SettingsScreen(
                             )
                         )
                     }
-
-                    Box(
-                        modifier = Modifier
-                            .clip(CircleShape)
-                            .background(SurfaceContainerDefault)
-                            .padding(horizontal = 8.dp, vertical = 3.dp)
-                    ) {
-                        Text(
-                            text = "SharedPreferences",
-                            style = TextStyle(
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 11.sp,
-                                color = OnSurfaceVariantGray
-                            )
-                        )
-                    }
                 }
 
                 // Auto rotate toggle
@@ -1411,35 +1397,49 @@ fun SettingsScreen(
                     }
                 }
 
-                // Clear history button
+                // Export Excel Action (替换清理历史记录)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "清理历史收发包记录",
-                        style = MaterialTheme.typography.bodySmall.copy(color = OnSurfaceVariantGray)
-                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "报文数据导出",
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontWeight = FontWeight.SemiBold,
+                                color = PrimaryBlack
+                            )
+                        )
+                        Text(
+                            text = "导出为标准 Excel 表格 (.xlsx)",
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontSize = 11.5.sp,
+                                color = OnSurfaceVariantGray
+                            )
+                        )
+                    }
+
                     Button(
-                        onClick = { viewModel.clearAllData() },
+                        onClick = { viewModel.exportPacketsToExcel(context) },
+                        enabled = !isExporting,
                         shape = RoundedCornerShape(8.dp),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = ErrorContainerRed,
-                            contentColor = OnErrorContainerRed
+                            containerColor = PrimaryBlack,
+                            contentColor = OnPrimaryWhite
                         ),
                         modifier = Modifier
                             .height(36.dp)
-                            .testTag("clear_all_data_btn")
+                            .testTag("export_excel_btn")
                     ) {
                         Icon(
-                            imageVector = Icons.Default.DeleteSweep,
+                            imageVector = Icons.Default.FileDownload,
                             contentDescription = null,
                             modifier = Modifier.size(15.dp)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = "清空全部数据",
+                            text = if (isExporting) "导出中..." else "导出 Excel",
                             style = TextStyle(
                                 fontWeight = FontWeight.SemiBold,
                                 fontSize = 11.5.sp
