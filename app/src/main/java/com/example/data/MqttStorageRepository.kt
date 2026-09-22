@@ -311,8 +311,19 @@ class MqttStorageRepository(context: Context) {
         return dbHelper.loadAllPacketsForExport(limit)
     }
 
+    fun exportPacketsStream(
+        limit: Int = 10000,
+        consumer: (packet: MqttLogPacket, createdAt: Long) -> Unit
+    ): Int {
+        return dbHelper.exportPacketsStream(limit, consumer)
+    }
+
     fun clearAllPackets() {
         dbHelper.clearAllPackets()
+    }
+
+    fun vacuumDatabase() {
+        dbHelper.vacuumDatabase()
     }
 
     fun getPacketCount(): Long {

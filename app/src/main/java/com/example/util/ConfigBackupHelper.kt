@@ -37,8 +37,9 @@ data class BackupData(
 
 object ConfigBackupHelper {
 
-    fun exportConfigToJson(
-        context: Context,
+    const val TOKEN_PREFIX = "#MQTT-CFG#:"
+
+    fun buildBackupJsonObject(
         profiles: List<BrokerProfile>,
         activeId: String,
         presets: List<PublishPreset>,
@@ -46,7 +47,7 @@ object ConfigBackupHelper {
         serverConfig: MqttServerConfig,
         includeFilters: List<String>,
         excludeFilters: List<String>
-    ): File {
+    ): JSONObject {
         val root = JSONObject()
         root.put("version", 1)
         root.put("app", "MQTT-Assistant")
@@ -124,12 +125,70 @@ object ConfigBackupHelper {
         }
         root.put("subscriptions", subArray)
 
+        return root
+    }
+
+    fun exportConfigToJson(
+        context: Context,
+        profiles: List<BrokerProfile>,
+        activeId: String,
+        presets: List<PublishPreset>,
+        subs: List<SubscriptionItem>,
+        serverConfig: MqttServerConfig,
+        includeFilters: List<String>,
+        excludeFilters: List<String>
+    ): File {
+        val root = buildBackupJsonObject(
+            profiles, activeId, presets, subs, serverConfig, includeFilters, excludeFilters
+        )
         // Write to cache exports directory
         val exportDir = File(context.cacheDir, "exports").apply { if (!exists()) mkdirs() }
         val timeTag = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
         val file = File(exportDir, "mqtt_assistant_backup_$timeTag.json")
         file.writeText(root.toString(2), Charsets.UTF_8)
         return file
+    }
+
+    /**
+     * 生成超紧凑的 GZIP+Base64 口令字符串，方便用户在聊天软件中一键复制互传
+     */
+    fun exportConfigToToken(
+        profiles: List<BrokerProfile>,
+        activeId: String,
+        presets: List<PublishPreset>,
+        subs: List<SubscriptionItem>,
+        serverConfig: MqttServerConfig,
+        includeFilters: List<String>,
+        excludeFilters: List<String>
+    ): String {
+        val root = buildBackupJsonObject(
+            profiles, activeId, presets, subs, serverConfig, includeFilters, excludeFilters
+        )
+        val jsonStr = root.toString()
+        val byteStream = java.io.ByteArrayOutputStream()
+        java.util.zip.GZIPOutputStream(byteStream).use { gzip ->
+            gzip.write(jsonStr.toByteArray(Charsets.UTF_8))
+        }
+        val base64 = android.util.Base64.encodeToString(byteStream.toByteArray(), android.util.Base64.NO_WRAP)
+        return "$TOKEN_PREFIX$base64"
+    }
+
+    /**
+     * 从口令字符串或原生 JSON 还原解析配置对象
+     */
+    fun parseConfigFromToken(tokenText: String): BackupData {
+        val trimmed = tokenText.trim()
+        val jsonString = if (trimmed.startsWith(TOKEN_PREFIX)) {
+            val base64Part = trimmed.removePrefix(TOKEN_PREFIX).trim()
+            val compressedBytes = android.util.Base64.decode(base64Part, android.util.Base64.DEFAULT)
+            val byteIn = java.io.ByteArrayInputStream(compressedBytes)
+            java.util.zip.GZIPInputStream(byteIn).bufferedReader(Charsets.UTF_8).use { it.readText() }
+        } else if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+            trimmed
+        } else {
+            throw IllegalArgumentException("剪贴板内容不是有效的 MQTT 助手配置口令")
+        }
+        return parseBackupJson(jsonString)
     }
 
     fun shareBackupFile(context: Context, file: File, chooserTitle: String = "备份配置导出 (保存到本地或分享)") {

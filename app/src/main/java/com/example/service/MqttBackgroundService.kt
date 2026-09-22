@@ -10,6 +10,10 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ServiceInfo
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
@@ -225,6 +229,7 @@ class MqttBackgroundService : Service() {
         createNotificationChannel()
         MqttClientManager.addMessageListener(backgroundMessageListener)
         registerScreenStateReceiver()
+        registerNetworkCallback()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -467,11 +472,72 @@ class MqttBackgroundService : Service() {
         }
     }
 
+    private var serviceNetworkCallback: ConnectivityManager.NetworkCallback? = null
+    private var lastServiceTransport: Int? = null
+    private var lastServiceSwitchTimestamp: Long = 0L
+
+    private fun registerNetworkCallback() {
+        try {
+            val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            val request = NetworkRequest.Builder()
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                .build()
+            val cb = object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: Network) {
+                    serviceScope.launch {
+                        ensureMqttConnected(applicationContext)
+                    }
+                }
+
+                override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) {
+                    val currentTransport = when {
+                        networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> NetworkCapabilities.TRANSPORT_WIFI
+                        networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> NetworkCapabilities.TRANSPORT_CELLULAR
+                        networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> NetworkCapabilities.TRANSPORT_ETHERNET
+                        else -> null
+                    }
+                    if (currentTransport != null && lastServiceTransport != null && currentTransport != lastServiceTransport) {
+                        val now = System.currentTimeMillis()
+                        // 2 秒防抖，防止弱网环境下网络抖动重复触发
+                        if (now - lastServiceSwitchTimestamp > 2000L) {
+                            lastServiceSwitchTimestamp = now
+                            Log.i(TAG, "Background Service: Network transport switched ($lastServiceTransport -> $currentTransport). Healing TCP connection...")
+                            serviceScope.launch {
+                                try {
+                                    MqttClientManager.disconnect()
+                                } catch (_: Exception) {}
+                                ensureMqttConnected(applicationContext)
+                            }
+                        }
+                    }
+                    if (currentTransport != null) {
+                        lastServiceTransport = currentTransport
+                    }
+                }
+            }
+            serviceNetworkCallback = cb
+            cm?.registerNetworkCallback(request, cb)
+            Log.d(TAG, "Registered service network callback for transport auto-healing")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to register network callback in service", e)
+        }
+    }
+
+    private fun unregisterNetworkCallback() {
+        try {
+            val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            serviceNetworkCallback?.let { cm?.unregisterNetworkCallback(it) }
+            serviceNetworkCallback = null
+            Log.d(TAG, "Unregistered service network callback")
+        } catch (_: Exception) {}
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         isRunning = false
         AlarmPulseReceiver.cancelPulse(this)
         unregisterScreenStateReceiver()
+        unregisterNetworkCallback()
         heartbeatJob?.cancel()
         serviceScope.cancel()
         MqttClientManager.removeMessageListener(backgroundMessageListener)

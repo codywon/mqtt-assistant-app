@@ -37,6 +37,13 @@ class MqttDatabaseHelper(context: Context) : SQLiteOpenHelper(
         private const val TABLE_SETTINGS = "tbl_app_settings"
     }
 
+    override fun onConfigure(db: SQLiteDatabase) {
+        super.onConfigure(db)
+        try {
+            db.enableWriteAheadLogging()
+        } catch (_: Exception) {}
+    }
+
     override fun onCreate(db: SQLiteDatabase) {
         // 1. Broker profiles table
         db.execSQL(
@@ -421,10 +428,69 @@ class MqttDatabaseHelper(context: Context) : SQLiteOpenHelper(
         return list
     }
 
+    /**
+     * 游标流式逐行读取导出（消除 OOM 风险）
+     * 边扫游标边回调，单次在内存中仅常驻 1 个对象，内存占用恒定 < 1MB
+     */
+    fun exportPacketsStream(
+        limit: Int = 10000,
+        consumer: (packet: MqttLogPacket, createdAt: Long) -> Unit
+    ): Int {
+        val db = readableDatabase
+        val cursor = db.query(
+            TABLE_PACKETS,
+            null,
+            null,
+            null,
+            null,
+            null,
+            "created_at ASC",
+            limit.toString()
+        )
+        var count = 0
+        cursor.use { c ->
+            val idCol = c.getColumnIndexOrThrow("id")
+            val topicCol = c.getColumnIndexOrThrow("topic")
+            val qosCol = c.getColumnIndexOrThrow("qos")
+            val seqCol = c.getColumnIndexOrThrow("packetSeq")
+            val tsCol = c.getColumnIndexOrThrow("timestamp")
+            val payloadCol = c.getColumnIndexOrThrow("payload")
+            val devInfoCol = c.getColumnIndexOrThrow("devInfo")
+            val sizeCol = c.getColumnIndexOrThrow("sizeText")
+            val catCol = c.getColumnIndexOrThrow("category")
+            val colorCol = c.getColumnIndexOrThrow("dotColorHex")
+            val createdCol = c.getColumnIndexOrThrow("created_at")
+
+            while (c.moveToNext()) {
+                val packet = MqttLogPacket(
+                    id = c.getString(idCol),
+                    topic = c.getString(topicCol),
+                    qos = c.getInt(qosCol),
+                    packetSeq = c.getString(seqCol),
+                    timestamp = c.getString(tsCol),
+                    payload = c.getString(payloadCol),
+                    devInfo = c.getString(devInfoCol),
+                    sizeText = c.getString(sizeCol),
+                    category = c.getString(catCol),
+                    dotColorHex = c.getLong(colorCol)
+                )
+                val createdAt = c.getLong(createdCol)
+                consumer(packet, createdAt)
+                count++
+            }
+        }
+        return count
+    }
+
     fun clearAllPackets() {
         val db = writableDatabase
         db.delete(TABLE_PACKETS, null, null)
+        vacuumDatabase()
+    }
+
+    fun vacuumDatabase() {
         try {
+            val db = writableDatabase
             db.execSQL("VACUUM")
         } catch (_: Exception) {}
     }

@@ -17,3 +17,4 @@ debug.keystore
 *.zip
 *.apk
 scratch/
+mqtt_assistant_full_config.json

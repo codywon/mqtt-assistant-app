@@ -90,6 +90,14 @@ object MqttTopicUtil {
      */
     fun matchesMqttTopic(subscriptionFilter: String, actualTopic: String): Boolean {
         if (subscriptionFilter == actualTopic) return true
+        if (subscriptionFilter.isEmpty() || actualTopic.isEmpty()) return false
+
+        // MQTT 3.1.1 / 5.0 规范 [MQTT-4.7.2-1]：
+        // 过滤器以通配符 ('#' 或 '+') 开头时，严禁匹配以 '$' 开头的系统主题 (如 $SYS/...)。
+        // 只有当过滤器本身同样以 '$' 开头时，才允许进行系统主题匹配。
+        if (actualTopic.startsWith("$") && !subscriptionFilter.startsWith("$")) {
+            return false
+        }
 
         val filterLevels = subscriptionFilter.split("/")
         val topicLevels = actualTopic.split("/")

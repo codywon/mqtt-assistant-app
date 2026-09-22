@@ -122,6 +122,8 @@ fun LiveLogsScreen(
     val isPaused by viewModel.isRecordingPaused.collectAsState()
     val includeFilters by viewModel.includeTopicFilters.collectAsState()
     val excludeFilters by viewModel.excludeTopicFilters.collectAsState()
+    val messageRate by viewModel.messageRate.collectAsState()
+    val filteredPackets by viewModel.filteredLivePackets.collectAsState()
 
     var selectedDetailsPacket by remember { mutableStateOf<MqttLogPacket?>(null) }
     var isTopicFilterDialogVisible by remember { mutableStateOf(false) }
@@ -130,20 +132,6 @@ fun LiveLogsScreen(
 
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
-
-    val filteredPackets = remember(packets, includeFilters, excludeFilters, filterQuery) {
-        if (filterQuery.isBlank() && includeFilters.isEmpty() && excludeFilters.isEmpty()) {
-            packets
-        } else {
-            packets.filter { packet ->
-                val matchesAllowed = MqttTopicUtil.isTopicAllowed(packet.topic, includeFilters, excludeFilters)
-                val matchesQuery = filterQuery.isBlank() ||
-                        packet.topic.contains(filterQuery, ignoreCase = true) ||
-                        packet.payload.contains(filterQuery, ignoreCase = true)
-                matchesAllowed && matchesQuery
-            }
-        }
-    }
 
     val onSelectPacket: (MqttLogPacket) -> Unit = remember {
         { packet -> selectedDetailsPacket = packet }
@@ -269,6 +257,24 @@ fun LiveLogsScreen(
                                 innerTextField()
                             }
                         )
+                        // 微型吞吐率指示胶囊 (⚡ 12 msg/s)
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = SurfaceContainerLowest,
+                            border = BorderStroke(0.6.dp, OutlineVariantLight),
+                            modifier = Modifier.padding(horizontal = 4.dp)
+                        ) {
+                            Text(
+                                text = if (messageRate > 0) "⚡ $messageRate msg/s" else "0 msg/s",
+                                style = TextStyle(
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = if (messageRate > 0) PrimaryBlack else OutlineGray
+                                ),
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                            )
+                        }
                         if (filterQuery.isNotEmpty()) {
                             Icon(
                                 imageVector = Icons.Default.Close,
@@ -886,6 +892,10 @@ private fun MessageDetailsModalDialog(
                         isJsonPretty = isFormatPretty,
                         showLineNumbers = isFormatPretty,
                         maxLines = Int.MAX_VALUE,
+                        onLineClick = { value ->
+                            clipboardManager.setPrimaryClip(ClipData.newPlainText("value", value))
+                            viewModel.showToast("已复制: $value")
+                        },
                         modifier = Modifier.fillMaxWidth()
                     )
                 }

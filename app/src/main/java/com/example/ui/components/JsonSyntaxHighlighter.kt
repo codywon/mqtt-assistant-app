@@ -2,6 +2,7 @@ package com.example.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -168,6 +169,26 @@ private fun highlightSingleJsonLine(line: String): AnnotatedString {
 }
 
 /**
+ * 从单行 JSON 文本中智能提取实际的值（去除键名与首尾引号、末尾逗号）
+ */
+fun extractJsonValue(rawLine: String): String {
+    val trimmed = rawLine.trim()
+    if (trimmed.contains(": ")) {
+        val afterColon = trimmed.substringAfter(": ").trim()
+        val withoutComma = if (afterColon.endsWith(",")) afterColon.dropLast(1).trim() else afterColon
+        val unquoted = if (withoutComma.startsWith("\"") && withoutComma.endsWith("\"") && withoutComma.length >= 2) {
+            withoutComma.substring(1, withoutComma.length - 1)
+        } else {
+            withoutComma
+        }
+        if (unquoted.isNotBlank() && unquoted != "{" && unquoted != "[") {
+            return unquoted
+        }
+    }
+    return trimmed.removeSuffix(",")
+}
+
+/**
  * GitHub / VS Code 风格的高级 JSON 代码排版与高亮渲染组件
  */
 @Composable
@@ -176,6 +197,7 @@ fun JsonCodeBlockView(
     isJsonPretty: Boolean = true,
     showLineNumbers: Boolean = true,
     maxLines: Int = Int.MAX_VALUE,
+    onLineClick: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val trimmed = rawText.trim()
@@ -226,7 +248,17 @@ fun JsonCodeBlockView(
 
                 // 高亮代码行区
                 Column {
-                    displayLines.forEach { annotatedLine ->
+                    displayLines.forEachIndexed { index, annotatedLine ->
+                        val lineMod = if (onLineClick != null) {
+                            Modifier
+                                .clip(RoundedCornerShape(3.dp))
+                                .clickable {
+                                    val rawLine = lines.getOrNull(index) ?: ""
+                                    onLineClick(extractJsonValue(rawLine))
+                                }
+                        } else {
+                            Modifier
+                        }
                         Text(
                             text = annotatedLine,
                             style = TextStyle(
@@ -235,7 +267,8 @@ fun JsonCodeBlockView(
                                 lineHeight = 17.sp,
                                 color = JsonSyntaxTheme.PlainTextColor
                             ),
-                            softWrap = false
+                            softWrap = false,
+                            modifier = lineMod
                         )
                     }
                     if (maxLines < lines.size) {
@@ -253,13 +286,24 @@ fun JsonCodeBlockView(
         }
     } else {
         // 普通文本等宽展示 (自动软折行，自适应弹窗宽度，整洁干净，彻底告别横向拖动)
-        Box(
-            modifier = modifier
+        val textMod = if (onLineClick != null) {
+            modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(8.dp))
+                .background(JsonSyntaxTheme.Background)
+                .border(0.8.dp, JsonSyntaxTheme.BorderColor, RoundedCornerShape(8.dp))
+                .clickable { onLineClick(rawText) }
+                .padding(10.dp)
+        } else {
+            modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(8.dp))
                 .background(JsonSyntaxTheme.Background)
                 .border(0.8.dp, JsonSyntaxTheme.BorderColor, RoundedCornerShape(8.dp))
                 .padding(10.dp)
+        }
+        Box(
+            modifier = textMod
         ) {
             Text(
                 text = rawText,

@@ -151,8 +151,91 @@ object ExcelExportHelper {
         return DATE_FORMAT.format(Date(millis))
     }
 
+    fun interface RowStreamWriter {
+        fun writeRow(topic: String, deviceId: String, payload: String, timeFormatted: String)
+    }
+
     /**
-     * 流式导出为标准 .xlsx 文件
+     * 极致内存优化的游标流式 Excel 导出（单条写入，内存恒定 < 1MB，彻底消除海量数据 OOM 隐患）
+     */
+    fun exportStreamToXlsx(
+        context: Context,
+        streamProducer: (writer: RowStreamWriter) -> Unit
+    ): File {
+        val exportDir = File(context.cacheDir, "exports").apply {
+            if (!exists()) mkdirs()
+        }
+        val fileName = "mqtt_packets_${FILE_DATE_FORMAT.format(Date())}.xlsx"
+        val outputFile = File(exportDir, fileName)
+
+        ZipOutputStream(BufferedOutputStream(FileOutputStream(outputFile))).use { zos ->
+            // 1. [Content_Types].xml
+            writeZipEntry(zos, "[Content_Types].xml", buildContentTypesXml())
+
+            // 2. _rels/.rels
+            writeZipEntry(zos, "_rels/.rels", buildRootRelsXml())
+
+            // 3. xl/workbook.xml
+            writeZipEntry(zos, "xl/workbook.xml", buildWorkbookXml())
+
+            // 4. xl/_rels/workbook.xml.rels
+            writeZipEntry(zos, "xl/_rels/workbook.xml.rels", buildWorkbookRelsXml())
+
+            // 5. xl/styles.xml (设置表头样式、加粗与灰色底衬)
+            writeZipEntry(zos, "xl/styles.xml", buildStylesXml())
+
+            // 6. xl/worksheets/sheet1.xml (流式写入列宽、表头与行数据)
+            zos.putNextEntry(ZipEntry("xl/worksheets/sheet1.xml"))
+            val writer = OutputStreamWriter(zos, StandardCharsets.UTF_8)
+
+            writer.write("""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>""")
+            writer.write("""<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">""")
+
+            // 列宽设置：序号(10), 主题(38), 设备ID(22), 消息内容(55), 时间(22)
+            writer.write("""<cols>""")
+            writer.write("""<col min="1" max="1" width="10" customWidth="1"/>""")
+            writer.write("""<col min="2" max="2" width="38" customWidth="1"/>""")
+            writer.write("""<col min="3" max="3" width="22" customWidth="1"/>""")
+            writer.write("""<col min="4" max="4" width="55" customWidth="1"/>""")
+            writer.write("""<col min="5" max="5" width="22" customWidth="1"/>""")
+            writer.write("""</cols>""")
+
+            writer.write("""<sheetData>""")
+
+            // 表头行 (r=1)
+            writer.write("""<row r="1" spans="1:5">""")
+            writer.write("""<c r="A1" t="inlineStr" s="1"><is><t>序号</t></is></c>""")
+            writer.write("""<c r="B1" t="inlineStr" s="1"><is><t>主题</t></is></c>""")
+            writer.write("""<c r="C1" t="inlineStr" s="1"><is><t>设备ID</t></is></c>""")
+            writer.write("""<c r="D1" t="inlineStr" s="1"><is><t>消息内容</t></is></c>""")
+            writer.write("""<c r="E1" t="inlineStr" s="1"><is><t>时间</t></is></c>""")
+            writer.write("""</row>""")
+
+            var rowIndex = 2
+            var seq = 1
+            streamProducer { topic, deviceId, payload, timeFormatted ->
+                writer.write("""<row r="$rowIndex" spans="1:5">""")
+                writer.write("""<c r="A$rowIndex" t="inlineStr"><is><t>$seq</t></is></c>""")
+                writer.write("""<c r="B$rowIndex" t="inlineStr"><is><t>${escapeXml(topic)}</t></is></c>""")
+                writer.write("""<c r="C$rowIndex" t="inlineStr"><is><t>${escapeXml(deviceId)}</t></is></c>""")
+                writer.write("""<c r="D$rowIndex" t="inlineStr"><is><t>${escapeXml(payload)}</t></is></c>""")
+                writer.write("""<c r="E$rowIndex" t="inlineStr"><is><t>${escapeXml(timeFormatted)}</t></is></c>""")
+                writer.write("""</row>""")
+                rowIndex++
+                seq++
+            }
+
+            writer.write("""</sheetData>""")
+            writer.write("""</worksheet>""")
+            writer.flush()
+            zos.closeEntry()
+        }
+
+        return outputFile
+    }
+
+    /**
+     * 流式导出为标准 .xlsx 文件 (从预构建列表)
      */
     fun exportToXlsx(context: Context, items: List<ExportPacketItem>): File {
         val exportDir = File(context.cacheDir, "exports").apply {

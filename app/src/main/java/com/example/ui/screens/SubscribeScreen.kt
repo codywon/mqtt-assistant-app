@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -115,11 +116,30 @@ fun SubscribeScreen(
     val runningCount = subscriptions.count { it.isEnabled }
     val totalCount = subscriptions.size
 
+    // 智能提取前缀胶囊（仅在订阅数 >= 5 且存在多个不同前缀时轻量呈现）
+    val topicPrefixes = remember(subscriptions) {
+        subscriptions
+            .mapNotNull {
+                val clean = it.topic.trim()
+                if (clean.contains('/')) {
+                    val p = clean.substringBefore('/').trim()
+                    if (p.isNotEmpty() && !p.startsWith("+") && !p.startsWith("#") && !p.startsWith("$")) p else null
+                } else null
+            }
+            .groupingBy { it }
+            .eachCount()
+    }
+    var selectedPrefix by remember { mutableStateOf("全部") }
+
     val filteredList = subscriptions.filter {
         val query = searchQuery.trim()
-        query.isBlank() ||
+        val matchesQuery = query.isBlank() ||
             it.topic.contains(query, ignoreCase = true) ||
             it.name.contains(query, ignoreCase = true)
+        val matchesPrefix = selectedPrefix == "全部" ||
+            it.topic.startsWith("$selectedPrefix/") ||
+            it.topic == selectedPrefix
+        matchesQuery && matchesPrefix
     }
 
     // State for modal dialog (creating or editing subscription)
@@ -231,6 +251,59 @@ fun SubscribeScreen(
                             color = OnPrimaryWhite
                         )
                     )
+                }
+            }
+        }
+
+        // 智能前缀筛选胶囊 (仅当订阅数 >= 5 且存在多个前缀分类时呈现，少即是多，极简克制)
+        if (subscriptions.size >= 5 && topicPrefixes.size >= 2) {
+            item {
+                LazyRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    item {
+                        val isAllSelected = selectedPrefix == "全部"
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = if (isAllSelected) PrimaryBlack else SurfaceContainerLow,
+                            border = if (isAllSelected) null else BorderStroke(0.6.dp, SurfaceContainerDefault),
+                            modifier = Modifier.clickable { selectedPrefix = "全部" }
+                        ) {
+                            Text(
+                                text = "全部 (${subscriptions.size})",
+                                style = TextStyle(
+                                    fontSize = 11.5.sp,
+                                    fontWeight = if (isAllSelected) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isAllSelected) Color.White else OnSurfaceVariantGray
+                                ),
+                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+                    items(topicPrefixes.entries.toList()) { (prefix, count) ->
+                        val isSelected = selectedPrefix == prefix
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = if (isSelected) PrimaryBlack else SurfaceContainerLow,
+                            border = if (isSelected) null else BorderStroke(0.6.dp, SurfaceContainerDefault),
+                            modifier = Modifier.clickable { selectedPrefix = prefix }
+                        ) {
+                            Text(
+                                text = "$prefix ($count)",
+                                style = TextStyle(
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 11.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isSelected) Color.White else OnSurfaceVariantGray
+                                ),
+                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
                 }
             }
         }

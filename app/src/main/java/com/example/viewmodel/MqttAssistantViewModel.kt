@@ -9,6 +9,7 @@ import android.net.NetworkRequest
 import android.net.Uri
 import android.util.Log
 import com.example.util.AutoStartUtil
+import com.example.util.BackupData
 import com.example.util.ConfigBackupHelper
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -37,12 +38,17 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.text.SimpleDateFormat
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.Date
 import java.util.Locale
 import java.util.UUID
@@ -89,6 +95,35 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
     // --- PC-Grade Topic Filters (Persistent: Include / Exclude) ---
     val includeTopicFilters = MutableStateFlow<List<String>>(storage.loadIncludeTopicFilters())
     val excludeTopicFilters = MutableStateFlow<List<String>>(storage.loadExcludeTopicFilters())
+
+    // --- Message Throughput Rate Indicator (⚡ msg/s) ---
+    val messageRate = MutableStateFlow(0)
+    val packetsReceivedInSecond = AtomicInteger(0)
+
+    // --- Production Background Filter Pipeline (150ms Debounced, Zero Main-Thread Load, 120Hz Smoothness) ---
+    @OptIn(kotlinx.coroutines.FlowPreview::class)
+    val filteredLivePackets: StateFlow<List<MqttLogPacket>> = combine(
+        livePackets,
+        logFilterQuery.debounce(150L),
+        includeTopicFilters,
+        excludeTopicFilters
+    ) { packets, query, incFilters, excFilters ->
+        val q = query.trim()
+        val hasRules = incFilters.isNotEmpty() || excFilters.isNotEmpty()
+        if (q.isEmpty() && !hasRules) {
+            packets
+        } else {
+            withContext(Dispatchers.Default) {
+                packets.filter { packet ->
+                    val matchesAllowed = !hasRules || MqttTopicUtil.isTopicAllowed(packet.topic, incFilters, excFilters)
+                    val matchesQuery = q.isEmpty() ||
+                            packet.topic.contains(q, ignoreCase = true) ||
+                            packet.payload.contains(q, ignoreCase = true)
+                    matchesAllowed && matchesQuery
+                }
+            }
+        }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     // --- Subscriptions State (Persistent) ---
     val subscriptions = MutableStateFlow<List<SubscriptionItem>>(storage.loadSubscriptions())
@@ -181,6 +216,15 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
         registerNetworkCallback()
         refreshStorageStats()
         checkBatteryOptimizationStatus(application)
+
+        // 启动后台微型吞吐率刷新循环 (1秒更新一次)
+        viewModelScope.launch(Dispatchers.Default) {
+            while (isActive) {
+                delay(1000L)
+                messageRate.value = packetsReceivedInSecond.getAndSet(0)
+            }
+        }
+
         // 严密校验：若 Broker 节点为 0 或主机为空，绝不发起连接和无限重连循环
         if (brokerProfiles.value.isNotEmpty() && serverConfig.value.host.isNotBlank()) {
             connectToBroker()
@@ -235,6 +279,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 val currentBatch = batch.toList()
                 batch.clear()
                 val maxBuffer = serverConfig.value.bufferThreshold
+                packetsReceivedInSecond.addAndGet(currentBatch.size)
 
                 // 1. 批量更新 livePackets 与订阅条目计数 (主线程一次性发射)
                 withContext(Dispatchers.Main) {
@@ -284,6 +329,9 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
         }
     }
 
+    private var lastNetworkTransport: Int? = null
+    private var lastSwitchTimestamp: Long = 0L
+
     private fun registerNetworkCallback() {
         try {
             val cm = getApplication<Application>().getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
@@ -297,6 +345,36 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                         viewModelScope.launch(Dispatchers.Main) {
                             startAutoReconnectLoop(isImmediate = true)
                         }
+                    }
+                }
+
+                override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) {
+                    val currentTransport = when {
+                        networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> NetworkCapabilities.TRANSPORT_WIFI
+                        networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> NetworkCapabilities.TRANSPORT_CELLULAR
+                        networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> NetworkCapabilities.TRANSPORT_ETHERNET
+                        else -> null
+                    }
+                    if (currentTransport != null && lastNetworkTransport != null && currentTransport != lastNetworkTransport) {
+                        val now = System.currentTimeMillis()
+                        // 2 秒防抖，防止网络震荡重复打断
+                        if (now - lastSwitchTimestamp > 2000L) {
+                            lastSwitchTimestamp = now
+                            Log.i("MqttAssistantViewModel", "Network transport switched ($lastNetworkTransport -> $currentTransport). Reconnecting to heal TCP half-open socket...")
+                            if (serverConfig.value.isConnected && !isManualDisconnecting && serverConfig.value.autoReconnect) {
+                                viewModelScope.launch(Dispatchers.IO) {
+                                    try {
+                                        MqttClientManager.disconnect()
+                                    } catch (_: Exception) {}
+                                    withContext(Dispatchers.Main) {
+                                        startAutoReconnectLoop(isImmediate = true)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if (currentTransport != null) {
+                        lastNetworkTransport = currentTransport
                     }
                 }
             }
@@ -550,6 +628,31 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
         showToast("已载入预设: ${preset.name}")
     }
 
+    /**
+     * 解析发布载荷中的动态宏占位符:
+     * 1. ${timestamp} 或 ${time} -> 当前系统毫秒时间戳
+     * 2. ${uuid} -> 8位唯一短随机码
+     * 3. ${random(min, max)} -> 区间随机整数
+     */
+    fun resolvePayloadMacros(payload: String): String {
+        var result = payload
+        val now = System.currentTimeMillis()
+        result = result.replace(Regex("""\$\{(timestamp|time)\}"""), now.toString())
+        result = result.replace(Regex("""\$\{uuid\}""")) {
+            UUID.randomUUID().toString().replace("-", "").take(8)
+        }
+        result = result.replace(Regex("""\$\{random\((\d+)\s*,\s*(\d+)\)\}""")) { match ->
+            val min = match.groupValues[1].toIntOrNull() ?: 0
+            val max = match.groupValues[2].toIntOrNull() ?: 100
+            if (min <= max) {
+                java.util.concurrent.ThreadLocalRandom.current().nextInt(min, max + 1).toString()
+            } else {
+                min.toString()
+            }
+        }
+        return result
+    }
+
     fun directPublishPreset(preset: PublishPreset) {
         val validation = MqttTopicUtil.validatePublishTopic(preset.topic)
         if (!validation.isValid) {
@@ -558,7 +661,8 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
         }
 
         viewModelScope.launch {
-            val payloadBytes = preset.payload.toByteArray(Charsets.UTF_8)
+            val finalPayload = resolvePayloadMacros(preset.payload)
+            val payloadBytes = finalPayload.toByteArray(Charsets.UTF_8)
             val result = MqttClientManager.publish(
                 topic = preset.topic,
                 payload = payloadBytes,
@@ -577,7 +681,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 topic = preset.topic,
                 qos = preset.qos,
                 timestamp = timeStr,
-                payload = preset.payload,
+                payload = finalPayload,
                 dotColorHex = dotColor
             )
             publishHistory.update { listOf(newHistory) + it }
@@ -589,7 +693,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 qos = preset.qos,
                 packetSeq = "#%04d".format(seqNumber),
                 timestamp = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date()),
-                payload = preset.payload,
+                payload = finalPayload,
                 devInfo = "PUB · ${payloadBytes.size}B" + if (result.isSuccess) " · 已送达" else " · 发送失败",
                 sizeText = "${payloadBytes.size}B",
                 category = preset.name.ifBlank { preset.topic.substringBefore('/') },
@@ -691,7 +795,8 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
         viewModelScope.launch {
             isPublishing.value = true
             publishFeedback.value = "正在发送报文..."
-            val payloadBytes = publishPayload.value.toByteArray(Charsets.UTF_8)
+            val finalPayload = resolvePayloadMacros(publishPayload.value)
+            val payloadBytes = finalPayload.toByteArray(Charsets.UTF_8)
             val result = MqttClientManager.publish(
                 topic = topic,
                 payload = payloadBytes,
@@ -711,7 +816,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 topic = topic,
                 qos = publishQos.value,
                 timestamp = timeStr,
-                payload = publishPayload.value.replace("\n", "").replace(" ", ""),
+                payload = finalPayload.replace("\n", "").replace(" ", ""),
                 dotColorHex = dotColor
             )
             publishHistory.update { listOf(newHistory) + it }
@@ -724,7 +829,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 qos = publishQos.value,
                 packetSeq = "#%04d".format(seqNumber),
                 timestamp = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date()),
-                payload = publishPayload.value,
+                payload = finalPayload,
                 devInfo = "PUB · ${payloadBytes.size}B" + if (result.isSuccess) " · 已送达" else " · 发送失败",
                 sizeText = "${payloadBytes.size}B",
                 category = topic.substringBefore('/'),
@@ -1437,45 +1542,38 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val limit = serverConfig.value.bufferThreshold.coerceAtLeast(1000)
-                val rawPairs = storage.loadAllPacketsForExport(limit)
+                var exportedCount = 0
+                val clientId = serverConfig.value.clientId
 
-                val exportItems = if (rawPairs.isNotEmpty()) {
-                    rawPairs.mapIndexed { index, pair ->
-                        val packet = pair.first
-                        val createdAt = pair.second
+                val file = ExcelExportHelper.exportStreamToXlsx(context) { rowWriter ->
+                    val streamCount = storage.exportPacketsStream(limit) { packet, createdAt ->
                         val timeStr = ExcelExportHelper.formatTimestamp(createdAt)
                         val devId = ExcelExportHelper.extractDeviceId(
                             packet.payload,
                             packet.topic,
-                            serverConfig.value.clientId
+                            clientId
                         )
-                        ExportPacketItem(
-                            seqNumber = index + 1,
-                            topic = packet.topic,
-                            deviceId = devId,
-                            payload = packet.payload,
-                            timeFormatted = timeStr
-                        )
+                        rowWriter.writeRow(packet.topic, devId, packet.payload, timeStr)
+                        exportedCount++
                     }
-                } else {
-                    val currentMem = livePackets.value
-                    currentMem.mapIndexed { index, packet ->
-                        val devId = ExcelExportHelper.extractDeviceId(
-                            packet.payload,
-                            packet.topic,
-                            serverConfig.value.clientId
-                        )
-                        ExportPacketItem(
-                            seqNumber = index + 1,
-                            topic = packet.topic,
-                            deviceId = devId,
-                            payload = packet.payload,
-                            timeFormatted = ExcelExportHelper.formatTimestamp(System.currentTimeMillis())
-                        )
+
+                    // 若数据库暂未落盘 (如冷启动且未刷盘)，回退从内存快照流式写入
+                    if (streamCount == 0) {
+                        val memPackets = livePackets.value
+                        val nowStr = ExcelExportHelper.formatTimestamp(System.currentTimeMillis())
+                        for (packet in memPackets) {
+                            val devId = ExcelExportHelper.extractDeviceId(
+                                packet.payload,
+                                packet.topic,
+                                clientId
+                            )
+                            rowWriter.writeRow(packet.topic, devId, packet.payload, nowStr)
+                            exportedCount++
+                        }
                     }
                 }
 
-                if (exportItems.isEmpty()) {
+                if (exportedCount == 0) {
                     withContext(Dispatchers.Main) {
                         isExporting.value = false
                         showToast("当前暂无报文记录可导出")
@@ -1483,11 +1581,9 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                     return@launch
                 }
 
-                val file = ExcelExportHelper.exportToXlsx(context, exportItems)
-
                 withContext(Dispatchers.Main) {
                     isExporting.value = false
-                    showToast("已生成 Excel 表格 (共 ${exportItems.size} 条记录)")
+                    showToast("已生成 Excel 表格 (共 $exportedCount 条记录)")
                     ExcelExportHelper.shareExportedFile(context, file)
                 }
             } catch (e: Exception) {
@@ -1610,6 +1706,50 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
     }
 
     /**
+     * 生成配置口令并复制到系统剪贴板 (免找 JSON 文件，适合即时分享/换机克隆)
+     */
+    fun copyConfigToken(context: Context) {
+        try {
+            val token = ConfigBackupHelper.exportConfigToToken(
+                profiles = brokerProfiles.value,
+                activeId = activeBrokerId.value,
+                presets = publishPresets.value,
+                subs = subscriptions.value,
+                serverConfig = serverConfig.value,
+                includeFilters = includeTopicFilters.value,
+                excludeFilters = excludeTopicFilters.value
+            )
+            val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            cm.setPrimaryClip(android.content.ClipData.newPlainText("MQTT-Config-Token", token))
+            showToast("已复制配置口令！可直接在微信发送或在另一台手机一键导入")
+        } catch (e: Exception) {
+            showToast("生成口令失败: ${e.localizedMessage}")
+        }
+    }
+
+    /**
+     * 从剪贴板读取口令并一键导入恢复配置
+     */
+    fun importConfigFromClipboard(context: Context) {
+        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+        val clipText = cm.primaryClip?.getItemAt(0)?.text?.toString()?.trim() ?: ""
+        if (clipText.isBlank()) {
+            showToast("剪贴板中无内容，请先复制配置口令")
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val backup = ConfigBackupHelper.parseConfigFromToken(clipText)
+                applyBackupData(backup)
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    showToast("口令导入失败: 剪贴板内容不是有效配置口令")
+                }
+            }
+        }
+    }
+
+    /**
      * 从外部选择的 JSON 文件中全量解析并恢复配置
      */
     fun importConfiguration(context: Context, uri: Uri) {
@@ -1622,97 +1762,100 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 } ?: throw IllegalArgumentException("无法读取文件内容")
 
                 val backup = ConfigBackupHelper.parseBackupJson(jsonString)
-
-                // 1. 恢复 Broker 节点
-                if (backup.brokerProfiles.isNotEmpty()) {
-                    storage.saveBrokerProfiles(backup.brokerProfiles)
-                    brokerProfiles.value = backup.brokerProfiles
-                }
-
-                // 2. 恢复激活 Broker
-                val activeId = if (backup.activeBrokerId.isNotBlank() && backup.brokerProfiles.any { it.id == backup.activeBrokerId }) {
-                    backup.activeBrokerId
-                } else {
-                    backup.brokerProfiles.firstOrNull()?.id ?: ""
-                }
-                if (activeId.isNotBlank()) {
-                    storage.saveActiveBrokerId(activeId)
-                    activeBrokerId.value = activeId
-                    val activeBroker = backup.brokerProfiles.find { it.id == activeId }
-                    if (activeBroker != null) {
-                        serverConfig.update {
-                            it.copy(
-                                activeProfileId = activeBroker.id,
-                                host = activeBroker.host,
-                                port = activeBroker.port,
-                                clientId = activeBroker.clientId,
-                                username = activeBroker.username,
-                                password = activeBroker.password,
-                                protocol = activeBroker.protocol,
-                                cleanSession = activeBroker.cleanSession,
-                                tlsEnabled = activeBroker.tlsEnabled,
-                                keepAlive = activeBroker.keepAlive
-                            )
-                        }
-                    }
-                }
-
-                // 3. 恢复发布预设
-                if (backup.publishPresets.isNotEmpty()) {
-                    storage.savePublishPresets(backup.publishPresets)
-                    publishPresets.value = backup.publishPresets
-                }
-
-                // 4. 恢复订阅条目
-                if (backup.subscriptions.isNotEmpty()) {
-                    storage.saveSubscriptions(backup.subscriptions)
-                    subscriptions.value = backup.subscriptions
-                }
-
-                // 5. 恢复全局设置与过滤规则
-                storage.saveAutoReconnect(backup.autoReconnect)
-                storage.saveReconnectInterval(backup.reconnectIntervalSeconds)
-                storage.saveMaxReconnectAttempts(backup.maxReconnectAttempts)
-                storage.saveAutoRotate(backup.autoRotate)
-                storage.saveBufferThreshold(backup.bufferThreshold)
-                storage.saveBackgroundKeepAlive(backup.backgroundKeepAlive)
-                storage.saveWakeLock(backup.wakeLockEnabled)
-                storage.saveAutoStartEnabled(backup.autoStartEnabled)
-                storage.saveProcessGuardEnabled(backup.processGuardEnabled)
-                storage.saveIncludeTopicFilters(backup.includeFilters)
-                storage.saveExcludeTopicFilters(backup.excludeFilters)
-                includeTopicFilters.value = backup.includeFilters
-                excludeTopicFilters.value = backup.excludeFilters
-
-                serverConfig.update {
-                    it.copy(
-                        autoReconnect = backup.autoReconnect,
-                        reconnectIntervalSeconds = backup.reconnectIntervalSeconds,
-                        maxReconnectAttempts = backup.maxReconnectAttempts,
-                        autoRotate = backup.autoRotate,
-                        bufferThreshold = backup.bufferThreshold,
-                        backgroundKeepAliveEnabled = backup.backgroundKeepAlive,
-                        wakeLockEnabled = backup.wakeLockEnabled,
-                        autoStartEnabled = backup.autoStartEnabled,
-                        processGuardEnabled = backup.processGuardEnabled
-                    )
-                }
-
-                refreshStorageStats()
-
-                withContext(Dispatchers.Main) {
-                    isImportingConfig.value = false
-                    showToast("配置导入成功：恢复 ${backup.brokerProfiles.size} 个节点、${backup.publishPresets.size} 条预设、${backup.subscriptions.size} 条订阅")
-                    if (serverConfig.value.autoReconnect || serverConfig.value.isConnected) {
-                        connectToBroker()
-                    }
-                }
+                applyBackupData(backup)
             } catch (e: Exception) {
                 Log.e("MqttAssistantViewModel", "Failed to import config", e)
                 withContext(Dispatchers.Main) {
                     isImportingConfig.value = false
                     showToast("导入失败: ${e.localizedMessage ?: "备份文件解析异常"}")
                 }
+            }
+        }
+    }
+
+    private suspend fun applyBackupData(backup: BackupData) {
+        // 1. 恢复 Broker 节点
+        if (backup.brokerProfiles.isNotEmpty()) {
+            storage.saveBrokerProfiles(backup.brokerProfiles)
+            brokerProfiles.value = backup.brokerProfiles
+        }
+
+        // 2. 恢复激活 Broker
+        val activeId = if (backup.activeBrokerId.isNotBlank() && backup.brokerProfiles.any { it.id == backup.activeBrokerId }) {
+            backup.activeBrokerId
+        } else {
+            backup.brokerProfiles.firstOrNull()?.id ?: ""
+        }
+        if (activeId.isNotBlank()) {
+            storage.saveActiveBrokerId(activeId)
+            activeBrokerId.value = activeId
+            val activeBroker = backup.brokerProfiles.find { it.id == activeId }
+            if (activeBroker != null) {
+                serverConfig.update {
+                    it.copy(
+                        activeProfileId = activeBroker.id,
+                        host = activeBroker.host,
+                        port = activeBroker.port,
+                        clientId = activeBroker.clientId,
+                        username = activeBroker.username,
+                        password = activeBroker.password,
+                        protocol = activeBroker.protocol,
+                        cleanSession = activeBroker.cleanSession,
+                        tlsEnabled = activeBroker.tlsEnabled,
+                        keepAlive = activeBroker.keepAlive
+                    )
+                }
+            }
+        }
+
+        // 3. 恢复发布预设
+        if (backup.publishPresets.isNotEmpty()) {
+            storage.savePublishPresets(backup.publishPresets)
+            publishPresets.value = backup.publishPresets
+        }
+
+        // 4. 恢复订阅条目
+        if (backup.subscriptions.isNotEmpty()) {
+            storage.saveSubscriptions(backup.subscriptions)
+            subscriptions.value = backup.subscriptions
+        }
+
+        // 5. 恢复全局设置与过滤规则
+        storage.saveAutoReconnect(backup.autoReconnect)
+        storage.saveReconnectInterval(backup.reconnectIntervalSeconds)
+        storage.saveMaxReconnectAttempts(backup.maxReconnectAttempts)
+        storage.saveAutoRotate(backup.autoRotate)
+        storage.saveBufferThreshold(backup.bufferThreshold)
+        storage.saveBackgroundKeepAlive(backup.backgroundKeepAlive)
+        storage.saveWakeLock(backup.wakeLockEnabled)
+        storage.saveAutoStartEnabled(backup.autoStartEnabled)
+        storage.saveProcessGuardEnabled(backup.processGuardEnabled)
+        storage.saveIncludeTopicFilters(backup.includeFilters)
+        storage.saveExcludeTopicFilters(backup.excludeFilters)
+        includeTopicFilters.value = backup.includeFilters
+        excludeTopicFilters.value = backup.excludeFilters
+
+        serverConfig.update {
+            it.copy(
+                autoReconnect = backup.autoReconnect,
+                reconnectIntervalSeconds = backup.reconnectIntervalSeconds,
+                maxReconnectAttempts = backup.maxReconnectAttempts,
+                autoRotate = backup.autoRotate,
+                bufferThreshold = backup.bufferThreshold,
+                backgroundKeepAliveEnabled = backup.backgroundKeepAlive,
+                wakeLockEnabled = backup.wakeLockEnabled,
+                autoStartEnabled = backup.autoStartEnabled,
+                processGuardEnabled = backup.processGuardEnabled
+            )
+        }
+
+        refreshStorageStats()
+
+        withContext(Dispatchers.Main) {
+            isImportingConfig.value = false
+            showToast("配置恢复成功：恢复 ${backup.brokerProfiles.size} 个节点、${backup.publishPresets.size} 条预设、${backup.subscriptions.size} 条订阅")
+            if (serverConfig.value.autoReconnect || serverConfig.value.isConnected) {
+                connectToBroker()
             }
         }
     }

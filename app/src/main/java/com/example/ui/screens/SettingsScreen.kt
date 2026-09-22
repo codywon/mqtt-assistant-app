@@ -31,6 +31,8 @@ import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Dns
@@ -1001,7 +1003,7 @@ fun SettingsScreen(
                 }
 
                 Text(
-                    text = "一键导出或恢复所有服务器节点、发布预设、订阅主题与高级设置，换机或重装无需重配。",
+                    text = "一键导出恢复或通过口令互传所有服务器节点、发布预设、订阅主题与引擎设置，换机或多设备调试零门槛。",
                     style = MaterialTheme.typography.bodySmall.copy(
                         fontSize = 12.sp,
                         color = OnSurfaceVariantGray,
@@ -1072,6 +1074,55 @@ fun SettingsScreen(
                                 fontWeight = FontWeight.SemiBold,
                                 fontSize = 12.sp
                             )
+                        )
+                    }
+                }
+
+                // 口令免文件极速互传 (Clean Minimalist Text Actions)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(
+                        onClick = { viewModel.importConfigFromClipboard(context) },
+                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(30.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ContentPaste,
+                            contentDescription = null,
+                            tint = OnSurfaceVariantGray,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "从剪贴板口令导入",
+                            style = TextStyle(fontSize = 11.5.sp, fontWeight = FontWeight.Medium, color = OnSurfaceVariantGray)
+                        )
+                    }
+
+                    TextButton(
+                        onClick = { viewModel.copyConfigToken(context) },
+                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(30.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ContentCopy,
+                            contentDescription = null,
+                            tint = OnSurfaceVariantGray,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "复制配置口令",
+                            style = TextStyle(fontSize = 11.5.sp, fontWeight = FontWeight.Medium, color = OnSurfaceVariantGray)
                         )
                     }
                 }

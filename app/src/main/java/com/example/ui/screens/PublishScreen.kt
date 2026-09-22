@@ -829,10 +829,17 @@ private fun PublishConfigModalDialog(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = "消息载荷 (JSON / 文本)",
-                            style = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = OnSurfaceDark)
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "消息载荷",
+                                style = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = OnSurfaceDark)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "(支持 \${timestamp}、\${uuid}、\${random(1,100)})",
+                                style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 9.5.sp, color = OutlineGray)
+                            )
+                        }
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             TextButton(
                                 onClick = { formatJson() },
