@@ -308,6 +308,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                         bufferThreshold = maxBuffer,
                         clientId = serverConfig.value.clientId
                     ) { exportedCount, _ ->
+                        packetSeqCounter.set(0L)
                         viewModelScope.launch(Dispatchers.Main) {
                             livePackets.update { it.drop(exportedCount) }
                             showToast("已自动归档 $exportedCount 条报文至系统 Download 目录")
@@ -322,11 +323,13 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                     if (lastPacket != null) {
                         val host = serverConfig.value.host
                         val brokerLabel = if (host.isNotBlank()) "${host}:${serverConfig.value.port}" else ""
+                        val timeStr = lastPacket.timestamp.substringBefore('.')
                         MqttBackgroundService.updateNotification(
                             context = getApplication(),
                             brokerHost = brokerLabel,
                             count = packetSeqCounter.get(),
-                            latestTopic = lastPacket.topic
+                            latestTopic = lastPacket.topic,
+                            timeFormatted = timeStr
                         )
                     }
                 }

@@ -60,6 +60,7 @@ class MqttBackgroundService : Service() {
             try {
                 totalPacketCount++
                 latestMessageTopic = topic
+                latestMessageTime = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
                 refreshNotification()
 
                 // 后台无 UI 独立运行时，由服务自动将报文持久化入库 SQLite
@@ -116,6 +117,7 @@ class MqttBackgroundService : Service() {
         const val EXTRA_BROKER = "EXTRA_BROKER"
         const val EXTRA_COUNT = "EXTRA_COUNT"
         const val EXTRA_TOPIC = "EXTRA_TOPIC"
+        const val EXTRA_TIME = "EXTRA_TIME"
 
         var isRunning: Boolean = false
             private set
@@ -123,6 +125,7 @@ class MqttBackgroundService : Service() {
         private var currentBrokerHost: String = ""
         private var totalPacketCount: Long = 0L
         private var latestMessageTopic: String? = null
+        private var latestMessageTime: String? = null
 
         fun startKeepAlive(context: Context, brokerHost: String = "MQTT Broker") {
             try {
@@ -146,11 +149,17 @@ class MqttBackgroundService : Service() {
             context: Context,
             brokerHost: String? = null,
             count: Long? = null,
-            latestTopic: String? = null
+            latestTopic: String? = null,
+            timeFormatted: String? = null
         ) {
             brokerHost?.let { currentBrokerHost = it }
             count?.let { totalPacketCount = it }
             latestTopic?.let { latestMessageTopic = it }
+            if (timeFormatted != null) {
+                latestMessageTime = timeFormatted
+            } else if (latestTopic != null) {
+                latestMessageTime = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
+            }
 
             if (!isRunning) return
 
@@ -160,6 +169,7 @@ class MqttBackgroundService : Service() {
                     putExtra(EXTRA_BROKER, currentBrokerHost)
                     putExtra(EXTRA_COUNT, totalPacketCount)
                     putExtra(EXTRA_TOPIC, latestMessageTopic)
+                    putExtra(EXTRA_TIME, latestMessageTime)
                 }
                 context.startService(intent)
             } catch (e: Exception) {
@@ -261,9 +271,11 @@ class MqttBackgroundService : Service() {
                 val host = intent.getStringExtra(EXTRA_BROKER)
                 val count = intent.getLongExtra(EXTRA_COUNT, -1L)
                 val topic = intent.getStringExtra(EXTRA_TOPIC)
+                val time = intent.getStringExtra(EXTRA_TIME)
                 if (!host.isNullOrBlank()) currentBrokerHost = host
                 if (count >= 0L) totalPacketCount = count
                 if (topic != null) latestMessageTopic = topic
+                if (time != null) latestMessageTime = time
 
                 refreshNotification()
                 return START_STICKY
@@ -379,6 +391,30 @@ class MqttBackgroundService : Service() {
         }
     }
 
+    private fun formatCount(count: Long): String {
+        return when {
+            count < 10_000L -> "已收 ${count}条"
+            count < 100_000_000L -> {
+                val wan = count / 10000.0
+                val formatted = if (count % 10000L == 0L) {
+                    "${count / 10000L}万"
+                } else {
+                    String.format(Locale.getDefault(), "%.1f万", wan)
+                }
+                "已收 ${formatted}条"
+            }
+            else -> {
+                val yi = count / 100_000_000.0
+                val formatted = if (count % 100_000_000L == 0L) {
+                    "${count / 100_000_000L}亿"
+                } else {
+                    String.format(Locale.getDefault(), "%.1f亿", yi)
+                }
+                "已收 ${formatted}条"
+            }
+        }
+    }
+
     private fun buildForegroundNotification(): Notification {
         val launchIntent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -397,9 +433,13 @@ class MqttBackgroundService : Service() {
         }
 
         val contentText = if (!latestMessageTopic.isNullOrBlank()) {
-            "已接收 $totalPacketCount 条报文 · 最新: $latestMessageTopic"
+            val time = latestMessageTime ?: SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
+            val countText = formatCount(totalPacketCount)
+            "$time · $countText · 主题：$latestMessageTopic"
         } else if (totalPacketCount > 0) {
-            "● 已接收 $totalPacketCount 条报文 · 运行正常"
+            val time = latestMessageTime ?: SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
+            val countText = formatCount(totalPacketCount)
+            "$time · $countText · 运行正常"
         } else {
             "● 连接正常 · 等待报文推送"
         }
