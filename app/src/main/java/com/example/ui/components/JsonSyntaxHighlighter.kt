@@ -252,14 +252,13 @@ fun JsonCodeBlockView(
             }
         }
     } else {
-        // 普通文本等宽展示
+        // 普通文本等宽展示 (自动软折行，自适应弹窗宽度，整洁干净，彻底告别横向拖动)
         Box(
             modifier = modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(8.dp))
                 .background(JsonSyntaxTheme.Background)
                 .border(0.8.dp, JsonSyntaxTheme.BorderColor, RoundedCornerShape(8.dp))
-                .horizontalScroll(rememberScrollState())
                 .padding(10.dp)
         ) {
             Text(
@@ -270,7 +269,8 @@ fun JsonCodeBlockView(
                     lineHeight = 17.sp,
                     color = JsonSyntaxTheme.PlainTextColor
                 ),
-                softWrap = false
+                softWrap = true,
+                modifier = Modifier.fillMaxWidth()
             )
         }
     }

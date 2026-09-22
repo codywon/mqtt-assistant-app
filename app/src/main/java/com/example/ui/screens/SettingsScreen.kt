@@ -685,40 +685,19 @@ fun SettingsScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = "忽略电池优化 (电源白名单)",
-                                style = MaterialTheme.typography.labelMedium.copy(
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = PrimaryBlack
-                                )
+                        Text(
+                            text = "忽略电池优化 (防系统杀后台)",
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontWeight = FontWeight.SemiBold,
+                                color = PrimaryBlack
                             )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Surface(
-                                shape = RoundedCornerShape(4.dp),
-                                color = if (isBatteryOptimizationIgnored) SecondaryContainerMint else Color(0xFFFEF3C7)
-                            ) {
-                                Text(
-                                    text = if (isBatteryOptimizationIgnored) "已加入白名单" else "处于省电限制中",
-                                    style = MaterialTheme.typography.labelSmall.copy(
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (isBatteryOptimizationIgnored) SecondaryEmerald else Color(0xFFD97706)
-                                    ),
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                )
-                            }
-                        }
+                        )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
-                            text = if (isBatteryOptimizationIgnored) {
-                                "已获得无限制后台电源权限，锁屏深度休眠期间系统将保障网络通道畅通"
-                            } else {
-                                "未加入白名单！手机熄屏5~10分钟后厂商系统将强行掐断后台网络，建议立即开启"
-                            },
+                            text = "申请无限制后台电源策略，彻底杜绝程序最小化或锁屏被系统冻结",
                             style = MaterialTheme.typography.bodySmall.copy(
                                 fontSize = 12.sp,
-                                color = if (isBatteryOptimizationIgnored) OnSurfaceVariantGray else Color(0xFFB45309)
+                                color = OnSurfaceVariantGray
                             )
                         )
                     }
@@ -730,45 +709,17 @@ fun SettingsScreen(
                             .defaultMinSize(minWidth = 68.dp),
                         shape = RoundedCornerShape(8.dp),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = if (isBatteryOptimizationIgnored) PrimaryBlack.copy(alpha = 0.85f) else PrimaryBlack,
+                            containerColor = PrimaryBlack,
                             contentColor = OnPrimaryWhite
                         ),
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
                     ) {
                         Text(
-                            text = if (isBatteryOptimizationIgnored) "去查看" else "立即开启",
+                            text = if (isBatteryOptimizationIgnored) "查看状态" else "立即开启",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = Color.White,
                             maxLines = 1
-                        )
-                    }
-                }
-
-                // 7. 保活全景诊断提示小条
-                Surface(
-                    shape = RoundedCornerShape(10.dp),
-                    color = SurfaceContainerLow,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.VerifiedUser,
-                            contentDescription = null,
-                            tint = SecondaryEmerald,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "双重保活已生效：前台通知常驻 + Doze 模式精确闹钟心跳脉冲。配合电池白名单与自启动，可达成锁屏数小时不掉线。",
-                            style = MaterialTheme.typography.bodySmall.copy(
-                                fontSize = 11.sp,
-                                color = OnSurfaceVariantGray,
-                                lineHeight = 15.sp
-                            )
                         )
                     }
                 }
