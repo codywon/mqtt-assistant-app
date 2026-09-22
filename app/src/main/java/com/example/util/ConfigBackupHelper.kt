@@ -29,6 +29,7 @@ data class BackupData(
     val bufferThreshold: Int,
     val backgroundKeepAlive: Boolean,
     val wakeLockEnabled: Boolean,
+    val autoStartEnabled: Boolean = false,
     val includeFilters: List<String>,
     val excludeFilters: List<String>
 )
@@ -46,7 +47,7 @@ object ConfigBackupHelper {
         excludeFilters: List<String>
     ): File {
         val root = JSONObject()
-        root.put("version", 2)
+        root.put("version", 1)
         root.put("app", "MQTT-Assistant")
         root.put("exportedAt", SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date()))
         root.put("activeBrokerId", activeId)
@@ -60,6 +61,7 @@ object ConfigBackupHelper {
             put("bufferThreshold", serverConfig.bufferThreshold)
             put("backgroundKeepAlive", serverConfig.backgroundKeepAliveEnabled)
             put("wakeLockEnabled", serverConfig.wakeLockEnabled)
+            put("autoStartEnabled", serverConfig.autoStartEnabled)
             val incArray = JSONArray()
             includeFilters.forEach { incArray.put(it) }
             put("includeFilters", incArray)
@@ -242,6 +244,7 @@ object ConfigBackupHelper {
             bufferThreshold = cfg.optInt("bufferThreshold", 10000)
             backgroundKeepAlive = cfg.optBoolean("backgroundKeepAlive", true)
             wakeLockEnabled = cfg.optBoolean("wakeLockEnabled", true)
+            val autoStart = cfg.optBoolean("autoStartEnabled", false)
 
             if (cfg.has("includeFilters")) {
                 val arr = cfg.getJSONArray("includeFilters")
@@ -267,6 +270,7 @@ object ConfigBackupHelper {
             bufferThreshold = bufferThreshold,
             backgroundKeepAlive = backgroundKeepAlive,
             wakeLockEnabled = wakeLockEnabled,
+            autoStartEnabled = if (root.has("globalSettings")) root.getJSONObject("globalSettings").optBoolean("autoStartEnabled", false) else false,
             includeFilters = includeFilters,
             excludeFilters = excludeFilters
         )

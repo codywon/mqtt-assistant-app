@@ -8,6 +8,7 @@ import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.net.Uri
 import android.util.Log
+import com.example.util.AutoStartUtil
 import com.example.util.ConfigBackupHelper
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -130,7 +131,8 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                     autoRotate = storage.loadAutoRotate(),
                     bufferThreshold = storage.loadBufferThreshold(),
                     backgroundKeepAliveEnabled = storage.loadBackgroundKeepAlive(),
-                    wakeLockEnabled = storage.loadWakeLock()
+                    wakeLockEnabled = storage.loadWakeLock(),
+                    autoStartEnabled = storage.loadAutoStartEnabled()
                 )
             } else {
                 MqttServerConfig(
@@ -150,7 +152,8 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                     autoRotate = storage.loadAutoRotate(),
                     bufferThreshold = storage.loadBufferThreshold(),
                     backgroundKeepAliveEnabled = storage.loadBackgroundKeepAlive(),
-                    wakeLockEnabled = storage.loadWakeLock()
+                    wakeLockEnabled = storage.loadWakeLock(),
+                    autoStartEnabled = storage.loadAutoStartEnabled()
                 )
             }
         }
@@ -165,13 +168,17 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
         setupMqttCallbacks()
         registerNetworkCallback()
         refreshStorageStats()
-        if (serverConfig.value.host.isNotBlank()) {
+        // 严密校验：若 Broker 节点为 0 或主机为空，绝不发起连接和无限重连循环
+        if (brokerProfiles.value.isNotEmpty() && serverConfig.value.host.isNotBlank()) {
             connectToBroker()
             if (serverConfig.value.backgroundKeepAliveEnabled) {
                 val brokerHost = "${serverConfig.value.host}:${serverConfig.value.port}"
                 MqttBackgroundService.startKeepAlive(application, brokerHost)
                 isForegroundKeepAliveRunning.value = true
             }
+        } else {
+            connectionState.value = MqttConnectionState.DISCONNECTED
+            serverConfig.update { it.copy(isConnected = false) }
         }
     }
 
@@ -360,7 +367,9 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
 
     fun connectToBroker() {
         isManualDisconnecting = false
-        if (serverConfig.value.host.isBlank()) {
+        if (brokerProfiles.value.isEmpty() || serverConfig.value.host.isBlank()) {
+            reconnectJob?.cancel()
+            reconnectCountdown.value = 0
             connectionState.value = MqttConnectionState.DISCONNECTED
             serverConfig.update { it.copy(isConnected = false) }
             return
@@ -392,7 +401,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                     isTls = serverConfig.value.tlsEnabled
                 )
                 showToast("连接异常: $errorMsg")
-                if (serverConfig.value.autoReconnect) {
+                if (serverConfig.value.autoReconnect && brokerProfiles.value.isNotEmpty() && serverConfig.value.host.isNotBlank()) {
                     startAutoReconnectLoop()
                 }
             }
@@ -503,15 +512,20 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
     }
 
     fun deleteBroker(brokerId: String) {
-        if (brokerProfiles.value.size <= 1) {
-            showToast("至少需要保留一个 Broker 节点")
-            return
-        }
         val isDeletingActive = brokerId == activeBrokerId.value
         val remaining = brokerProfiles.value.filter { it.id != brokerId }
         brokerProfiles.value = remaining
         storage.saveBrokerProfiles(remaining)
-        if (isDeletingActive) {
+        if (remaining.isEmpty()) {
+            activeBrokerId.value = ""
+            storage.saveActiveBrokerId("")
+            serverConfig.update { it.copy(activeProfileId = "", host = "", isConnected = false) }
+            reconnectJob?.cancel()
+            reconnectCountdown.value = 0
+            connectionState.value = MqttConnectionState.DISCONNECTED
+            MqttClientManager.disconnect()
+            showToast("已清空所有 Broker 节点，连接引擎已停止")
+        } else if (isDeletingActive) {
             selectBroker(remaining.first().id)
         } else {
             showToast("已删除 Broker 节点")
@@ -1168,6 +1182,12 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
         reconnectJob?.cancel()
         reconnectAttempt.value = 0
         reconnectCountdown.value = 0
+        if (brokerProfiles.value.isEmpty() || serverConfig.value.host.isBlank()) {
+            showToast("暂无可用的 Broker 节点，请先添加节点")
+            connectionState.value = MqttConnectionState.DISCONNECTED
+            serverConfig.update { it.copy(isConnected = false) }
+            return
+        }
         viewModelScope.launch {
             connectionState.value = MqttConnectionState.CONNECTING
             showToast("正在连接至 ${serverConfig.value.host}:${serverConfig.value.port}...")
@@ -1192,7 +1212,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                     isTls = serverConfig.value.tlsEnabled
                 )
                 showToast("连接失败: $errorMsg")
-                if (serverConfig.value.autoReconnect && !isManualDisconnecting) {
+                if (serverConfig.value.autoReconnect && !isManualDisconnecting && brokerProfiles.value.isNotEmpty() && serverConfig.value.host.isNotBlank()) {
                     startAutoReconnectLoop(isImmediate = false)
                 }
             }
@@ -1205,7 +1225,12 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
      * 2. 后续重试阶梯退避：第2次等1秒，第3次等2秒，最大封顶仅3秒（彻底废除过去 5s/10s 漫长无谓等待！）。
      */
     fun startAutoReconnectLoop(isImmediate: Boolean = false) {
-        if (!serverConfig.value.autoReconnect || isManualDisconnecting) return
+        if (!serverConfig.value.autoReconnect || isManualDisconnecting || brokerProfiles.value.isEmpty() || serverConfig.value.host.isBlank()) {
+            reconnectJob?.cancel()
+            reconnectCountdown.value = 0
+            connectionState.value = MqttConnectionState.DISCONNECTED
+            return
+        }
         reconnectJob?.cancel()
         reconnectJob = viewModelScope.launch {
             connectionState.value = MqttConnectionState.RECONNECTING
@@ -1241,7 +1266,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
             } else {
                 connectionState.value = MqttConnectionState.DISCONNECTED
                 serverConfig.update { it.copy(isConnected = false) }
-                if (serverConfig.value.autoReconnect && !isManualDisconnecting) {
+                if (serverConfig.value.autoReconnect && !isManualDisconnecting && brokerProfiles.value.isNotEmpty() && serverConfig.value.host.isNotBlank()) {
                     startAutoReconnectLoop(isImmediate = false)
                 }
             }
@@ -1253,9 +1278,21 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
      * 解决“最小化打开其他程序再回来每次都断开/重连”的问题，只要发现未连接瞬间发起重连，不让用户等待。
      */
     fun onAppResume() {
-        if (!serverConfig.value.isConnected && !isManualDisconnecting && serverConfig.value.autoReconnect && serverConfig.value.host.isNotBlank()) {
+        if (!serverConfig.value.isConnected && !isManualDisconnecting && serverConfig.value.autoReconnect && brokerProfiles.value.isNotEmpty() && serverConfig.value.host.isNotBlank()) {
             Log.d("MqttAssistantViewModel", "onAppResume: app returned to foreground, probing immediate reconnect")
             startAutoReconnectLoop(isImmediate = true)
+        }
+    }
+
+    fun toggleAutoStart(context: Context) {
+        val next = !serverConfig.value.autoStartEnabled
+        serverConfig.update { it.copy(autoStartEnabled = next) }
+        storage.saveAutoStartEnabled(next)
+        if (next) {
+            showToast("已开启开机自启动与进程守护")
+            AutoStartUtil.openAutoStartSettings(context)
+        } else {
+            showToast("已关闭开机自启动与进程守护")
         }
     }
 
@@ -1590,6 +1627,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 storage.saveBufferThreshold(backup.bufferThreshold)
                 storage.saveBackgroundKeepAlive(backup.backgroundKeepAlive)
                 storage.saveWakeLock(backup.wakeLockEnabled)
+                storage.saveAutoStartEnabled(backup.autoStartEnabled)
                 storage.saveIncludeTopicFilters(backup.includeFilters)
                 storage.saveExcludeTopicFilters(backup.excludeFilters)
                 includeTopicFilters.value = backup.includeFilters
@@ -1603,7 +1641,8 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                         autoRotate = backup.autoRotate,
                         bufferThreshold = backup.bufferThreshold,
                         backgroundKeepAliveEnabled = backup.backgroundKeepAlive,
-                        wakeLockEnabled = backup.wakeLockEnabled
+                        wakeLockEnabled = backup.wakeLockEnabled,
+                        autoStartEnabled = backup.autoStartEnabled
                     )
                 }
 

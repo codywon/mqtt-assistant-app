@@ -75,6 +75,7 @@ import androidx.compose.ui.window.DialogProperties
 import com.example.model.BrokerProfile
 import com.example.ui.theme.AccentEmerald
 import com.example.ui.theme.OutlineGray
+import com.example.util.AutoStartUtil
 import java.util.UUID
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -516,6 +517,7 @@ fun SettingsScreen(
                             )
                         )
                     }
+                    Spacer(modifier = Modifier.width(16.dp))
                     Switch(
                         checked = config.autoReconnect,
                         onCheckedChange = { viewModel.toggleAutoReconnect() },
@@ -549,6 +551,7 @@ fun SettingsScreen(
                             )
                         )
                     }
+                    Spacer(modifier = Modifier.width(16.dp))
                     Switch(
                         checked = config.backgroundKeepAliveEnabled,
                         onCheckedChange = { viewModel.toggleBackgroundKeepAlive(context) },
@@ -582,6 +585,7 @@ fun SettingsScreen(
                             )
                         )
                     }
+                    Spacer(modifier = Modifier.width(16.dp))
                     Switch(
                         checked = config.wakeLockEnabled,
                         onCheckedChange = { viewModel.toggleWakeLock() },
@@ -593,7 +597,62 @@ fun SettingsScreen(
                     )
                 }
 
-                // 4. Ignore Battery Optimizations
+                // 4. Auto Start & Process Guard (微信级保活)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = "开机自启动与进程守护",
+                                style = MaterialTheme.typography.labelMedium.copy(
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = PrimaryBlack
+                                )
+                            )
+                            if (config.autoStartEnabled) {
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(PrimaryBlack)
+                                        .clickable { AutoStartUtil.openAutoStartSettings(context) }
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        text = "自启权限 >",
+                                        fontSize = 10.sp,
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                            }
+                        }
+                        Text(
+                            text = "监听开机与应用更新广播，配合前台服务实现随时拉起与息屏收发消息",
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontSize = 12.sp,
+                                color = OnSurfaceVariantGray
+                            )
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Switch(
+                        checked = config.autoStartEnabled,
+                        onCheckedChange = { viewModel.toggleAutoStart(context) },
+                        modifier = Modifier.testTag("settings_auto_start_switch"),
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = SurfaceContainerLowest,
+                            checkedTrackColor = PrimaryBlack
+                        )
+                    )
+                }
+
+                // 5. Ignore Battery Optimizations
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,

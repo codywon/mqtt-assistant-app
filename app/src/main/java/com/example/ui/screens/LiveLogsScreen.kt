@@ -774,28 +774,28 @@ private fun MessageDetailsModalDialog(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            // JSON 格式化工具 (默认开启，轻触切换)
+                            // JSON 格式化工具 (极简设计：仅保留 "JSON"，激活高亮，未激活线框)
                             Box(
                                 modifier = Modifier
                                     .height(28.dp)
                                     .clip(RoundedCornerShape(6.dp))
-                                    .background(if (isFormatPretty) SurfaceContainerLow else Color.Transparent)
+                                    .background(if (isFormatPretty) PrimaryBlack else Color.Transparent)
                                     .border(
                                         width = 0.8.dp,
                                         color = if (isFormatPretty) PrimaryBlack else OutlineVariantLight,
                                         shape = RoundedCornerShape(6.dp)
                                     )
                                     .clickable { isFormatPretty = !isFormatPretty }
-                                    .padding(horizontal = 8.dp),
+                                    .padding(horizontal = 10.dp),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
-                                    text = if (isFormatPretty) "JSON 格式化 · 开" else "JSON 格式化 · 关",
+                                    text = "JSON",
                                     style = TextStyle(
                                         fontFamily = FontFamily.Monospace,
-                                        fontSize = 11.sp,
-                                        fontWeight = if (isFormatPretty) FontWeight.Bold else FontWeight.Medium,
-                                        color = if (isFormatPretty) PrimaryBlack else OnSurfaceVariantGray
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isFormatPretty) Color.White else OnSurfaceVariantGray
                                     )
                                 )
                             }
