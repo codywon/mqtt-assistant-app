@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.util.Log
 import com.example.data.MqttStorageRepository
+import com.example.model.BrokerProfile
 import com.example.service.MqttBackgroundService
 
 /**
@@ -31,7 +32,7 @@ class BootReceiver : BroadcastReceiver() {
         )
 
         if (action in validActions) {
-            val storage = MqttStorageRepository.getInstance(context.applicationContext)
+            val storage = MqttStorageRepository(context.applicationContext)
             val isAutoStartEnabled = storage.loadAutoStartEnabled()
             Log.d(TAG, "isAutoStartEnabled: $isAutoStartEnabled")
 

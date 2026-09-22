@@ -523,7 +523,9 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
             reconnectJob?.cancel()
             reconnectCountdown.value = 0
             connectionState.value = MqttConnectionState.DISCONNECTED
-            MqttClientManager.disconnect()
+            viewModelScope.launch {
+                MqttClientManager.disconnect()
+            }
             showToast("已清空所有 Broker 节点，连接引擎已停止")
         } else if (isDeletingActive) {
             selectBroker(remaining.first().id)
