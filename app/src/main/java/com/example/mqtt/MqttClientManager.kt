@@ -17,6 +17,8 @@ import java.net.Socket
 import java.security.SecureRandom
 import java.security.cert.X509Certificate
 import java.util.UUID
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.net.ssl.SNIHostName
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLSocket
@@ -38,6 +40,8 @@ object MqttClientManager {
 
     private var mqttClient: MqttClient? = null
     private val connectMutex = Mutex()
+    private val _isConnecting = AtomicBoolean(false)
+    private var lastReportedConnectedState: Boolean? = null
 
     var lastConfig: MqttServerConfig? = null
         private set
@@ -45,8 +49,31 @@ object MqttClientManager {
     var onMessageReceived: ((topic: String, qos: Int, payload: ByteArray, retain: Boolean) -> Unit)? = null
     var onConnectionStateChanged: ((isConnected: Boolean, cause: Throwable?) -> Unit)? = null
 
+    private val messageListeners = CopyOnWriteArrayList<(topic: String, qos: Int, payload: ByteArray, retain: Boolean) -> Unit>()
+
+    fun addMessageListener(listener: (topic: String, qos: Int, payload: ByteArray, retain: Boolean) -> Unit) {
+        if (!messageListeners.contains(listener)) {
+            messageListeners.add(listener)
+        }
+    }
+
+    fun removeMessageListener(listener: (topic: String, qos: Int, payload: ByteArray, retain: Boolean) -> Unit) {
+        messageListeners.remove(listener)
+    }
+
     val isConnected: Boolean
         get() = mqttClient?.isConnected == true
+
+    val isConnecting: Boolean
+        get() = _isConnecting.get()
+
+    fun notifyConnectionState(isConnected: Boolean, cause: Throwable?) {
+        if (lastReportedConnectedState == isConnected) {
+            return
+        }
+        lastReportedConnectedState = isConnected
+        onConnectionStateChanged?.invoke(isConnected, cause)
+    }
 
     /**
      * Normalizes broker host and port into standard URI scheme.
@@ -59,19 +86,17 @@ object MqttClientManager {
         val knownSchemes = listOf("ssl://", "tcp://", "ws://", "wss://", "mqtt://", "mqtts://")
         for (s in knownSchemes) {
             if (host.startsWith(s, ignoreCase = true)) {
-                scheme = when (s.lowercase()) {
-                    "mqtt://" -> "tcp"
-                    "mqtts://" -> "ssl"
-                    else -> s.removeSuffix("://").lowercase()
-                }
-                host = host.substring(s.length)
+                scheme = s.removeSuffix("://").lowercase()
+                if (scheme == "mqtt") scheme = "tcp"
+                if (scheme == "mqtts") scheme = "ssl"
+                host = host.substring(s.length).trim()
                 break
             }
         }
 
         val cleanHost: String
         val actualPort: Int
-        if (host.contains(":") && !host.startsWith("[")) {
+        if (host.contains(":")) {
             val parts = host.split(":")
             cleanHost = parts[0].trim()
             actualPort = parts.getOrNull(1)?.toIntOrNull() ?: port
@@ -89,6 +114,23 @@ object MqttClientManager {
      */
     suspend fun connect(config: MqttServerConfig): Result<Unit> = withContext(Dispatchers.IO) {
         connectMutex.withLock {
+            val currentClient = mqttClient
+            val currentConfig = lastConfig
+            if (currentClient != null && currentClient.isConnected && currentConfig != null &&
+                currentConfig.host == config.host &&
+                currentConfig.port == config.port &&
+                currentConfig.clientId == config.clientId &&
+                currentConfig.username == config.username &&
+                currentConfig.password == config.password &&
+                currentConfig.tlsEnabled == config.tlsEnabled &&
+                currentConfig.cleanSession == config.cleanSession
+            ) {
+                Log.d(TAG, "Already connected with identical configuration, skipping disconnect-reconnect.")
+                notifyConnectionState(true, null)
+                return@withContext Result.success(Unit)
+            }
+
+            _isConnecting.set(true)
             try {
                 disconnectInternal(isIntentional = true)
 
@@ -112,7 +154,8 @@ object MqttClientManager {
                     isCleanSession = config.cleanSession
                     keepAliveInterval = config.keepAlive.coerceIn(15, 60)
                     connectionTimeout = 10 // 弱网下 10 秒快速超时，避免长时间挂起 Socket
-                    isAutomaticReconnect = true // 开启 Paho 底层秒级自动重连
+                    // 关闭 Paho 底层自动重连，统一由应用层退避引擎与守护服务调度，杜绝多方竞争死锁
+                    isAutomaticReconnect = false
 
                     if (config.username.isNotBlank()) {
                         userName = config.username.trim()
@@ -137,14 +180,14 @@ object MqttClientManager {
                 client.setCallback(object : MqttCallbackExtended {
                     override fun connectComplete(reconnect: Boolean, serverURI: String?) {
                         Log.d(TAG, "connectComplete: URI=$serverURI, reconnect=$reconnect")
-                        // 底层重连成功后立即通知上层，上层恢复订阅
-                        onConnectionStateChanged?.invoke(true, null)
+                        _isConnecting.set(false)
+                        notifyConnectionState(true, null)
                     }
 
                     override fun connectionLost(cause: Throwable?) {
                         Log.w(TAG, "connectionLost: ${cause?.message}")
-                        // Only legitimate connection drop triggers reconnection
-                        onConnectionStateChanged?.invoke(false, cause)
+                        _isConnecting.set(false)
+                        notifyConnectionState(false, cause)
                     }
 
                     override fun messageArrived(topic: String, message: MqttMessage) {
@@ -156,6 +199,18 @@ object MqttClientManager {
                                 message.payload,
                                 message.isRetained
                             )
+                            for (listener in messageListeners) {
+                                try {
+                                    listener.invoke(
+                                        topic,
+                                        message.qos,
+                                        message.payload,
+                                        message.isRetained
+                                    )
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "Error handling message in listener", e)
+                                }
+                            }
                         } catch (e: Exception) {
                             Log.e(TAG, "Error handling messageArrived", e)
                         }
@@ -167,9 +222,11 @@ object MqttClientManager {
                 })
 
                 client.connect(options)
-                onConnectionStateChanged?.invoke(true, null)
+                _isConnecting.set(false)
+                notifyConnectionState(true, null)
                 Result.success(Unit)
             } catch (e: Throwable) {
+                _isConnecting.set(false)
                 Log.w(TAG, "MQTT broker connection failed: ${e.message}")
                 disconnectInternal(isIntentional = true)
                 Result.failure(e)
@@ -299,7 +356,7 @@ object MqttClientManager {
                 }
             } else {
                 Log.d(TAG, "Heartbeat check: Connection lost in background, triggering state update")
-                onConnectionStateChanged?.invoke(false, null)
+                notifyConnectionState(false, null)
             }
         } catch (e: Exception) {
             Log.w(TAG, "Heartbeat ping check failed", e)
@@ -328,7 +385,9 @@ object MqttClientManager {
         } finally {
             mqttClient = null
             if (!isIntentional) {
-                onConnectionStateChanged?.invoke(false, null)
+                notifyConnectionState(false, null)
+            } else {
+                lastReportedConnectedState = false
             }
         }
     }

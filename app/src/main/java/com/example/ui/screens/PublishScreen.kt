@@ -86,6 +86,7 @@ import com.example.ui.theme.SurfaceContainerDefault
 import com.example.ui.theme.SurfaceContainerLow
 import com.example.ui.theme.SurfaceContainerLowest
 import com.example.viewmodel.MqttAssistantViewModel
+import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
 
@@ -559,6 +560,9 @@ private fun PublishConfigModalDialog(
             if (current.startsWith("{") && current.endsWith("}")) {
                 val obj = JSONObject(current)
                 payload = obj.toString(2)
+            } else if (current.startsWith("[") && current.endsWith("]")) {
+                val array = JSONArray(current)
+                payload = array.toString(2)
             }
         } catch (_: Exception) {}
     }

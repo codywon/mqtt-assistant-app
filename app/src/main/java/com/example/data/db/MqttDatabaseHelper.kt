@@ -23,6 +23,8 @@ class MqttDatabaseHelper(context: Context) : SQLiteOpenHelper(
     DATABASE_VERSION
 ) {
 
+    private val insertedCountSinceTrim = java.util.concurrent.atomic.AtomicInteger(0)
+
     companion object {
         const val DATABASE_NAME = "mqtt_assistant.db"
         const val DATABASE_VERSION = 1
@@ -313,16 +315,24 @@ class MqttDatabaseHelper(context: Context) : SQLiteOpenHelper(
             db.endTransaction()
         }
 
-        // 仅在数据累积量较大时异步或按需修剪历史记录，避免单条逐次全表扫描
-        if (maxBuffer > 0) {
+        // 水位线节流机制：只有累积插入超过 200 条时才触发低频检查，彻底消除每 16ms 执行昂贵全表子查询的 I/O 浪费
+        val currentPending = insertedCountSinceTrim.addAndGet(packets.size)
+        if (maxBuffer > 0 && currentPending >= 200) {
+            insertedCountSinceTrim.set(0)
             try {
-                db.execSQL(
-                    """
-                    DELETE FROM $TABLE_PACKETS WHERE id NOT IN (
-                        SELECT id FROM $TABLE_PACKETS ORDER BY created_at DESC LIMIT $maxBuffer
+                val countCursor = db.rawQuery("SELECT COUNT(*) FROM $TABLE_PACKETS", null)
+                val totalCount = if (countCursor.moveToFirst()) countCursor.getLong(0) else 0L
+                countCursor.close()
+
+                if (totalCount > maxBuffer) {
+                    db.execSQL(
+                        """
+                        DELETE FROM $TABLE_PACKETS WHERE id NOT IN (
+                            SELECT id FROM $TABLE_PACKETS ORDER BY created_at DESC LIMIT $maxBuffer
+                        )
+                        """.trimIndent()
                     )
-                    """.trimIndent()
-                )
+                }
             } catch (_: Exception) {}
         }
     }

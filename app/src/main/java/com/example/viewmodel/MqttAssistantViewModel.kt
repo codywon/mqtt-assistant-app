@@ -49,7 +49,7 @@ import java.util.UUID
 
 class MqttAssistantViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val storage = MqttStorageRepository(application.applicationContext)
+    private val storage = MqttStorageRepository(application)
 
     private val _currentScreen = MutableStateFlow(AppScreen.LiveLogs)
     val currentScreen: StateFlow<AppScreen> = _currentScreen.asStateFlow()
@@ -66,12 +66,13 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
     val reconnectAttempt = MutableStateFlow(0)
     val reconnectCountdown = MutableStateFlow(0)
     private var reconnectJob: Job? = null
-    private var packetSeqCounter = 0L
+    private val packetSeqCounter = AtomicLong(0L)
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
 
     val isForegroundKeepAliveRunning = MutableStateFlow(false)
 
     // --- Live Packet Log States (Backed by SQLite Database, Chronological Order: Newest at Bottom) ---
-    val livePackets = MutableStateFlow<List<MqttLogPacket>>(storage.loadRecentPackets(300).reversed())
+    val livePackets = MutableStateFlow<List<MqttLogPacket>>(emptyList())
     val selectedTopicFilter = MutableStateFlow("全部主题")
     val selectedPacket = MutableStateFlow<MqttLogPacket?>(null)
     val searchQuery = MutableStateFlow("")
@@ -166,6 +167,13 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
     private val incomingPacketChannel = Channel<MqttLogPacket>(capacity = Channel.UNLIMITED)
 
     init {
+        // 异步从 SQLite 加载历史最近报文，消除类构造期间主线程磁盘 I/O 阻塞
+        viewModelScope.launch(Dispatchers.IO) {
+            val cached = storage.loadRecentPackets(300).reversed()
+            withContext(Dispatchers.Main) {
+                livePackets.value = cached
+            }
+        }
         startPacketBatchCollector()
         setupMqttCallbacks()
         registerNetworkCallback()
@@ -264,7 +272,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                         MqttBackgroundService.updateNotification(
                             context = getApplication(),
                             brokerHost = brokerLabel,
-                            count = packetSeqCounter,
+                            count = packetSeqCounter.get(),
                             latestTopic = lastPacket.topic
                         )
                     }
@@ -279,19 +287,18 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
             val request = NetworkRequest.Builder()
                 .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
                 .build()
-            cm?.registerNetworkCallback(
-                request,
-                object : ConnectivityManager.NetworkCallback() {
-                    override fun onAvailable(network: Network) {
-                        Log.d("MqttAssistantViewModel", "NetworkCallback: Internet restored, checking connection...")
-                        if (!serverConfig.value.isConnected && !isManualDisconnecting && serverConfig.value.autoReconnect) {
-                            viewModelScope.launch(Dispatchers.Main) {
-                                startAutoReconnectLoop(isImmediate = true)
-                            }
+            val cb = object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: Network) {
+                    Log.d("MqttAssistantViewModel", "NetworkCallback: Internet restored, checking connection...")
+                    if (!serverConfig.value.isConnected && !isManualDisconnecting && serverConfig.value.autoReconnect) {
+                        viewModelScope.launch(Dispatchers.Main) {
+                            startAutoReconnectLoop(isImmediate = true)
                         }
                     }
                 }
-            )
+            }
+            networkCallback = cb
+            cm?.registerNetworkCallback(request, cb)
         } catch (e: Exception) {
             Log.w("MqttAssistantViewModel", "Failed to register NetworkCallback", e)
         }
@@ -305,8 +312,8 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
             } catch (e: Exception) {
                 payloadBytes.joinToString(" ") { "%02X".format(it) }
             }
-            packetSeqCounter++
-            val seq = "#%04d".format(packetSeqCounter)
+            val seqNumber = packetSeqCounter.incrementAndGet()
+            val seq = "#%04d".format(seqNumber)
 
             val matchingSub = subscriptions.value.firstOrNull { sub ->
                 MqttTopicUtil.matchesMqttTopic(sub.topic, topic)
@@ -351,7 +358,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                     MqttBackgroundService.updateNotification(
                         context = getApplication(),
                         brokerHost = brokerHost,
-                        count = packetSeqCounter,
+                        count = packetSeqCounter.get(),
                         latestTopic = null
                     )
                     isForegroundKeepAliveRunning.value = true
@@ -382,17 +389,8 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
             connectionState.value = MqttConnectionState.CONNECTING
             val result = MqttClientManager.connect(serverConfig.value)
             if (result.isSuccess) {
-                connectionState.value = MqttConnectionState.CONNECTED
-                serverConfig.update { it.copy(isConnected = true) }
-                persistCurrentActiveBrokerProfile()
-                val activeSubs = subscriptions.value.filter { it.isEnabled }
-                MqttClientManager.subscribeBatch(activeSubs.map { it.topic to it.qos })
-                if (serverConfig.value.backgroundKeepAliveEnabled) {
-                    val brokerHost = "${serverConfig.value.host}:${serverConfig.value.port}"
-                    MqttBackgroundService.startKeepAlive(getApplication(), brokerHost)
-                    isForegroundKeepAliveRunning.value = true
-                }
-                showToast("已连接至 ${serverConfig.value.host}:${serverConfig.value.port} (已激活 ${activeSubs.size} 个主题)")
+                val activeCount = subscriptions.value.count { it.isEnabled }
+                showToast("已连接至 ${serverConfig.value.host}:${serverConfig.value.port} (已激活 $activeCount 个主题)")
             } else {
                 connectionState.value = MqttConnectionState.DISCONNECTED
                 serverConfig.update { it.copy(isConnected = false) }
@@ -581,12 +579,12 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
             )
             publishHistory.update { listOf(newHistory) + it }
 
-            packetSeqCounter++
+            val seqNumber = packetSeqCounter.incrementAndGet()
             val packet = MqttLogPacket(
                 id = UUID.randomUUID().toString(),
                 topic = preset.topic,
                 qos = preset.qos,
-                packetSeq = "#%04d".format(packetSeqCounter),
+                packetSeq = "#%04d".format(seqNumber),
                 timestamp = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date()),
                 payload = preset.payload,
                 devInfo = "PUB · ${payloadBytes.size}B" + if (result.isSuccess) " · 已送达" else " · 发送失败",
@@ -663,6 +661,10 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 val obj = JSONObject(current)
                 publishPayload.value = obj.toString(2)
                 showToast("JSON 格式化成功")
+            } else if (current.startsWith("[") && current.endsWith("]")) {
+                val array = JSONArray(current)
+                publishPayload.value = array.toString(2)
+                showToast("JSON 格式化成功")
             } else {
                 showToast("当前载荷非 JSON 格式")
             }
@@ -712,12 +714,12 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
             publishHistory.update { listOf(newHistory) + it }
 
             // Also add to live logs
-            packetSeqCounter++
+            val seqNumber = packetSeqCounter.incrementAndGet()
             val packet = MqttLogPacket(
                 id = UUID.randomUUID().toString(),
                 topic = topic,
                 qos = publishQos.value,
-                packetSeq = "#%04d".format(packetSeqCounter),
+                packetSeq = "#%04d".format(seqNumber),
                 timestamp = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date()),
                 payload = publishPayload.value,
                 devInfo = "PUB · ${payloadBytes.size}B" + if (result.isSuccess) " · 已送达" else " · 发送失败",
@@ -833,7 +835,8 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                     showToast("订阅失败: ${res.exceptionOrNull()?.message}")
                 }
             } else {
-                showToast("已保存订阅配置 (已暂停接收)")
+                MqttClientManager.unsubscribe(item.topic)
+                showToast("已保存订阅配置 (已暂停接收并退订)")
             }
         }
     }
@@ -1258,15 +1261,8 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
             connectionState.value = MqttConnectionState.CONNECTING
             val result = MqttClientManager.connect(serverConfig.value)
             if (result.isSuccess) {
-                connectionState.value = MqttConnectionState.CONNECTED
-                serverConfig.update { it.copy(isConnected = true) }
-                reconnectAttempt.value = 0
-                persistCurrentActiveBrokerProfile()
-                val activeSubs = subscriptions.value.filter { it.isEnabled }
-                activeSubs.forEach { sub ->
-                    MqttClientManager.subscribe(sub.topic, sub.qos)
-                }
-                showToast("连接已恢复，已同步 ${activeSubs.size} 个主题订阅")
+                val activeCount = subscriptions.value.count { it.isEnabled }
+                showToast("连接已恢复，已同步 $activeCount 个主题订阅")
             } else {
                 connectionState.value = MqttConnectionState.DISCONNECTED
                 serverConfig.update { it.copy(isConnected = false) }
@@ -1367,10 +1363,10 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
         showToast(if (next) "已启用 CPU 唤醒锁 (WakeLock)" else "已停用 CPU 唤醒锁")
     }
 
-    fun clearAllData() {
-        publishHistory.value = emptyList()
+    fun clearPacketLogs() {
         livePackets.value = emptyList()
-        packetSeqCounter = 0
+        selectedPacket.value = null
+        packetSeqCounter.set(0L)
         viewModelScope.launch(Dispatchers.IO) {
             storage.clearAllPackets()
             refreshStorageStats()
@@ -1668,6 +1664,9 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 withContext(Dispatchers.Main) {
                     isImportingConfig.value = false
                     showToast("配置导入成功：恢复 ${backup.brokerProfiles.size} 个节点、${backup.publishPresets.size} 条预设、${backup.subscriptions.size} 条订阅")
+                    if (serverConfig.value.autoReconnect || serverConfig.value.isConnected) {
+                        connectToBroker()
+                    }
                 }
             } catch (e: Exception) {
                 Log.e("MqttAssistantViewModel", "Failed to import config", e)
@@ -1677,5 +1676,16 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 }
             }
         }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        try {
+            val cm = getApplication<Application>().getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            networkCallback?.let { cm?.unregisterNetworkCallback(it) }
+        } catch (_: Exception) {}
+        MqttClientManager.onMessageReceived = null
+        MqttClientManager.onConnectionStateChanged = null
+        reconnectJob?.cancel()
     }
 }

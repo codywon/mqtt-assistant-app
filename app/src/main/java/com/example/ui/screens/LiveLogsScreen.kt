@@ -21,7 +21,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -177,9 +177,10 @@ fun LiveLogsScreen(
         }
     }
 
-    // 监听用户真实滑动交互，区分主动翻看历史还是系统自动推移
-    LaunchedEffect(listState.isScrollInProgress) {
-        if (listState.isScrollInProgress) {
+    // 仅监听用户真实手势拖拽（彻底排除系统自动滚动导致的误判中断）：
+    val isDragged by listState.interactionSource.collectIsDraggedAsState()
+    LaunchedEffect(isDragged) {
+        if (isDragged) {
             if (!isAtBottom) {
                 autoScrollToBottom = false
             } else {
@@ -189,9 +190,10 @@ fun LiveLogsScreen(
     }
 
     // 毫秒级零抖动自动向下吸底推进：
-    // 当处于吸底状态且未暂停时，新报文到来直接定位到最后一项 (filteredPackets.size - 1)。
-    // 彻底告别被频繁打断的弹性插值动画，消除任何一帧的上下拉扯闪屏，如 macOS 终端般丝滑向下推移！
-    LaunchedEffect(filteredPackets.size, autoScrollToBottom, isPaused) {
+    // 使用最新报文唯一 ID (latestPacketId) 作为触发键。
+    // 即使报文总量达到 maxBuffer 截断上限导致 filteredPackets.size 恒定，只要有新消息进来 ID 必变，彻底终结假死停滚！
+    val latestPacketId = filteredPackets.lastOrNull()?.id ?: ""
+    LaunchedEffect(latestPacketId, autoScrollToBottom, isPaused) {
         if (autoScrollToBottom && !isPaused && filteredPackets.isNotEmpty()) {
             listState.scrollToItem(filteredPackets.size - 1)
         }
