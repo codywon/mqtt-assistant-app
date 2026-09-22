@@ -1558,7 +1558,14 @@ private fun BrokerProfileEditDialog(
                     )
                     Switch(
                         checked = tlsEnabled,
-                        onCheckedChange = { tlsEnabled = it },
+                        onCheckedChange = { isTls ->
+                            tlsEnabled = isTls
+                            if (isTls) {
+                                portStr = "8883"
+                            } else if (portStr == "8883") {
+                                portStr = "1883"
+                            }
+                        },
                         modifier = Modifier.scale(0.8f)
                     )
                 }
