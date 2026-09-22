@@ -427,7 +427,7 @@ private fun SubscriptionItemCard(
     Card(
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (item.isEnabled) SurfaceContainerLowest else SurfaceContainerLowest.copy(alpha = 0.7f)
+            containerColor = SurfaceContainerLowest
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
         border = BorderStroke(0.8.dp, OutlineVariantLight.copy(alpha = 0.7f)),
