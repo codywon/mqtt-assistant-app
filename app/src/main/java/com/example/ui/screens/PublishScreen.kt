@@ -247,6 +247,10 @@ fun PublishScreen(
                         isCreatingNew = false
                         activeDialogPreset = preset
                     },
+                    onCopyTopic = {
+                        clipboardManager.setPrimaryClip(ClipData.newPlainText("MQTT Topic", preset.topic))
+                        viewModel.showToast("已复制主题: ${preset.topic}")
+                    },
                     onCopy = {
                         clipboardManager.setPrimaryClip(ClipData.newPlainText("MQTT Payload", preset.payload))
                         viewModel.showToast("已复制载荷内容")
@@ -337,6 +341,7 @@ private fun PublishPresetCard(
     preset: PublishPreset,
     onDirectSend: () -> Unit,
     onEdit: () -> Unit,
+    onCopyTopic: () -> Unit,
     onCopy: () -> Unit,
     onDelete: () -> Unit
 ) {
@@ -354,30 +359,14 @@ private fun PublishPresetCard(
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // Part 1: Remark Name (Header) & Topic (Auto-wrap monospace)
-            if (preset.name.isNotBlank()) {
-                Text(
-                    text = preset.name,
-                    style = TextStyle(
-                        fontSize = 14.5.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = PrimaryBlack
-                    ),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = preset.topic,
-                    style = TextStyle(
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 12.5.sp,
-                        fontWeight = FontWeight.Medium,
-                        lineHeight = 17.sp,
-                        color = OnSurfaceDark
-                    ),
-                    softWrap = true
-                )
-            } else {
+            // Part 1: Topic Header (Click to copy topic name like in Subscribe screen)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(4.dp))
+                    .clickable { onCopyTopic() }
+            ) {
                 Text(
                     text = preset.topic,
                     style = TextStyle(
@@ -387,17 +376,18 @@ private fun PublishPresetCard(
                         lineHeight = 18.sp,
                         color = PrimaryBlack
                     ),
-                    softWrap = true
+                    softWrap = true,
+                    modifier = Modifier.weight(1f, fill = false)
                 )
             }
 
-            // Part 2: Payload Preview (Clean, rounded light box, click to copy)
+            // Part 2: Payload Preview (Click to open edit dialog)
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(6.dp))
                     .background(SurfaceContainerLow.copy(alpha = 0.5f))
-                    .clickable { onCopy() }
+                    .clickable { onEdit() }
                     .padding(horizontal = 10.dp, vertical = 6.dp)
             ) {
                 Text(
@@ -415,45 +405,42 @@ private fun PublishPresetCard(
                 )
             }
 
-            // Part 3: Bottom Row - Left: QoS + Retain + Character count; Right: Action icons + Send button
+            // Part 3: Bottom Row - Left: Custom Remark Name (and non-default QoS/Retain); Right: Action buttons
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                // Left area: QoS, Retain, Characters
+                // Left area: Remark Name and non-default QoS/Retain badges
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(5.dp),
                     modifier = Modifier.weight(1f, fill = false)
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(SurfaceContainerLow)
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                    ) {
+                    if (preset.name.isNotBlank()) {
                         Text(
-                            text = "QoS ${preset.qos}",
+                            text = preset.name,
                             style = TextStyle(
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 10.5.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = OnSurfaceDark
-                            )
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = OnSurfaceVariantGray
+                            ),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
 
-                    if (preset.retain) {
+                    if (preset.qos > 0) {
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(4.dp))
                                 .background(SurfaceContainerLow)
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                .padding(horizontal = 5.dp, vertical = 1.5.dp)
                         ) {
                             Text(
-                                text = "Retain",
+                                text = "QoS ${preset.qos}",
                                 style = TextStyle(
+                                    fontFamily = FontFamily.Monospace,
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.SemiBold,
                                     color = OnSurfaceDark
@@ -462,15 +449,23 @@ private fun PublishPresetCard(
                         }
                     }
 
-                    Text(
-                        text = "· ${preset.payload.length} 字符",
-                        style = TextStyle(
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 11.sp,
-                            color = OnSurfaceVariantGray
-                        ),
-                        maxLines = 1
-                    )
+                    if (preset.retain) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(SurfaceContainerLow)
+                                .padding(horizontal = 5.dp, vertical = 1.5.dp)
+                        ) {
+                            Text(
+                                text = "Retain",
+                                style = TextStyle(
+                                    fontSize = 9.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = OnSurfaceDark
+                                )
+                            )
+                        }
+                    }
                 }
 
                 // Right area: Action buttons (Copy, Duplicate, Edit, Delete, Send)
