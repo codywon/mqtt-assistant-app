@@ -19,6 +19,7 @@ import java.security.cert.X509Certificate
 import java.util.UUID
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
+import javax.net.SocketFactory
 import javax.net.ssl.SNIHostName
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLSocket
@@ -174,6 +175,9 @@ object MqttClientManager {
                         } catch (e: Exception) {
                             Log.w(TAG, "Failed to set custom SSLSocketFactory, falling back to default", e)
                         }
+                    } else {
+                        // 普通 TCP 连接注入 KeepAliveSocketFactory 开启 Linux 内核 SO_KEEPALIVE 与 TCP_NODELAY
+                        socketFactory = KeepAliveSocketFactory()
                     }
                 }
 
@@ -510,6 +514,12 @@ class SniSSLSocketFactory(
     override fun getSupportedCipherSuites(): Array<String> = delegate.supportedCipherSuites
 
     private fun configureSocket(socket: Socket): Socket {
+        try {
+            socket.keepAlive = true
+            socket.tcpNoDelay = true
+            socket.soTimeout = 0
+        } catch (_: Exception) {}
+
         if (socket is SSLSocket) {
             try {
                 // Enable modern TLS protocols
@@ -559,4 +569,29 @@ class SniSSLSocketFactory(
     override fun createSocket(address: InetAddress?, port: Int, localAddress: InetAddress?, localPort: Int): Socket {
         return configureSocket(delegate.createSocket(address, port, localAddress, localPort))
     }
+}
+
+/**
+ * 普通 TCP SocketFactory 装饰器：开启 Linux 内核底层 SO_KEEPALIVE 与 TCP_NODELAY
+ */
+class KeepAliveSocketFactory(
+    private val delegate: SocketFactory = SocketFactory.getDefault()
+) : SocketFactory() {
+
+    private fun configureSocket(socket: Socket): Socket {
+        try {
+            socket.keepAlive = true
+            socket.tcpNoDelay = true
+            socket.soTimeout = 0
+        } catch (_: Exception) {}
+        return socket
+    }
+
+    override fun createSocket(): Socket = configureSocket(delegate.createSocket())
+    override fun createSocket(host: String?, port: Int): Socket = configureSocket(delegate.createSocket(host, port))
+    override fun createSocket(host: String?, port: Int, localHost: InetAddress?, localPort: Int): Socket =
+        configureSocket(delegate.createSocket(host, port, localHost, localPort))
+    override fun createSocket(host: InetAddress?, port: Int): Socket = configureSocket(delegate.createSocket(host, port))
+    override fun createSocket(address: InetAddress?, port: Int, localAddress: InetAddress?, localPort: Int): Socket =
+        configureSocket(delegate.createSocket(address, port, localAddress, localPort))
 }

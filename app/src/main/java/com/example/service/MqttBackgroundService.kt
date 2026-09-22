@@ -5,8 +5,10 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.net.wifi.WifiManager
 import android.os.Build
@@ -15,9 +17,11 @@ import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.example.MainActivity
+import com.example.data.MqttStorageRepository
+import com.example.model.MqttLogPacket
+import com.example.model.MqttServerConfig
 import com.example.mqtt.MqttClientManager
-import android.app.AlarmManager
-import android.os.SystemClock
+import com.example.receiver.AlarmPulseReceiver
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -25,10 +29,6 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-
-import com.example.data.MqttStorageRepository
-import com.example.model.MqttLogPacket
-import com.example.model.MqttServerConfig
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -39,7 +39,8 @@ import java.util.UUID
  * 生产级 Android MQTT 前台保活服务：
  * 1. 启动为 Foreground Service (通知栏常驻)，防止系统在应用最小化或息屏时挂起进程；
  * 2. 组合持有 CPU WakeLock 与 Wi-Fi Lock，防止 Wi-Fi 芯片和 Socket 进入省电休眠；
- * 3. 周期性 (15秒) 执行活跃心跳检查与状态刷新，确保长连接持续健康。
+ * 3. 动态监听息屏/亮屏事件，熄屏时触发预保活 Ping，亮屏时 0ms 探活自愈；
+ * 4. 协同 AlarmPulseReceiver 穿透 Doze 低功耗模式进行定时精准脉冲唤醒。
  */
 class MqttBackgroundService : Service() {
 
@@ -47,6 +48,7 @@ class MqttBackgroundService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
     private var heartbeatJob: Job? = null
+    private var screenReceiver: BroadcastReceiver? = null
 
     private val backgroundMessageListener: (String, Int, ByteArray, Boolean) -> Unit = { topic, qos, payloadBytes, retain ->
         serviceScope.launch(Dispatchers.IO) {
@@ -89,7 +91,6 @@ class MqttBackgroundService : Service() {
         const val ACTION_START = "com.example.service.ACTION_START"
         const val ACTION_STOP = "com.example.service.ACTION_STOP"
         const val ACTION_UPDATE_STATS = "com.example.service.ACTION_UPDATE_STATS"
-        const val ACTION_PULSE_HEARTBEAT = "com.example.service.ACTION_PULSE_HEARTBEAT"
         const val EXTRA_BROKER = "EXTRA_BROKER"
         const val EXTRA_COUNT = "EXTRA_COUNT"
         const val EXTRA_TOPIC = "EXTRA_TOPIC"
@@ -155,24 +156,83 @@ class MqttBackgroundService : Service() {
                 Log.e(TAG, "Failed to stop keep alive service", e)
             }
         }
+
+        /**
+         * 供外部（如 AlarmPulseReceiver、系统开机广播等）调用的静默重连与保活自愈方法
+         */
+        suspend fun ensureMqttConnected(context: Context): Result<Unit> {
+            if (MqttClientManager.isConnected || MqttClientManager.isConnecting) {
+                return Result.success(Unit)
+            }
+
+            // 1. 若内存中已有上一次连接配置，优先快速复用
+            if (MqttClientManager.lastConfig != null) {
+                return MqttClientManager.reconnectSilently()
+            }
+
+            // 2. 冷启动无 lastConfig（如系统开机或应用被杀自启动）：直接从本地存储加载激活 Broker 独立建连
+            return withContext(Dispatchers.IO) {
+                try {
+                    val storage = MqttStorageRepository(context)
+                    val profiles = storage.loadBrokerProfiles()
+                    val activeId = storage.loadActiveBrokerId()
+                    val activeBroker = profiles.find { it.id == activeId } ?: profiles.firstOrNull()
+
+                    if (activeBroker == null || activeBroker.host.isBlank()) {
+                        Log.w(TAG, "No valid Broker profile configured in storage for background wake")
+                        return@withContext Result.failure(IllegalStateException("未配置有效的 Broker 节点"))
+                    }
+
+                    val brokerLabel = "${activeBroker.host}:${activeBroker.port}"
+                    currentBrokerHost = brokerLabel
+
+                    val serverConfig = MqttServerConfig(
+                        activeProfileId = activeBroker.id,
+                        host = activeBroker.host,
+                        port = activeBroker.port,
+                        clientId = activeBroker.clientId,
+                        username = activeBroker.username,
+                        password = activeBroker.password,
+                        protocol = activeBroker.protocol,
+                        cleanSession = activeBroker.cleanSession,
+                        tlsEnabled = activeBroker.tlsEnabled,
+                        keepAlive = activeBroker.keepAlive,
+                        autoReconnect = storage.loadAutoReconnect(),
+                        bufferThreshold = storage.loadBufferThreshold(),
+                        backgroundKeepAliveEnabled = true
+                    )
+
+                    Log.i(TAG, "Background Guardian: connecting independently to $brokerLabel...")
+                    val connRes = MqttClientManager.connect(serverConfig)
+                    if (connRes.isSuccess) {
+                        Log.i(TAG, "Background Guardian: successfully connected! Restoring subscriptions...")
+                        val subs = storage.loadSubscriptions().filter { it.isEnabled }
+                        if (subs.isNotEmpty()) {
+                            MqttClientManager.subscribeBatch(subs.map { it.topic to it.qos })
+                        }
+                    }
+                    connRes
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to connect to Broker in background", e)
+                    Result.failure(e)
+                }
+            }
+        }
     }
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
         MqttClientManager.addMessageListener(backgroundMessageListener)
+        registerScreenStateReceiver()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> {
-                cancelAlarmPulse()
+                AlarmPulseReceiver.cancelPulse(this)
                 stopSelf()
                 return START_NOT_STICKY
-            }
-            ACTION_PULSE_HEARTBEAT -> {
-                handlePulseHeartbeat()
-                return START_STICKY
             }
             ACTION_UPDATE_STATS -> {
                 val host = intent.getStringExtra(EXTRA_BROKER)
@@ -209,71 +269,12 @@ class MqttBackgroundService : Service() {
         }
 
         serviceScope.launch {
-            ensureMqttConnected()
+            ensureMqttConnected(applicationContext)
         }
         startHeartbeatLoop()
-        scheduleNextAlarmPulse()
+        AlarmPulseReceiver.scheduleNextPulse(this)
 
         return START_STICKY
-    }
-
-    private suspend fun ensureMqttConnected(): Result<Unit> {
-        if (MqttClientManager.isConnected || MqttClientManager.isConnecting) {
-            return Result.success(Unit)
-        }
-
-        // 1. 若内存中已有上一次连接配置，优先快速复用
-        if (MqttClientManager.lastConfig != null) {
-            return MqttClientManager.reconnectSilently()
-        }
-
-        // 2. 冷启动无 lastConfig（如系统开机或应用被杀自启动）：直接从本地存储加载激活 Broker 独立建连
-        return withContext(Dispatchers.IO) {
-            try {
-                val storage = MqttStorageRepository(applicationContext)
-                val profiles = storage.loadBrokerProfiles()
-                val activeId = storage.loadActiveBrokerId()
-                val activeBroker = profiles.find { it.id == activeId } ?: profiles.firstOrNull()
-
-                if (activeBroker == null || activeBroker.host.isBlank()) {
-                    Log.w(TAG, "No valid Broker profile configured in storage for background wake")
-                    return@withContext Result.failure(IllegalStateException("未配置有效的 Broker 节点"))
-                }
-
-                val brokerLabel = "${activeBroker.host}:${activeBroker.port}"
-                currentBrokerHost = brokerLabel
-
-                val serverConfig = MqttServerConfig(
-                    activeProfileId = activeBroker.id,
-                    host = activeBroker.host,
-                    port = activeBroker.port,
-                    clientId = activeBroker.clientId,
-                    username = activeBroker.username,
-                    password = activeBroker.password,
-                    protocol = activeBroker.protocol,
-                    cleanSession = activeBroker.cleanSession,
-                    tlsEnabled = activeBroker.tlsEnabled,
-                    keepAlive = activeBroker.keepAlive,
-                    autoReconnect = storage.loadAutoReconnect(),
-                    bufferThreshold = storage.loadBufferThreshold(),
-                    backgroundKeepAliveEnabled = true
-                )
-
-                Log.i(TAG, "Background Guardian: connecting independently to $brokerLabel...")
-                val connRes = MqttClientManager.connect(serverConfig)
-                if (connRes.isSuccess) {
-                    Log.i(TAG, "Background Guardian: successfully connected! Restoring subscriptions...")
-                    val subs = storage.loadSubscriptions().filter { it.isEnabled }
-                    if (subs.isNotEmpty()) {
-                        MqttClientManager.subscribeBatch(subs.map { it.topic to it.qos })
-                    }
-                }
-                connRes
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to connect to Broker in background", e)
-                Result.failure(e)
-            }
-        }
     }
 
     private fun acquireWakeAndWifiLocks() {
@@ -326,7 +327,7 @@ class MqttBackgroundService : Service() {
                     // 3. 后台守护机制：若长连接在后台意外断开，立即独立自动拉起！
                     if (!MqttClientManager.isConnected && !MqttClientManager.isConnecting) {
                         Log.d(TAG, "Background Guardian: detected MQTT disconnected, attempting reconnect...")
-                        val result = ensureMqttConnected()
+                        val result = ensureMqttConnected(applicationContext)
                         if (result.isSuccess) {
                             Log.d(TAG, "Background Guardian: Reconnect succeeded!")
                         } else {
@@ -401,102 +402,76 @@ class MqttBackgroundService : Service() {
         }
     }
 
-    private fun scheduleNextAlarmPulse() {
-        if (!isRunning) return
-        try {
-            val alarmManager = getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
-            val intent = Intent(this, MqttBackgroundService::class.java).apply {
-                action = ACTION_PULSE_HEARTBEAT
-            }
-            val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            } else {
-                PendingIntent.FLAG_UPDATE_CURRENT
-            }
-            val pendingIntent = PendingIntent.getService(this, 2001, intent, flags)
-            val triggerAtMillis = SystemClock.elapsedRealtime() + 25_000L // 25秒一次精准脉冲，穿透 Doze 并保活 NAT
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                alarmManager.setExactAndAllowWhileIdle(
-                    AlarmManager.ELAPSED_REALTIME_WAKEUP,
-                    triggerAtMillis,
-                    pendingIntent
-                )
-            } else {
-                alarmManager.setExact(
-                    AlarmManager.ELAPSED_REALTIME_WAKEUP,
-                    triggerAtMillis,
-                    pendingIntent
-                )
-            }
-            Log.d(TAG, "Scheduled next 25s Doze-piercing pulse alarm")
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to schedule pulse alarm", e)
+    /**
+     * 动态监听屏幕状态变化：
+     * 1. 息屏瞬间：立即主动发送探活 PINGREQ，并排期 15 秒精准心跳，确保进入休眠时链路表项处于最新活跃状态；
+     * 2. 亮屏/解锁瞬间：0ms 探活并自愈重连，保障用户点亮手机瞬间即可收发消息。
+     */
+    private fun registerScreenStateReceiver() {
+        if (screenReceiver != null) return
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_OFF)
+            addAction(Intent.ACTION_SCREEN_ON)
+            addAction(Intent.ACTION_USER_PRESENT)
         }
-    }
-
-    private fun cancelAlarmPulse() {
-        try {
-            val alarmManager = getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
-            val intent = Intent(this, MqttBackgroundService::class.java).apply {
-                action = ACTION_PULSE_HEARTBEAT
-            }
-            val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
-            } else {
-                PendingIntent.FLAG_NO_CREATE
-            }
-            val pi = PendingIntent.getService(this, 2001, intent, flags)
-            if (pi != null) {
-                alarmManager.cancel(pi)
-                pi.cancel()
-            }
-            Log.d(TAG, "Cancelled pulse alarm")
-        } catch (e: Exception) {
-            Log.w(TAG, "Error cancelling pulse alarm", e)
-        }
-    }
-
-    private fun handlePulseHeartbeat() {
-        if (!isRunning) return
-
-        // 临时唤醒锁：确保在低电耗模式唤醒后 CPU 至少维持 5 秒发完心跳或重连
-        try {
-            val powerManager = getSystemService(Context.POWER_SERVICE) as? PowerManager
-            val tempLock = powerManager?.newWakeLock(
-                PowerManager.PARTIAL_WAKE_LOCK,
-                "MqttAssistant:PulseTempLock"
-            )
-            tempLock?.acquire(5000L)
-        } catch (_: Exception) {}
-
-        serviceScope.launch {
-            try {
-                if (MqttClientManager.isConnected) {
-                    Log.d(TAG, "Pulse wake: Dispatching active MQTT ping...")
-                    MqttClientManager.pingOrKeepAlive()
-                } else if (!MqttClientManager.isConnecting) {
-                    Log.d(TAG, "Pulse wake: Detected connection lost in sleep, restoring...")
-                    val res = ensureMqttConnected()
-                    if (res.isSuccess) {
-                        Log.d(TAG, "Pulse wake: Reconnected successfully in sleep")
+        screenReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent?) {
+                when (intent?.action) {
+                    Intent.ACTION_SCREEN_OFF -> {
+                        Log.d(TAG, "Screen OFF: proactive MQTT ping and scheduling pulse")
+                        serviceScope.launch {
+                            try {
+                                if (MqttClientManager.isConnected) {
+                                    MqttClientManager.pingOrKeepAlive()
+                                }
+                            } catch (e: Exception) {
+                                Log.w(TAG, "Screen OFF ping error", e)
+                            }
+                        }
+                        AlarmPulseReceiver.scheduleNextPulse(this@MqttBackgroundService, 15_000L)
+                    }
+                    Intent.ACTION_SCREEN_ON, Intent.ACTION_USER_PRESENT -> {
+                        Log.d(TAG, "Screen ON / USER PRESENT: zero-delay active check and healing")
+                        serviceScope.launch {
+                            try {
+                                if (!MqttClientManager.isConnected && !MqttClientManager.isConnecting) {
+                                    ensureMqttConnected(applicationContext)
+                                } else if (MqttClientManager.isConnected) {
+                                    MqttClientManager.pingOrKeepAlive()
+                                }
+                            } catch (e: Exception) {
+                                Log.w(TAG, "Screen ON check error", e)
+                            }
+                        }
                     }
                 }
-            } catch (e: Exception) {
-                Log.w(TAG, "Error during pulse heartbeat", e)
-            } finally {
-                // 排期下一个脉冲
-                if (isRunning) {
-                    scheduleNextAlarmPulse()
-                }
             }
+        }
+        try {
+            registerReceiver(screenReceiver, filter)
+            Log.d(TAG, "Registered screen state receiver")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to register screenReceiver", e)
+        }
+    }
+
+    private fun unregisterScreenStateReceiver() {
+        screenReceiver?.let {
+            try {
+                unregisterReceiver(it)
+                Log.d(TAG, "Unregistered screen state receiver")
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to unregister screenReceiver", e)
+            }
+            screenReceiver = null
         }
     }
 
     override fun onDestroy() {
         super.onDestroy()
         isRunning = false
-        cancelAlarmPulse()
+        AlarmPulseReceiver.cancelPulse(this)
+        unregisterScreenStateReceiver()
         heartbeatJob?.cancel()
         serviceScope.cancel()
         MqttClientManager.removeMessageListener(backgroundMessageListener)

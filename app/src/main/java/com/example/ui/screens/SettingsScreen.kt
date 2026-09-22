@@ -132,6 +132,20 @@ fun SettingsScreen(
     val isExporting by viewModel.isExporting.collectAsState()
     val isExportingConfig by viewModel.isExportingConfig.collectAsState()
     val isImportingConfig by viewModel.isImportingConfig.collectAsState()
+    val isBatteryOptimizationIgnored by viewModel.isBatteryOptimizationIgnored.collectAsState()
+
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                viewModel.checkBatteryOptimizationStatus(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
 
     val configPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -671,57 +685,90 @@ fun SettingsScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "忽略电池优化 (防系统杀后台)",
-                            style = MaterialTheme.typography.labelMedium.copy(
-                                fontWeight = FontWeight.SemiBold,
-                                color = PrimaryBlack
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "忽略电池优化 (电源白名单)",
+                                style = MaterialTheme.typography.labelMedium.copy(
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = PrimaryBlack
+                                )
                             )
-                        )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = if (isBatteryOptimizationIgnored) SecondaryContainerMint else Color(0xFFFEF3C7)
+                            ) {
+                                Text(
+                                    text = if (isBatteryOptimizationIgnored) "已加入白名单" else "处于省电限制中",
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isBatteryOptimizationIgnored) SecondaryEmerald else Color(0xFFD97706)
+                                    ),
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(2.dp))
                         Text(
-                            text = "申请无限制后台电源策略，彻底杜绝程序最小化被厂商系统冻结",
+                            text = if (isBatteryOptimizationIgnored) {
+                                "已获得无限制后台电源权限，锁屏深度休眠期间系统将保障网络通道畅通"
+                            } else {
+                                "未加入白名单！手机熄屏5~10分钟后厂商系统将强行掐断后台网络，建议立即开启"
+                            },
                             style = MaterialTheme.typography.bodySmall.copy(
                                 fontSize = 12.sp,
-                                color = OnSurfaceVariantGray
+                                color = if (isBatteryOptimizationIgnored) OnSurfaceVariantGray else Color(0xFFB45309)
                             )
                         )
                     }
                     Spacer(modifier = Modifier.width(16.dp))
                     Button(
-                        onClick = {
-                            try {
-                                val intent = Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
-                                    data = Uri.parse("package:${context.packageName}")
-                                }
-                                context.startActivity(intent)
-                            } catch (e: Exception) {
-                                try {
-                                    val intent = Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
-                                    context.startActivity(intent)
-                                } catch (_: Exception) {
-                                    try {
-                                        val intent = Intent(android.provider.Settings.ACTION_SETTINGS)
-                                        context.startActivity(intent)
-                                    } catch (_: Exception) {}
-                                }
-                            }
-                        },
+                        onClick = { viewModel.requestIgnoreBatteryOptimization(context) },
                         modifier = Modifier
                             .height(34.dp)
                             .defaultMinSize(minWidth = 68.dp),
                         shape = RoundedCornerShape(8.dp),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = PrimaryBlack,
+                            containerColor = if (isBatteryOptimizationIgnored) PrimaryBlack.copy(alpha = 0.85f) else PrimaryBlack,
                             contentColor = OnPrimaryWhite
                         ),
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
                     ) {
                         Text(
-                            text = "去设置",
+                            text = if (isBatteryOptimizationIgnored) "去查看" else "立即开启",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = Color.White,
                             maxLines = 1
+                        )
+                    }
+                }
+
+                // 7. 保活全景诊断提示小条
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = SurfaceContainerLow,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.VerifiedUser,
+                            contentDescription = null,
+                            tint = SecondaryEmerald,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "双重保活已生效：前台通知常驻 + Doze 模式精确闹钟心跳脉冲。配合电池白名单与自启动，可达成锁屏数小时不掉线。",
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontSize = 11.sp,
+                                color = OnSurfaceVariantGray,
+                                lineHeight = 15.sp
+                            )
                         )
                     }
                 }

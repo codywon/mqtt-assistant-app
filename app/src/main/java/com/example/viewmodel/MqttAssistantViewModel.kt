@@ -71,6 +71,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
 
     val isForegroundKeepAliveRunning = MutableStateFlow(false)
+    val isBatteryOptimizationIgnored = MutableStateFlow(false)
 
     // --- Live Packet Log States (Backed by SQLite Database, Chronological Order: Newest at Bottom) ---
     val livePackets = MutableStateFlow<List<MqttLogPacket>>(emptyList())
@@ -179,6 +180,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
         setupMqttCallbacks()
         registerNetworkCallback()
         refreshStorageStats()
+        checkBatteryOptimizationStatus(application)
         // 严密校验：若 Broker 节点为 0 或主机为空，绝不发起连接和无限重连循环
         if (brokerProfiles.value.isNotEmpty() && serverConfig.value.host.isNotBlank()) {
             connectToBroker()
@@ -1279,9 +1281,41 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
      * 解决“最小化打开其他程序再回来每次都断开/重连”的问题，只要发现未连接瞬间发起重连，不让用户等待。
      */
     fun onAppResume() {
+        checkBatteryOptimizationStatus(getApplication())
         if (!serverConfig.value.isConnected && !isManualDisconnecting && serverConfig.value.autoReconnect && brokerProfiles.value.isNotEmpty() && serverConfig.value.host.isNotBlank()) {
             Log.d("MqttAssistantViewModel", "onAppResume: app returned to foreground, probing immediate reconnect")
             startAutoReconnectLoop(isImmediate = true)
+        }
+    }
+
+    fun checkBatteryOptimizationStatus(context: Context) {
+        try {
+            val powerManager = context.getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
+            val isIgnored = powerManager?.isIgnoringBatteryOptimizations(context.packageName) == true
+            isBatteryOptimizationIgnored.value = isIgnored
+        } catch (e: Exception) {
+            Log.w("MqttAssistantViewModel", "Failed to check battery optimization status", e)
+        }
+    }
+
+    fun requestIgnoreBatteryOptimization(context: Context) {
+        try {
+            val intent = android.content.Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                data = Uri.parse("package:${context.packageName}")
+            }
+            context.startActivity(intent)
+        } catch (e: Exception) {
+            try {
+                val intent = android.content.Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                context.startActivity(intent)
+            } catch (_: Exception) {
+                try {
+                    val intent = android.content.Intent(android.provider.Settings.ACTION_SETTINGS)
+                    context.startActivity(intent)
+                } catch (_: Exception) {
+                    showToast("无法打开系统电池优化设置")
+                }
+            }
         }
     }
 
