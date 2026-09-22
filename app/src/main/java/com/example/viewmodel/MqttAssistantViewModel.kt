@@ -323,13 +323,11 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                     if (lastPacket != null) {
                         val host = serverConfig.value.host
                         val brokerLabel = if (host.isNotBlank()) "${host}:${serverConfig.value.port}" else ""
-                        val timeStr = lastPacket.timestamp.substringBefore('.')
                         MqttBackgroundService.updateNotification(
                             context = getApplication(),
                             brokerHost = brokerLabel,
                             count = packetSeqCounter.get(),
-                            latestTopic = lastPacket.topic,
-                            timeFormatted = timeStr
+                            latestTopic = lastPacket.topic
                         )
                     }
                 }
