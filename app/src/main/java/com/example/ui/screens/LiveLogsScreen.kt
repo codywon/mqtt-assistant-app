@@ -551,8 +551,6 @@ private fun CompactMessageCard(
                     verticalAlignment = Alignment.Top,
                     modifier = Modifier
                         .weight(1f)
-                        .clip(RoundedCornerShape(4.dp))
-                        .clickable(onClick = { onCopyTopic(packet.topic) })
                         .padding(end = 8.dp)
                 ) {
                     Box(
