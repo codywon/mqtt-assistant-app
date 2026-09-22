@@ -118,7 +118,6 @@ fun LiveLogsScreen(
     val packets by viewModel.livePackets.collectAsState()
     val filterQuery by viewModel.logFilterQuery.collectAsState()
     val isPaused by viewModel.isRecordingPaused.collectAsState()
-    val isJsonPretty by viewModel.isJsonPrettyFormat.collectAsState()
     val includeFilters by viewModel.includeTopicFilters.collectAsState()
     val excludeFilters by viewModel.excludeTopicFilters.collectAsState()
 
@@ -302,32 +301,7 @@ fun LiveLogsScreen(
                         }
                     }
 
-                    // 2. JSON 格式化纯净轻量开关 - 无厚重灰底积木
-                    Box(
-                        modifier = Modifier
-                            .height(28.dp)
-                            .clip(RoundedCornerShape(6.dp))
-                            .border(
-                                width = if (isJsonPretty) 1.dp else 0.5.dp,
-                                color = if (isJsonPretty) PrimaryBlack else SurfaceContainerDefault,
-                                shape = RoundedCornerShape(6.dp)
-                            )
-                            .clickable { viewModel.toggleJsonPretty() }
-                            .padding(horizontal = 7.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "JSON",
-                            style = TextStyle(
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 11.5.sp,
-                                fontWeight = if (isJsonPretty) FontWeight.Bold else FontWeight.Medium,
-                                color = if (isJsonPretty) PrimaryBlack else OnSurfaceVariantGray
-                            )
-                        )
-                    }
-
-                    // 3. 暂停 / 恢复 自动向下滚动 - 纯净图标，无灰底方块
+                    // 2. 暂停 / 恢复 自动向下滚动 - 纯净图标，无灰底方块
                     IconButton(
                         onClick = {
                             val wasPaused = isPaused
@@ -353,7 +327,7 @@ fun LiveLogsScreen(
                         )
                     }
 
-                    // 4. 清空消息 - 纯净图标，无灰底方块
+                    // 3. 清空消息 - 纯净图标，无灰底方块
                     IconButton(
                         onClick = { viewModel.clearLogStream() },
                         modifier = Modifier
@@ -365,40 +339,6 @@ fun LiveLogsScreen(
                             contentDescription = "清空报文",
                             tint = OnSurfaceVariantGray,
                             modifier = Modifier.size(18.dp)
-                        )
-                    }
-                }
-
-                // 计数与状态指示微信息
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    val statusText = when {
-                        isPaused -> "⏸ 自动滚动已暂停 (${filteredPackets.size} 条 · 可自由浏览)"
-                        !autoScrollToBottom -> "↑ 正在翻看历史 (${filteredPackets.size} 条 · 已停吸底)"
-                        else -> "● 自动吸附最新 (${filteredPackets.size} 条)"
-                    }
-                    val statusColor = when {
-                        isPaused -> Color(0xFFD97706)
-                        !autoScrollToBottom -> PrimaryBlack
-                        else -> AccentEmerald
-                    }
-                    Text(
-                        text = statusText,
-                        style = TextStyle(
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = statusColor
-                        )
-                    )
-                    if (totalFilterRules > 0) {
-                        Text(
-                            text = "过滤已生效 (${totalFilterRules}条规则)",
-                            style = TextStyle(fontSize = 10.5.sp, color = OnSurfaceVariantGray),
-                            modifier = Modifier.clickable { isTopicFilterDialogVisible = true }
                         )
                     }
                 }
@@ -437,7 +377,6 @@ fun LiveLogsScreen(
                     items(filteredPackets, key = { it.id }) { packet ->
                         CompactMessageCard(
                             packet = packet,
-                            isJsonPretty = isJsonPretty,
                             onCardClick = onSelectPacket,
                             onCopyTopic = onCopyTopicText,
                             onCopyPayload = onCopyPayloadText
@@ -474,11 +413,10 @@ fun LiveLogsScreen(
         }
     }
 
-    // 3. 报文详情弹窗 (MessageDetailsModalDialog: 解决“详情打不开”问题)
+    // 3. 报文详情弹窗 (MessageDetailsModalDialog)
     selectedDetailsPacket?.let { packet ->
         MessageDetailsModalDialog(
             packet = packet,
-            isJsonPretty = isJsonPretty,
             onDismiss = { selectedDetailsPacket = null },
             onCopyTopic = {
                 clipboardManager.setPrimaryClip(ClipData.newPlainText("topic", packet.topic))
@@ -531,7 +469,6 @@ fun LiveLogsScreen(
 @Composable
 private fun CompactMessageCard(
     packet: MqttLogPacket,
-    isJsonPretty: Boolean,
     onCardClick: (MqttLogPacket) -> Unit,
     onCopyTopic: (String) -> Unit,
     onCopyPayload: (String) -> Unit
@@ -547,8 +484,8 @@ private fun CompactMessageCard(
             .testTag("log_packet_${packet.id}")
     ) {
         Column(
-            modifier = Modifier.padding(10.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(5.dp)
         ) {
             // Row 1: Colored Dot + Topic (支持多行完整换行，点击直接复制主题) + Copy Payload Button
             Row(
@@ -681,30 +618,44 @@ private fun CompactMessageCard(
                 )
             }
 
-            // Row 3: VS Code / GitHub 风格的 JSON 语法高亮代码块 (卡片内最多预览 5 行，点击卡片可看全)
-            JsonCodeBlockView(
-                rawText = packet.payload,
-                isJsonPretty = isJsonPretty,
-                showLineNumbers = isJsonPretty,
-                maxLines = 5,
-                modifier = Modifier.fillMaxWidth()
-            )
+            // Row 3: 紧凑原始载荷预览 (默认不换行展开格式化，极小省空间，轻触卡片查看多行格式化与全貌)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(SurfaceContainerLow.copy(alpha = 0.5f))
+                    .border(0.5.dp, SurfaceContainerDefault, RoundedCornerShape(6.dp))
+                    .padding(horizontal = 8.dp, vertical = 5.dp)
+            ) {
+                Text(
+                    text = packet.payload.ifBlank { "（空载荷）" }.replace("\n", " ").trim(),
+                    style = TextStyle(
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp,
+                        color = if (packet.payload.isBlank()) OutlineGray else PrimaryBlack
+                    ),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         }
     }
 }
 
 /**
- * 全功能报文详情弹窗 (真正打开详情，展示完整报文属性与操作)
+ * 全功能报文详情弹窗 (真正打开详情，默认展示完整格式化 JSON 与语法高亮，并提供快捷格式化开关与复制)
  */
 @Composable
 private fun MessageDetailsModalDialog(
     packet: MqttLogPacket,
-    isJsonPretty: Boolean,
     onDismiss: () -> Unit,
     onCopyTopic: () -> Unit,
     onCopyPayload: () -> Unit,
     onLoadIntoPublish: () -> Unit
 ) {
+    // 弹窗内部默认开启 JSON 格式化排版高亮，支持一键切换原始文本
+    var isFormatPretty by remember { mutableStateOf(true) }
     val maxDialogHeight = (LocalConfiguration.current.screenHeightDp * 0.85f).dp
     Dialog(
         onDismissRequest = onDismiss,
@@ -805,7 +756,7 @@ private fun MessageDetailsModalDialog(
                         )
                     }
 
-                    // Message Payload Header with 复制消息 button
+                    // Message Payload Header with JSON 格式化开关 & 复制消息 buttons (格式化开关挪到这里，并列于复制消息旁边)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -819,23 +770,58 @@ private fun MessageDetailsModalDialog(
                                 color = PrimaryBlack
                             )
                         )
-                        TextButton(onClick = onCopyPayload) {
-                            Icon(
-                                imageVector = Icons.Default.ContentCopy,
-                                contentDescription = null,
-                                tint = PrimaryBlack,
-                                modifier = Modifier.size(14.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("复制消息", fontSize = 12.sp, color = PrimaryBlack, fontWeight = FontWeight.Bold)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            // JSON 格式化工具 (默认开启，轻触切换)
+                            Box(
+                                modifier = Modifier
+                                    .height(28.dp)
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(if (isFormatPretty) SurfaceContainerLow else Color.Transparent)
+                                    .border(
+                                        width = 0.8.dp,
+                                        color = if (isFormatPretty) PrimaryBlack else OutlineVariantLight,
+                                        shape = RoundedCornerShape(6.dp)
+                                    )
+                                    .clickable { isFormatPretty = !isFormatPretty }
+                                    .padding(horizontal = 8.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = if (isFormatPretty) "JSON 格式化 · 开" else "JSON 格式化 · 关",
+                                    style = TextStyle(
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 11.sp,
+                                        fontWeight = if (isFormatPretty) FontWeight.Bold else FontWeight.Medium,
+                                        color = if (isFormatPretty) PrimaryBlack else OnSurfaceVariantGray
+                                    )
+                                )
+                            }
+
+                            TextButton(
+                                onClick = onCopyPayload,
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                                modifier = Modifier.height(28.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.ContentCopy,
+                                    contentDescription = null,
+                                    tint = PrimaryBlack,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text("复制消息", fontSize = 11.5.sp, color = PrimaryBlack, fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
 
                     // Full VS Code / GitHub JSON Highlighter View
                     JsonCodeBlockView(
                         rawText = packet.payload,
-                        isJsonPretty = isJsonPretty,
-                        showLineNumbers = true,
+                        isJsonPretty = isFormatPretty,
+                        showLineNumbers = isFormatPretty,
                         maxLines = Int.MAX_VALUE,
                         modifier = Modifier.fillMaxWidth()
                     )

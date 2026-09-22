@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.CopyAll
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Search
@@ -243,6 +244,19 @@ fun PublishScreen(
                         isCreatingNew = false
                         activeDialogPreset = preset
                     },
+                    onDuplicate = {
+                        isCreatingNew = true
+                        val dupName = if (preset.name.isNotBlank()) {
+                            "${preset.name} (副本)"
+                        } else {
+                            "${preset.topic.substringAfterLast('/')} (副本)"
+                        }
+                        activeDialogPreset = preset.copy(
+                            id = UUID.randomUUID().toString(),
+                            name = dupName
+                        )
+                        viewModel.showToast("已复刻配置，可直接在此基础上修改")
+                    },
                     onCopy = {
                         clipboardManager.setPrimaryClip(ClipData.newPlainText("MQTT Payload", preset.payload))
                         viewModel.showToast("已复制载荷内容")
@@ -282,6 +296,7 @@ private fun PublishPresetCard(
     preset: PublishPreset,
     onDirectSend: () -> Unit,
     onEdit: () -> Unit,
+    onDuplicate: () -> Unit,
     onCopy: () -> Unit,
     onDelete: () -> Unit
 ) {
@@ -440,6 +455,18 @@ private fun PublishPresetCard(
                         Icon(
                             imageVector = Icons.Default.ContentCopy,
                             contentDescription = "复制载荷",
+                            tint = OnSurfaceVariantGray,
+                            modifier = Modifier.size(15.dp)
+                        )
+                    }
+
+                    IconButton(
+                        onClick = onDuplicate,
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CopyAll,
+                            contentDescription = "复刻配置",
                             tint = OnSurfaceVariantGray,
                             modifier = Modifier.size(15.dp)
                         )
@@ -850,6 +877,35 @@ private fun PublishConfigModalDialog(
                             )
                             Spacer(modifier = Modifier.width(3.dp))
                             Text("删除", fontSize = 12.sp)
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                val duplicated = initialPreset.copy(
+                                    id = UUID.randomUUID().toString(),
+                                    name = if (name.isNotBlank()) "$name (副本)" else "${topic.substringAfterLast('/')} (副本)",
+                                    topic = topic.trim(),
+                                    qos = qos,
+                                    retain = retain,
+                                    payload = payload
+                                )
+                                onSave(duplicated)
+                            },
+                            enabled = topic.isNotBlank() && (validation?.isValid != false),
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(0.8.dp, OutlineVariantLight),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = PrimaryBlack),
+                            modifier = Modifier.height(36.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CopyAll,
+                                contentDescription = null,
+                                modifier = Modifier.size(13.dp),
+                                tint = PrimaryBlack
+                            )
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text("复刻另存", fontSize = 11.5.sp, color = PrimaryBlack, fontWeight = FontWeight.SemiBold)
                         }
                     } else {
                         OutlinedButton(

@@ -929,23 +929,6 @@ fun SettingsScreen(
                             )
                         )
                     }
-
-                    // JSON Tag
-                    Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = SurfaceContainerLow
-                    ) {
-                        Text(
-                            text = "JSON 格式",
-                            style = TextStyle(
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = OnSurfaceVariantGray
-                            ),
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                        )
-                    }
                 }
 
                 Text(
