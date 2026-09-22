@@ -46,6 +46,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicLong
 
 class MqttAssistantViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -1382,6 +1383,10 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
             )
         }
         showToast("本地历史报文已清空，存储空间已物理收缩")
+    }
+
+    fun clearAllData() {
+        clearPacketLogs()
     }
 
     val isExporting = MutableStateFlow(false)
