@@ -351,16 +351,17 @@ private fun SubscriptionItemCard(
             containerColor = if (item.isEnabled) SurfaceContainerLowest else SurfaceContainerLowest.copy(alpha = 0.7f)
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        border = BorderStroke(0.8.dp, OutlineVariantLight.copy(alpha = 0.7f)),
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onCardClick)
             .testTag("sub_item_${item.id}")
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // Row 1: Colored status dot + Topic Name + Badges + Switch
+            // Row 1: Colored status dot + Title (Remark name if available, otherwise Topic) + Switch
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -378,20 +379,79 @@ private fun SubscriptionItemCard(
                             .background(if (item.isEnabled) Color(item.dotColorHex) else OutlineVariantLight)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = item.topic,
-                        style = TextStyle(
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.5.sp,
-                            color = if (item.isEnabled) PrimaryBlack else OnSurfaceVariantGray
-                        ),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false)
+
+                    if (item.name.isNotBlank()) {
+                        Text(
+                            text = item.name,
+                            style = TextStyle(
+                                fontSize = 14.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (item.isEnabled) PrimaryBlack else OnSurfaceVariantGray
+                            ),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    } else {
+                        Text(
+                            text = item.topic,
+                            style = TextStyle(
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.5.sp,
+                                lineHeight = 18.sp,
+                                color = if (item.isEnabled) PrimaryBlack else OnSurfaceVariantGray
+                            ),
+                            softWrap = true
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(6.dp))
+
+                // Switch
+                Switch(
+                    checked = item.isEnabled,
+                    onCheckedChange = { onToggle() },
+                    modifier = Modifier
+                        .scale(0.82f)
+                        .testTag("sub_toggle_${item.id}"),
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = SurfaceContainerLowest,
+                        checkedTrackColor = PrimaryBlack,
+                        uncheckedThumbColor = SurfaceContainerLowest,
+                        uncheckedTrackColor = SurfaceContainerLow
                     )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    // QoS Badge (Monochrome)
+                )
+            }
+
+            // Row 2: Full topic (Auto-wrap monospace) when Remark Name is present
+            if (item.name.isNotBlank()) {
+                Text(
+                    text = item.topic,
+                    style = TextStyle(
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.5.sp,
+                        fontWeight = FontWeight.Medium,
+                        lineHeight = 17.sp,
+                        color = if (item.isEnabled) OnSurfaceDark else OutlineGray
+                    ),
+                    softWrap = true
+                )
+            }
+
+            // Row 3 (Bottom): Left area: QoS + Retain + Message Count; Right area: Action buttons
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Bottom left: QoS badge, Retain Handling, and message metrics
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                    modifier = Modifier.weight(1f, fill = false)
+                ) {
+                    // QoS Badge (User rule: QoS 0 placed in bottom-left before message metrics)
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(4.dp))
@@ -413,7 +473,6 @@ private fun SubscriptionItemCard(
 
                     // Retain Handling badge
                     if (item.retainHandling > 0) {
-                        Spacer(modifier = Modifier.width(4.dp))
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(4.dp))
@@ -433,54 +492,9 @@ private fun SubscriptionItemCard(
                             )
                         }
                     }
-                }
 
-                // Switch
-                Switch(
-                    checked = item.isEnabled,
-                    onCheckedChange = { onToggle() },
-                    modifier = Modifier
-                        .scale(0.82f)
-                        .testTag("sub_toggle_${item.id}"),
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = SurfaceContainerLowest,
-                        checkedTrackColor = PrimaryBlack,
-                        uncheckedThumbColor = SurfaceContainerLowest,
-                        uncheckedTrackColor = SurfaceContainerLow
-                    )
-                )
-            }
-
-            // Row 2 (Bottom): Alias name (left) + Metrics + Actions (right)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Bottom left: Alias (if set) and message metrics
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier.weight(1f, fill = false)
-                ) {
-                    if (item.name.isNotBlank()) {
-                        Text(
-                            text = item.name,
-                            style = TextStyle(
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = PrimaryBlack
-                            ),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Text(
-                            text = "·",
-                            style = TextStyle(fontSize = 12.sp, color = OutlineGray)
-                        )
-                    }
                     Text(
-                        text = if (item.isEnabled) "${item.msgCount} 报文" else "已暂停",
+                        text = "· ${if (item.isEnabled) "${item.msgCount} 报文" else "已暂停"}",
                         style = TextStyle(
                             fontFamily = FontFamily.Monospace,
                             fontSize = 11.5.sp,
@@ -490,9 +504,9 @@ private fun SubscriptionItemCard(
                     )
                 }
 
-                // Bottom right: Compact action buttons (纯净无闪电，只有复制/编辑/删除)
+                // Bottom right: Compact action buttons (复制、编辑、删除)
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(

@@ -305,43 +305,88 @@ private fun PublishPresetCard(
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = SurfaceContainerLowest),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        border = BorderStroke(0.8.dp, OutlineVariantLight.copy(alpha = 0.7f)),
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onEdit() }
             .testTag("preset_card_${preset.id}")
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // Row 1: Topic + QoS & Retain Badges
+            // Part 1: Remark Name (Header) & Topic (Auto-wrap monospace)
+            if (preset.name.isNotBlank()) {
+                Text(
+                    text = preset.name,
+                    style = TextStyle(
+                        fontSize = 14.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = PrimaryBlack
+                    ),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = preset.topic,
+                    style = TextStyle(
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.5.sp,
+                        fontWeight = FontWeight.Medium,
+                        lineHeight = 17.sp,
+                        color = OnSurfaceDark
+                    ),
+                    softWrap = true
+                )
+            } else {
+                Text(
+                    text = preset.topic,
+                    style = TextStyle(
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 13.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        lineHeight = 18.sp,
+                        color = PrimaryBlack
+                    ),
+                    softWrap = true
+                )
+            }
+
+            // Part 2: Payload Preview (Clean, rounded light box, click to copy)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(SurfaceContainerLow.copy(alpha = 0.5f))
+                    .clickable { onCopy() }
+                    .padding(horizontal = 10.dp, vertical = 6.dp)
+            ) {
+                Text(
+                    text = preset.payload.ifBlank { "（无载荷内容）" }.replace("\n", " ").trim(),
+                    style = TextStyle(
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Normal,
+                        lineHeight = 17.sp,
+                        color = if (preset.payload.isBlank()) OutlineGray else PrimaryBlack
+                    ),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            // Part 3: Bottom Row - Left: QoS + Retain + Character count; Right: Action icons + Send button
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
+                // Left area: QoS, Retain, Characters
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
                     modifier = Modifier.weight(1f, fill = false)
-                ) {
-                    Text(
-                        text = preset.topic,
-                        style = TextStyle(
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 13.5.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = PrimaryBlack
-                        ),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(6.dp))
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     Box(
                         modifier = Modifier
@@ -377,64 +422,9 @@ private fun PublishPresetCard(
                             )
                         }
                     }
-                }
-            }
 
-            // Row 2: Payload Preview (Clean, minimalist ChatGPT-inspired typography, no heavy gray box)
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onCopy() }
-                    .padding(vertical = 4.dp)
-            ) {
-                Text(
-                    text = preset.payload.ifBlank { "（无载荷内容）" }.replace("\n", " ").trim(),
-                    style = TextStyle(
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 13.5.sp,
-                        fontWeight = FontWeight.Normal,
-                        lineHeight = 19.sp,
-                        color = if (preset.payload.isBlank()) OutlineGray else PrimaryBlack
-                    ),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-
-            // Row 3: Remark (left) & Actions (right) - Perfectly spaced, no squishing
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                // Left: Remark badge or length counter
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier.weight(1f, fill = false)
-                ) {
-                    if (preset.name.isNotBlank()) {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(SurfaceContainerLow)
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
-                        ) {
-                            Text(
-                                text = preset.name,
-                                style = TextStyle(
-                                    fontSize = 11.5.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = PrimaryBlack
-                                ),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    }
                     Text(
-                        text = "${preset.payload.length} 字符",
+                        text = "· ${preset.payload.length} 字符",
                         style = TextStyle(
                             fontFamily = FontFamily.Monospace,
                             fontSize = 11.sp,
@@ -444,10 +434,10 @@ private fun PublishPresetCard(
                     )
                 }
 
-                // Right: Compact icon buttons + solid send button with white text
+                // Right area: Action buttons (Copy, Duplicate, Edit, Delete, Send)
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    horizontalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
                     IconButton(
                         onClick = onCopy,
@@ -497,11 +487,11 @@ private fun PublishPresetCard(
                         )
                     }
 
-                    Spacer(modifier = Modifier.width(2.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
 
                     Button(
                         onClick = onDirectSend,
-                        shape = RoundedCornerShape(8.dp),
+                        shape = RoundedCornerShape(6.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = PrimaryBlack,
                             contentColor = OnPrimaryWhite
@@ -517,7 +507,7 @@ private fun PublishPresetCard(
                             tint = Color.White,
                             modifier = Modifier.size(11.dp)
                         )
-                        Spacer(modifier = Modifier.width(3.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
                         Text(
                             text = "发送",
                             style = TextStyle(
@@ -525,7 +515,8 @@ private fun PublishPresetCard(
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White
                             ),
-                            maxLines = 1
+                            maxLines = 1,
+                            softWrap = false
                         )
                     }
                 }
@@ -862,17 +853,20 @@ private fun PublishConfigModalDialog(
                 }
 
                 // Action Buttons
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    if (!isNew) {
+                if (!isNew) {
+                    // Row 1: Auxiliary Actions (Delete & Duplicate)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 2.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         TextButton(
                             onClick = onDelete,
-                            colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFDC2626))
+                            colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFDC2626)),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+                            modifier = Modifier.height(32.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Delete,
@@ -880,7 +874,7 @@ private fun PublishConfigModalDialog(
                                 modifier = Modifier.size(15.dp)
                             )
                             Spacer(modifier = Modifier.width(3.dp))
-                            Text("删除", fontSize = 12.sp)
+                            Text("删除此配置", fontSize = 12.sp, fontWeight = FontWeight.Medium)
                         }
 
                         OutlinedButton(
@@ -899,8 +893,8 @@ private fun PublishConfigModalDialog(
                             shape = RoundedCornerShape(8.dp),
                             border = BorderStroke(0.8.dp, OutlineVariantLight),
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = PrimaryBlack),
-                            modifier = Modifier.height(36.dp),
-                            contentPadding = PaddingValues(horizontal = 8.dp)
+                            modifier = Modifier.height(32.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.CopyAll,
@@ -909,19 +903,38 @@ private fun PublishConfigModalDialog(
                                 tint = PrimaryBlack
                             )
                             Spacer(modifier = Modifier.width(3.dp))
-                            Text("复刻另存", fontSize = 11.5.sp, color = PrimaryBlack, fontWeight = FontWeight.SemiBold)
+                            Text("另存为新配置", fontSize = 12.sp, color = PrimaryBlack, fontWeight = FontWeight.SemiBold)
                         }
-                    } else {
-                        OutlinedButton(
-                            onClick = onDismiss,
-                            shape = RoundedCornerShape(8.dp),
-                            border = BorderStroke(0.8.dp, OutlineVariantLight),
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(36.dp)
-                        ) {
-                            Text("取消", style = TextStyle(fontSize = 12.sp, color = OnSurfaceVariantGray))
-                        }
+                    }
+                }
+
+                // Row 2: Core Actions (Cancel, Save, Send)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = if (!isNew) 4.dp else 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedButton(
+                        onClick = onDismiss,
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(0.8.dp, OutlineVariantLight),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(38.dp),
+                        contentPadding = PaddingValues(horizontal = 4.dp)
+                    ) {
+                        Text(
+                            text = "取消",
+                            style = TextStyle(
+                                fontSize = 12.5.sp,
+                                color = OnSurfaceVariantGray,
+                                fontWeight = FontWeight.Medium
+                            ),
+                            maxLines = 1,
+                            softWrap = false
+                        )
                     }
 
                     Button(
@@ -944,10 +957,16 @@ private fun PublishConfigModalDialog(
                             disabledContentColor = OutlineGray
                         ),
                         modifier = Modifier
-                            .weight(1.2f)
-                            .height(36.dp)
+                            .weight(1.3f)
+                            .height(38.dp),
+                        contentPadding = PaddingValues(horizontal = 4.dp)
                     ) {
-                        Text("保存配置", style = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Bold))
+                        Text(
+                            text = "保存配置",
+                            style = TextStyle(fontSize = 12.5.sp, fontWeight = FontWeight.Bold),
+                            maxLines = 1,
+                            softWrap = false
+                        )
                     }
 
                     Button(
@@ -971,7 +990,8 @@ private fun PublishConfigModalDialog(
                         ),
                         modifier = Modifier
                             .weight(1.4f)
-                            .height(36.dp)
+                            .height(38.dp),
+                        contentPadding = PaddingValues(horizontal = 4.dp)
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.Send,
@@ -983,7 +1003,7 @@ private fun PublishConfigModalDialog(
                         Text(
                             text = "一键发送",
                             style = TextStyle(
-                                fontSize = 12.sp,
+                                fontSize = 12.5.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = if (topic.isNotBlank() && (validation?.isValid != false)) OnPrimaryWhite else OutlineGray
                             ),
