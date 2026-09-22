@@ -269,6 +269,7 @@ fun SubscribeScreen(
 
     // Confirmation Dialog for Safe Deletion (Prevents accidental deletion)
     itemToDelete?.let { target ->
+        val displayName = if (target.name.isNotBlank()) "${target.name} (${target.topic})" else target.topic
         AlertDialog(
             onDismissRequest = { itemToDelete = null },
             shape = RoundedCornerShape(16.dp),
@@ -285,7 +286,7 @@ fun SubscribeScreen(
             },
             text = {
                 Text(
-                    text = "确定要删除订阅「${target.topic}」吗？删除后将停止接收该主题的报文推送并移除相关统计。",
+                    text = "确定要删除订阅「$displayName」吗？删除后将停止接收该主题的报文推送并移除相关统计。",
                     style = TextStyle(
                         fontSize = 13.5.sp,
                         lineHeight = 20.sp,
@@ -298,7 +299,6 @@ fun SubscribeScreen(
                     onClick = {
                         viewModel.removeSubscription(target.id)
                         itemToDelete = null
-                        viewModel.showToast("已删除订阅: ${target.topic}")
                     },
                     shape = RoundedCornerShape(8.dp),
                     colors = ButtonDefaults.buttonColors(
@@ -330,8 +330,13 @@ fun SubscribeScreen(
                 isDialogVisible = false
             },
             onDelete = { itemId ->
-                viewModel.removeSubscription(itemId)
+                val target = editingItem
                 isDialogVisible = false
+                if (target != null) {
+                    itemToDelete = target
+                } else {
+                    viewModel.removeSubscription(itemId)
+                }
             }
         )
     }

@@ -39,25 +39,60 @@ object ExcelExportHelper {
     private val DATE_FORMAT = SimpleDateFormat("yyyy-M-d HH:mm:ss", Locale.getDefault())
     private val FILE_DATE_FORMAT = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault())
 
+    // 纯功能/动作/状态关键词（不属于设备自身唯一标识）
+    private val ACTION_KEYWORDS = setOf(
+        "status", "state", "data", "telemetry", "event", "events",
+        "up", "down", "post", "set", "get", "response", "reply",
+        "ack", "req", "request", "cmd", "command", "config", "info",
+        "online", "offline", "ping", "pong", "control", "notify",
+        "update", "upload", "download", "push", "message", "msg",
+        "heartbeat", "alarm", "report", "property", "service", "shadow"
+    )
+
+    // 前缀引导关键词（后面紧邻的一段通常是具体的设备ID）
+    private val PREFIX_KEYWORDS = setOf(
+        "gateway", "gateways", "gw", "device", "devices", "dev",
+        "client", "clients", "node", "nodes", "sensor", "sensors",
+        "meter", "meters", "tracker", "terminal", "station"
+    )
+
     /**
      * 智能提取设备 ID：
-     * 1. 优先解析 Payload JSON 中的核心标识键 (deviceId, device_id, clientId 等)；
-     * 2. 次选解析 MQTT Topic 路径分段 (如 .../devices/{id}/...)；
-     * 3. 兜底使用当前配置的 Client ID。
+     * 1. 优先解析 Payload JSON 中的核心标识键 (deviceId, gatewayId, imei, sn, mac 等)，支持一级嵌套 (data/params)；
+     * 2. 核心物联网规则：优先识别 Topic 最后一层级为设备ID（支持任意格式，如 GW3CDC756EC914、IMEI、UUID 等，非纯动作词时直接命中）；
+     * 3. 前缀引导规则：匹配 gateway/{id}/...、device/{id}/... 等经典架构；
+     * 4. 倒数层级反查：当末尾为 status/data 等动作词时，自动向前捕获倒数第二层的真实设备ID；
+     * 5. 杜绝误用当前手机 APP 的 client ID 污染远程设备消息，无标识时返回 "-"。
      */
-    fun extractDeviceId(payload: String, topic: String, defaultClientId: String): String {
+    fun extractDeviceId(payload: String, topic: String, defaultClientId: String = ""): String {
+        // 1. 优先从 Payload JSON 中提取
         try {
             val trimmed = payload.trim()
             if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
                 val json = JSONObject(trimmed)
                 val candidateKeys = listOf(
                     "deviceId", "device_id", "devId", "dev_id",
-                    "clientId", "client_id", "sn", "mac", "id"
+                    "gatewayId", "gateway_id", "gwId", "gw_id",
+                    "imei", "sn", "mac", "nodeId", "node_id",
+                    "clientId", "client_id", "id"
                 )
                 for (key in candidateKeys) {
                     if (json.has(key)) {
-                        val value = json.optString(key, "")
-                        if (value.isNotBlank()) return value
+                        val value = json.optString(key, "").trim()
+                        if (value.isNotBlank() && value != "null") return value
+                    }
+                }
+                for (subObjKey in listOf("data", "params", "body", "payload")) {
+                    if (json.has(subObjKey)) {
+                        val subObj = json.optJSONObject(subObjKey)
+                        if (subObj != null) {
+                            for (key in candidateKeys) {
+                                if (subObj.has(key)) {
+                                    val value = subObj.optString(key, "").trim()
+                                    if (value.isNotBlank() && value != "null") return value
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -65,19 +100,44 @@ object ExcelExportHelper {
             // Non-JSON payload, fall through
         }
 
-        val segments = topic.split('/')
-        for (i in segments.indices) {
-            val seg = segments[i].lowercase(Locale.ROOT)
-            if ((seg == "devices" || seg == "device" || seg == "dev" || seg == "client") && i + 1 < segments.size) {
-                val next = segments[i + 1]
-                if (next.isNotBlank() && !next.startsWith("+") && !next.startsWith("#")) {
-                    return next
+        // 2. 从 Topic 路径层级中智能提取
+        val segments = topic.split('/').map { it.trim() }.filter { it.isNotEmpty() }
+        if (segments.isNotEmpty()) {
+            val last = segments.last()
+            val lastLower = last.lowercase(Locale.ROOT)
+
+            // 规则 2.1：用户核心规范 —— 设备ID位于主题最后一层级 (如 smartdorm/gateway/status/GW3CDC756EC914)
+            if (!last.startsWith("+") && !last.startsWith("#") && !ACTION_KEYWORDS.contains(lastLower)) {
+                return last
+            }
+
+            // 规则 2.2：前缀引导匹配 (如 .../gateway/GW3CDC756EC914/status 或 .../device/861921072291039/data)
+            for (i in segments.indices) {
+                val segLower = segments[i].lowercase(Locale.ROOT)
+                if (PREFIX_KEYWORDS.contains(segLower) && i + 1 < segments.size) {
+                    val next = segments[i + 1]
+                    val nextLower = next.lowercase(Locale.ROOT)
+                    if (!next.startsWith("+") && !next.startsWith("#") && !ACTION_KEYWORDS.contains(nextLower)) {
+                        return next
+                    }
                 }
             }
-        }
 
-        if (defaultClientId.isNotBlank()) {
-            return defaultClientId
+            // 规则 2.3：当最后一级是动作功能词 (如 status/data/event)，倒数第二级通常即为真实设备ID (如 smartdorm/GW3CDC756EC914/status)
+            if (segments.size >= 2) {
+                val secondLast = segments[segments.size - 2]
+                val secondLastLower = secondLast.lowercase(Locale.ROOT)
+                if (!secondLast.startsWith("+") && !secondLast.startsWith("#") &&
+                    !ACTION_KEYWORDS.contains(secondLastLower) && !PREFIX_KEYWORDS.contains(secondLastLower)
+                ) {
+                    return secondLast
+                }
+            }
+
+            // 规则 2.4：若末尾即使为功能词但路径简短无法向前提取，且非通配符，返回末段
+            if (!last.startsWith("+") && !last.startsWith("#")) {
+                return last
+            }
         }
 
         return "-"

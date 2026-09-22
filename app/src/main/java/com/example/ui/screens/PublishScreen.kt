@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.CopyAll
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -100,6 +101,7 @@ fun PublishScreen(
 
     var activeDialogPreset by remember { mutableStateOf<PublishPreset?>(null) }
     var isCreatingNew by remember { mutableStateOf(false) }
+    var presetToDelete by remember { mutableStateOf<PublishPreset?>(null) }
 
     val context = LocalContext.current
     val clipboardManager = remember {
@@ -245,29 +247,67 @@ fun PublishScreen(
                         isCreatingNew = false
                         activeDialogPreset = preset
                     },
-                    onDuplicate = {
-                        isCreatingNew = true
-                        val dupName = if (preset.name.isNotBlank()) {
-                            "${preset.name} (副本)"
-                        } else {
-                            "${preset.topic.substringAfterLast('/')} (副本)"
-                        }
-                        activeDialogPreset = preset.copy(
-                            id = UUID.randomUUID().toString(),
-                            name = dupName
-                        )
-                        viewModel.showToast("已复刻配置，可直接在此基础上修改")
-                    },
                     onCopy = {
                         clipboardManager.setPrimaryClip(ClipData.newPlainText("MQTT Payload", preset.payload))
                         viewModel.showToast("已复制载荷内容")
                     },
-                    onDelete = { viewModel.deletePreset(preset.id) }
+                    onDelete = { presetToDelete = preset }
                 )
             }
         }
+    }
 
-
+    // Confirmation Dialog for Safe Deletion (Prevents accidental deletion)
+    presetToDelete?.let { target ->
+        val displayName = target.name.ifBlank { target.topic }
+        AlertDialog(
+            onDismissRequest = { presetToDelete = null },
+            shape = RoundedCornerShape(16.dp),
+            containerColor = SurfaceContainerLowest,
+            title = {
+                Text(
+                    text = "确认删除发布配置？",
+                    style = TextStyle(
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = PrimaryBlack
+                    )
+                )
+            },
+            text = {
+                Text(
+                    text = "确定要删除发布配置「$displayName」吗？删除后配置不可恢复。",
+                    style = TextStyle(
+                        fontSize = 13.5.sp,
+                        lineHeight = 20.sp,
+                        color = OnSurfaceDark
+                    )
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.deletePreset(target.id)
+                        presetToDelete = null
+                    },
+                    shape = RoundedCornerShape(8.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = PrimaryBlack,
+                        contentColor = OnPrimaryWhite
+                    )
+                ) {
+                    Text("确认删除", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { presetToDelete = null },
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text("取消", color = OnSurfaceVariantGray)
+                }
+            }
+        )
     }
 
     // Modal Edit & Quick Send Dialog (Google / Claude / OpenAI Clean Aesthetics)
@@ -285,7 +325,7 @@ fun PublishScreen(
                 activeDialogPreset = null
             },
             onDelete = {
-                viewModel.deletePreset(preset.id)
+                presetToDelete = preset
                 activeDialogPreset = null
             }
         )
@@ -297,7 +337,6 @@ private fun PublishPresetCard(
     preset: PublishPreset,
     onDirectSend: () -> Unit,
     onEdit: () -> Unit,
-    onDuplicate: () -> Unit,
     onCopy: () -> Unit,
     onDelete: () -> Unit
 ) {
@@ -446,18 +485,6 @@ private fun PublishPresetCard(
                         Icon(
                             imageVector = Icons.Default.ContentCopy,
                             contentDescription = "复制载荷",
-                            tint = OnSurfaceVariantGray,
-                            modifier = Modifier.size(15.dp)
-                        )
-                    }
-
-                    IconButton(
-                        onClick = onDuplicate,
-                        modifier = Modifier.size(28.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.CopyAll,
-                            contentDescription = "复刻配置",
                             tint = OnSurfaceVariantGray,
                             modifier = Modifier.size(15.dp)
                         )

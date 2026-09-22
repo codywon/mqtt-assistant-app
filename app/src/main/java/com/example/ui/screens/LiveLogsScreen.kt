@@ -50,6 +50,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FloatingActionButton
@@ -124,6 +125,7 @@ fun LiveLogsScreen(
 
     var selectedDetailsPacket by remember { mutableStateOf<MqttLogPacket?>(null) }
     var isTopicFilterDialogVisible by remember { mutableStateOf(false) }
+    var showClearConfirmDialog by remember { mutableStateOf(false) }
     val totalFilterRules = includeFilters.size + excludeFilters.size
 
     val listState = rememberLazyListState()
@@ -330,9 +332,15 @@ fun LiveLogsScreen(
                         )
                     }
 
-                    // 3. 清空消息 - 纯净图标，无灰底方块
+                    // 3. 清空消息 - 纯净图标，无灰底方块 (点击触发防误触确认)
                     IconButton(
-                        onClick = { viewModel.clearLogStream() },
+                        onClick = {
+                            if (filteredPackets.isNotEmpty()) {
+                                showClearConfirmDialog = true
+                            } else {
+                                viewModel.showToast("当前暂无报文可清空")
+                            }
+                        },
                         modifier = Modifier
                             .size(36.dp)
                             .testTag("stream_clear_btn")
@@ -458,6 +466,58 @@ fun LiveLogsScreen(
             onRemoveExclude = { viewModel.removeExcludeTopicFilter(it) },
             onClearExcludes = { viewModel.clearExcludeTopicFilters() },
             onDismiss = { isTopicFilterDialogVisible = false }
+        )
+    }
+
+    // 5. 清空实时报文二次防误触确认弹窗
+    if (showClearConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showClearConfirmDialog = false },
+            shape = RoundedCornerShape(16.dp),
+            containerColor = SurfaceContainerLowest,
+            title = {
+                Text(
+                    text = "确认清空所有实时报文？",
+                    style = TextStyle(
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = PrimaryBlack
+                    )
+                )
+            },
+            text = {
+                Text(
+                    text = "确定要清空当前列表中的所有实时报文吗？（此操作仅清除当前显示的实时消息流，不影响底层 Broker 订阅与后台接收）",
+                    style = TextStyle(
+                        fontSize = 13.5.sp,
+                        lineHeight = 20.sp,
+                        color = OnSurfaceDark
+                    )
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.clearLogStream()
+                        showClearConfirmDialog = false
+                    },
+                    shape = RoundedCornerShape(8.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = PrimaryBlack,
+                        contentColor = OnPrimaryWhite
+                    )
+                ) {
+                    Text("确认清空", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showClearConfirmDialog = false },
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text("取消", color = OnSurfaceVariantGray)
+                }
+            }
         )
     }
 }
