@@ -132,7 +132,8 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                     bufferThreshold = storage.loadBufferThreshold(),
                     backgroundKeepAliveEnabled = storage.loadBackgroundKeepAlive(),
                     wakeLockEnabled = storage.loadWakeLock(),
-                    autoStartEnabled = storage.loadAutoStartEnabled()
+                    autoStartEnabled = storage.loadAutoStartEnabled(),
+                    processGuardEnabled = storage.loadProcessGuardEnabled()
                 )
             } else {
                 MqttServerConfig(
@@ -153,7 +154,8 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                     bufferThreshold = storage.loadBufferThreshold(),
                     backgroundKeepAliveEnabled = storage.loadBackgroundKeepAlive(),
                     wakeLockEnabled = storage.loadWakeLock(),
-                    autoStartEnabled = storage.loadAutoStartEnabled()
+                    autoStartEnabled = storage.loadAutoStartEnabled(),
+                    processGuardEnabled = storage.loadProcessGuardEnabled()
                 )
             }
         }
@@ -1291,10 +1293,21 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
         serverConfig.update { it.copy(autoStartEnabled = next) }
         storage.saveAutoStartEnabled(next)
         if (next) {
-            showToast("已开启开机自启动与进程守护")
+            showToast("已开启开机自启动")
             AutoStartUtil.openAutoStartSettings(context)
         } else {
-            showToast("已关闭开机自启动与进程守护")
+            showToast("已关闭开机自启动")
+        }
+    }
+
+    fun toggleProcessGuard() {
+        val next = !serverConfig.value.processGuardEnabled
+        serverConfig.update { it.copy(processGuardEnabled = next) }
+        storage.saveProcessGuardEnabled(next)
+        if (next) {
+            showToast("已开启进程守护 (防杀自愈恢复)")
+        } else {
+            showToast("已关闭进程守护")
         }
     }
 
@@ -1630,6 +1643,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 storage.saveBackgroundKeepAlive(backup.backgroundKeepAlive)
                 storage.saveWakeLock(backup.wakeLockEnabled)
                 storage.saveAutoStartEnabled(backup.autoStartEnabled)
+                storage.saveProcessGuardEnabled(backup.processGuardEnabled)
                 storage.saveIncludeTopicFilters(backup.includeFilters)
                 storage.saveExcludeTopicFilters(backup.excludeFilters)
                 includeTopicFilters.value = backup.includeFilters
@@ -1644,7 +1658,8 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                         bufferThreshold = backup.bufferThreshold,
                         backgroundKeepAliveEnabled = backup.backgroundKeepAlive,
                         wakeLockEnabled = backup.wakeLockEnabled,
-                        autoStartEnabled = backup.autoStartEnabled
+                        autoStartEnabled = backup.autoStartEnabled,
+                        processGuardEnabled = backup.processGuardEnabled
                     )
                 }
 

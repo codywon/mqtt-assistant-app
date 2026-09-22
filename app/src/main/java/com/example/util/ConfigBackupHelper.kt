@@ -30,6 +30,7 @@ data class BackupData(
     val backgroundKeepAlive: Boolean,
     val wakeLockEnabled: Boolean,
     val autoStartEnabled: Boolean = false,
+    val processGuardEnabled: Boolean = true,
     val includeFilters: List<String>,
     val excludeFilters: List<String>
 )
@@ -62,6 +63,7 @@ object ConfigBackupHelper {
             put("backgroundKeepAlive", serverConfig.backgroundKeepAliveEnabled)
             put("wakeLockEnabled", serverConfig.wakeLockEnabled)
             put("autoStartEnabled", serverConfig.autoStartEnabled)
+            put("processGuardEnabled", serverConfig.processGuardEnabled)
             val incArray = JSONArray()
             includeFilters.forEach { incArray.put(it) }
             put("includeFilters", incArray)
@@ -271,6 +273,7 @@ object ConfigBackupHelper {
             backgroundKeepAlive = backgroundKeepAlive,
             wakeLockEnabled = wakeLockEnabled,
             autoStartEnabled = if (root.has("globalSettings")) root.getJSONObject("globalSettings").optBoolean("autoStartEnabled", false) else false,
+            processGuardEnabled = if (root.has("globalSettings")) root.getJSONObject("globalSettings").optBoolean("processGuardEnabled", true) else true,
             includeFilters = includeFilters,
             excludeFilters = excludeFilters
         )

@@ -120,6 +120,7 @@ data class MqttServerConfig(
     val backgroundKeepAliveEnabled: Boolean = true,
     val wakeLockEnabled: Boolean = true,
     val autoStartEnabled: Boolean = false,
+    val processGuardEnabled: Boolean = true,
     val tlsEnabled: Boolean = false,
     val autoRotate: Boolean = true,
     val bufferThreshold: Int = 10000,

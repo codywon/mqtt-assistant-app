@@ -597,7 +597,7 @@ fun SettingsScreen(
                     )
                 }
 
-                // 4. Auto Start & Process Guard (微信级保活)
+                // 4. Auto-Start on Boot (开机自启动)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -609,7 +609,7 @@ fun SettingsScreen(
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Text(
-                                text = "开机自启动与进程守护",
+                                text = "开机自启动",
                                 style = MaterialTheme.typography.labelMedium.copy(
                                     fontWeight = FontWeight.SemiBold,
                                     color = PrimaryBlack
@@ -633,7 +633,7 @@ fun SettingsScreen(
                             }
                         }
                         Text(
-                            text = "监听开机与应用更新广播，配合前台服务实现随时拉起与息屏收发消息",
+                            text = "设备开机或重启后自动拉起保活服务，并恢复 MQTT 连接与监听",
                             style = MaterialTheme.typography.bodySmall.copy(
                                 fontSize = 12.sp,
                                 color = OnSurfaceVariantGray
@@ -652,7 +652,41 @@ fun SettingsScreen(
                     )
                 }
 
-                // 5. Ignore Battery Optimizations
+                // 5. Process Guard (进程守护，默认开启)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "进程守护 (Watchdog)",
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontWeight = FontWeight.SemiBold,
+                                color = PrimaryBlack
+                            )
+                        )
+                        Text(
+                            text = "默认开启。应用覆盖更新或异常强退时由系统自愈唤醒，保障持续收发",
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontSize = 12.sp,
+                                color = OnSurfaceVariantGray
+                            )
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Switch(
+                        checked = config.processGuardEnabled,
+                        onCheckedChange = { viewModel.toggleProcessGuard() },
+                        modifier = Modifier.testTag("settings_process_guard_switch"),
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = SurfaceContainerLowest,
+                            checkedTrackColor = PrimaryBlack
+                        )
+                    )
+                }
+
+                // 6. Ignore Battery Optimizations
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,

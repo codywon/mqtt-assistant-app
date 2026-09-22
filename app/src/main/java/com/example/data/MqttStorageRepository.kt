@@ -29,6 +29,7 @@ class MqttStorageRepository(context: Context) {
         private const val KEY_BG_KEEPALIVE = "key_background_keepalive_enabled"
         private const val KEY_WAKE_LOCK = "key_wake_lock_enabled"
         private const val KEY_AUTO_START = "key_auto_start_enabled"
+        private const val KEY_PROCESS_GUARD = "key_process_guard_enabled"
         private const val KEY_LEGACY_MIGRATED = "key_legacy_migrated_to_sqlite"
     }
 
@@ -234,6 +235,15 @@ class MqttStorageRepository(context: Context) {
 
     fun saveAutoStartEnabled(enabled: Boolean) {
         dbHelper.saveSetting(KEY_AUTO_START, enabled.toString())
+    }
+
+    fun loadProcessGuardEnabled(): Boolean {
+        val v = dbHelper.loadSetting(KEY_PROCESS_GUARD, "true")
+        return v.toBooleanStrictOrNull() ?: true
+    }
+
+    fun saveProcessGuardEnabled(enabled: Boolean) {
+        dbHelper.saveSetting(KEY_PROCESS_GUARD, enabled.toString())
     }
 
     fun loadAutoReconnect(): Boolean {

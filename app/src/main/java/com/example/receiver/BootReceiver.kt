@@ -24,30 +24,41 @@ class BootReceiver : BroadcastReceiver() {
         val action = intent?.action ?: return
         Log.d(TAG, "onReceive broadcast action: $action")
 
-        val validActions = setOf(
+        val bootActions = setOf(
             Intent.ACTION_BOOT_COMPLETED,
             "android.intent.action.QUICKBOOT_POWERON",
-            "com.htc.intent.action.QUICKBOOT_POWERON",
+            "com.htc.intent.action.QUICKBOOT_POWERON"
+        )
+        val guardActions = setOf(
             Intent.ACTION_MY_PACKAGE_REPLACED
         )
 
-        if (action in validActions) {
-            val storage = MqttStorageRepository(context.applicationContext)
-            val isAutoStartEnabled = storage.loadAutoStartEnabled()
-            Log.d(TAG, "isAutoStartEnabled: $isAutoStartEnabled")
+        val storage = MqttStorageRepository(context.applicationContext)
+        val shouldWakeUp = when {
+            action in bootActions -> {
+                val autoStart = storage.loadAutoStartEnabled()
+                Log.d(TAG, "Boot broadcast received. isAutoStartEnabled: $autoStart")
+                autoStart
+            }
+            action in guardActions -> {
+                val processGuard = storage.loadProcessGuardEnabled()
+                Log.d(TAG, "Guard/Replaced broadcast received. isProcessGuardEnabled: $processGuard")
+                processGuard
+            }
+            else -> false
+        }
 
-            if (isAutoStartEnabled) {
-                val profiles = storage.loadBrokerProfiles()
-                val activeId = storage.loadActiveBrokerId()
-                val activeBroker = profiles.find { it.id == activeId } ?: profiles.firstOrNull()
+        if (shouldWakeUp) {
+            val profiles = storage.loadBrokerProfiles()
+            val activeId = storage.loadActiveBrokerId()
+            val activeBroker = profiles.find { it.id == activeId } ?: profiles.firstOrNull()
 
-                if (activeBroker != null && activeBroker.host.isNotBlank()) {
-                    val brokerHost = "${activeBroker.host}:${activeBroker.port}"
-                    Log.i(TAG, "Auto-starting MqttBackgroundService on host: $brokerHost")
-                    MqttBackgroundService.startKeepAlive(context.applicationContext, brokerHost)
-                } else {
-                    Log.w(TAG, "Auto-start enabled but no valid broker profile configured.")
-                }
+            if (activeBroker != null && activeBroker.host.isNotBlank()) {
+                val brokerHost = "${activeBroker.host}:${activeBroker.port}"
+                Log.i(TAG, "Wake up triggered by action ($action), starting MqttBackgroundService on host: $brokerHost")
+                MqttBackgroundService.startKeepAlive(context.applicationContext, brokerHost)
+            } else {
+                Log.w(TAG, "Wake up triggered by action ($action) but no valid broker profile configured.")
             }
         }
     }
