@@ -122,7 +122,6 @@ fun LiveLogsScreen(
     val isPaused by viewModel.isRecordingPaused.collectAsState()
     val includeFilters by viewModel.includeTopicFilters.collectAsState()
     val excludeFilters by viewModel.excludeTopicFilters.collectAsState()
-    val messageRate by viewModel.messageRate.collectAsState()
     val filteredPackets by viewModel.filteredLivePackets.collectAsState()
 
     var selectedDetailsPacket by remember { mutableStateOf<MqttLogPacket?>(null) }
@@ -257,24 +256,6 @@ fun LiveLogsScreen(
                                 innerTextField()
                             }
                         )
-                        // 微型吞吐率指示胶囊 (⚡ 12 msg/s)
-                        Surface(
-                            shape = RoundedCornerShape(4.dp),
-                            color = SurfaceContainerLowest,
-                            border = BorderStroke(0.6.dp, OutlineVariantLight),
-                            modifier = Modifier.padding(horizontal = 4.dp)
-                        ) {
-                            Text(
-                                text = if (messageRate > 0) "⚡ $messageRate msg/s" else "0 msg/s",
-                                style = TextStyle(
-                                    fontFamily = FontFamily.Monospace,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = if (messageRate > 0) PrimaryBlack else OutlineGray
-                                ),
-                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
-                            )
-                        }
                         if (filterQuery.isNotEmpty()) {
                             Icon(
                                 imageVector = Icons.Default.Close,

@@ -48,11 +48,9 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.text.SimpleDateFormat
-import java.util.concurrent.atomic.AtomicInteger
 import java.util.Date
 import java.util.Locale
 import java.util.UUID
-import java.util.concurrent.atomic.AtomicLong
 
 class MqttAssistantViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -95,10 +93,6 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
     // --- PC-Grade Topic Filters (Persistent: Include / Exclude) ---
     val includeTopicFilters = MutableStateFlow<List<String>>(storage.loadIncludeTopicFilters())
     val excludeTopicFilters = MutableStateFlow<List<String>>(storage.loadExcludeTopicFilters())
-
-    // --- Message Throughput Rate Indicator (⚡ msg/s) ---
-    val messageRate = MutableStateFlow(0)
-    val packetsReceivedInSecond = AtomicInteger(0)
 
     // --- Production Background Filter Pipeline (150ms Debounced, Zero Main-Thread Load, 120Hz Smoothness) ---
     @OptIn(kotlinx.coroutines.FlowPreview::class)
@@ -217,14 +211,6 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
         refreshStorageStats()
         checkBatteryOptimizationStatus(application)
 
-        // 启动后台微型吞吐率刷新循环 (1秒更新一次)
-        viewModelScope.launch(Dispatchers.Default) {
-            while (isActive) {
-                delay(1000L)
-                messageRate.value = packetsReceivedInSecond.getAndSet(0)
-            }
-        }
-
         // 严密校验：若 Broker 节点为 0 或主机为空，绝不发起连接和无限重连循环
         if (brokerProfiles.value.isNotEmpty() && serverConfig.value.host.isNotBlank()) {
             connectToBroker()
@@ -279,7 +265,6 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 val currentBatch = batch.toList()
                 batch.clear()
                 val maxBuffer = serverConfig.value.bufferThreshold
-                packetsReceivedInSecond.addAndGet(currentBatch.size)
 
                 // 1. 批量更新 livePackets 与订阅条目计数 (主线程一次性发射)
                 withContext(Dispatchers.Main) {
