@@ -75,7 +75,6 @@ import androidx.compose.ui.window.DialogProperties
 import com.example.model.BrokerProfile
 import com.example.ui.theme.AccentEmerald
 import com.example.ui.theme.OutlineGray
-import com.example.util.AutoStartUtil
 import java.util.UUID
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -604,34 +603,13 @@ fun SettingsScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Text(
-                                text = "开机自启动",
-                                style = MaterialTheme.typography.labelMedium.copy(
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = PrimaryBlack
-                                )
+                        Text(
+                            text = "开机自启动",
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontWeight = FontWeight.SemiBold,
+                                color = PrimaryBlack
                             )
-                            if (config.autoStartEnabled) {
-                                Box(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(4.dp))
-                                        .background(PrimaryBlack)
-                                        .clickable { AutoStartUtil.openAutoStartSettings(context) }
-                                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                                ) {
-                                    Text(
-                                        text = "自启权限 >",
-                                        fontSize = 10.sp,
-                                        color = Color.White,
-                                        fontWeight = FontWeight.Medium
-                                    )
-                                }
-                            }
-                        }
+                        )
                         Text(
                             text = "设备开机或重启后自动拉起保活服务，并恢复 MQTT 连接与监听",
                             style = MaterialTheme.typography.bodySmall.copy(
