@@ -443,6 +443,10 @@ fun LiveLogsScreen(
                 clipboardManager.setPrimaryClip(ClipData.newPlainText("payload", packet.payload))
                 viewModel.showToast("已复制消息内容")
             },
+            onCopyValue = { value ->
+                clipboardManager.setPrimaryClip(ClipData.newPlainText("value", value))
+                viewModel.showToast("已复制: $value")
+            },
             onLoadIntoPublish = {
                 val preset = PublishPreset(
                     id = UUID.randomUUID().toString(),
@@ -721,6 +725,7 @@ private fun MessageDetailsModalDialog(
     onDismiss: () -> Unit,
     onCopyTopic: () -> Unit,
     onCopyPayload: () -> Unit,
+    onCopyValue: (String) -> Unit,
     onLoadIntoPublish: () -> Unit
 ) {
     // 弹窗内部默认开启 JSON 格式化排版高亮，支持一键切换原始文本
@@ -892,10 +897,7 @@ private fun MessageDetailsModalDialog(
                         isJsonPretty = isFormatPretty,
                         showLineNumbers = isFormatPretty,
                         maxLines = Int.MAX_VALUE,
-                        onLineClick = { value ->
-                            clipboardManager.setPrimaryClip(ClipData.newPlainText("value", value))
-                            viewModel.showToast("已复制: $value")
-                        },
+                        onLineClick = onCopyValue,
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
