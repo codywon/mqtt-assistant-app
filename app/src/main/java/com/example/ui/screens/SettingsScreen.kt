@@ -806,6 +806,39 @@ fun SettingsScreen(
                     )
                 }
 
+                // 满额自动导出 Excel
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "满额自动导出 Excel",
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontWeight = FontWeight.SemiBold,
+                                color = PrimaryBlack
+                            )
+                        )
+                        Text(
+                            text = "满 ${java.text.NumberFormat.getIntegerInstance().format(config.bufferThreshold)} 条自动归档至系统 Download 目录",
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontSize = 12.sp,
+                                color = OnSurfaceVariantGray
+                            )
+                        )
+                    }
+                    Switch(
+                        checked = config.autoExportExcel,
+                        onCheckedChange = { viewModel.toggleAutoExportExcel() },
+                        modifier = Modifier.testTag("auto_export_excel_switch"),
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = SurfaceContainerLowest,
+                            checkedTrackColor = PrimaryBlack
+                        )
+                    )
+                }
+
                 // Metrics cards (1:1 绝对等高与严格对称排版)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -821,7 +854,7 @@ fun SettingsScreen(
                         verticalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(
-                            text = "缓存报警阈值",
+                            text = "缓存阈值",
                             style = MaterialTheme.typography.labelSmall.copy(color = OnSurfaceVariantGray, fontSize = 11.5.sp)
                         )
                         Row(verticalAlignment = Alignment.Bottom) {

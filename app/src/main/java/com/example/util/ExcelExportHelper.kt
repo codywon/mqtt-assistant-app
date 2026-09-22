@@ -1,12 +1,18 @@
 package com.example.util
 
+import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
+import android.media.MediaScannerConnection
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import androidx.core.content.FileProvider
 import org.json.JSONObject
 import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileOutputStream
+import java.io.OutputStream
 import java.io.OutputStreamWriter
 import java.nio.charset.StandardCharsets
 import java.text.SimpleDateFormat
@@ -156,19 +162,13 @@ object ExcelExportHelper {
     }
 
     /**
-     * 极致内存优化的游标流式 Excel 导出（单条写入，内存恒定 < 1MB，彻底消除海量数据 OOM 隐患）
+     * 极致内存优化的游标流式 Excel 写入器（单条写入，内存恒定 < 1MB，彻底消除海量数据 OOM 隐患）
      */
-    fun exportStreamToXlsx(
-        context: Context,
+    fun writeZipToOutputStream(
+        outputStream: OutputStream,
         streamProducer: (writer: RowStreamWriter) -> Unit
-    ): File {
-        val exportDir = File(context.cacheDir, "exports").apply {
-            if (!exists()) mkdirs()
-        }
-        val fileName = "mqtt_packets_${FILE_DATE_FORMAT.format(Date())}.xlsx"
-        val outputFile = File(exportDir, fileName)
-
-        ZipOutputStream(BufferedOutputStream(FileOutputStream(outputFile))).use { zos ->
+    ) {
+        ZipOutputStream(BufferedOutputStream(outputStream)).use { zos ->
             // 1. [Content_Types].xml
             writeZipEntry(zos, "[Content_Types].xml", buildContentTypesXml())
 
@@ -230,8 +230,63 @@ object ExcelExportHelper {
             writer.flush()
             zos.closeEntry()
         }
+    }
 
+    /**
+     * 导出到应用私有 Cache 目录 (用于即时调用系统分享)
+     */
+    fun exportStreamToXlsx(
+        context: Context,
+        streamProducer: (writer: RowStreamWriter) -> Unit
+    ): File {
+        val exportDir = File(context.cacheDir, "exports").apply {
+            if (!exists()) mkdirs()
+        }
+        val fileName = "mqtt_packets_${FILE_DATE_FORMAT.format(Date())}.xlsx"
+        val outputFile = File(exportDir, fileName)
+        FileOutputStream(outputFile).use { os ->
+            writeZipToOutputStream(os, streamProducer)
+        }
         return outputFile
+    }
+
+    /**
+     * 自动归档至系统公共 Download 目录 (格式: mqtt_packets_yyyyMMdd_HHmmss.xlsx)
+     * 支持 Android 10+ (API 29+) MediaStore.Downloads 与旧版本直接文件写入
+     * 返回生成的文件名或友好展示路径
+     */
+    fun exportStreamToPublicDownloads(
+        context: Context,
+        streamProducer: (writer: RowStreamWriter) -> Unit
+    ): String {
+        val fileName = "mqtt_packets_${FILE_DATE_FORMAT.format(Date())}.xlsx"
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val contentValues = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+                put(MediaStore.MediaColumns.MIME_TYPE, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+            }
+            val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
+            if (uri != null) {
+                context.contentResolver.openOutputStream(uri)?.use { os ->
+                    writeZipToOutputStream(os, streamProducer)
+                }
+                return fileName
+            }
+        }
+
+        // 兼容 Android 9 及以下，或 MediaStore 降级处理
+        val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        if (!downloadsDir.exists()) downloadsDir.mkdirs()
+        val outputFile = File(downloadsDir, fileName)
+        FileOutputStream(outputFile).use { os ->
+            writeZipToOutputStream(os, streamProducer)
+        }
+        try {
+            MediaScannerConnection.scanFile(context, arrayOf(outputFile.absolutePath), null, null)
+        } catch (_: Exception) {}
+        return fileName
     }
 
     /**

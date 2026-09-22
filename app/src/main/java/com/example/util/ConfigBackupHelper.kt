@@ -26,6 +26,7 @@ data class BackupData(
     val reconnectIntervalSeconds: Int,
     val maxReconnectAttempts: Int,
     val autoRotate: Boolean,
+    val autoExportExcel: Boolean = false,
     val bufferThreshold: Int,
     val backgroundKeepAlive: Boolean,
     val wakeLockEnabled: Boolean,
@@ -60,6 +61,7 @@ object ConfigBackupHelper {
             put("reconnectIntervalSeconds", serverConfig.reconnectIntervalSeconds)
             put("maxReconnectAttempts", serverConfig.maxReconnectAttempts)
             put("autoRotate", serverConfig.autoRotate)
+            put("autoExportExcel", serverConfig.autoExportExcel)
             put("bufferThreshold", serverConfig.bufferThreshold)
             put("backgroundKeepAlive", serverConfig.backgroundKeepAliveEnabled)
             put("wakeLockEnabled", serverConfig.wakeLockEnabled)
@@ -290,6 +292,7 @@ object ConfigBackupHelper {
         var reconnectIntervalSeconds = 5
         var maxReconnectAttempts = 3
         var autoRotate = true
+        var autoExportExcel = false
         var bufferThreshold = 10000
         var backgroundKeepAlive = true
         var wakeLockEnabled = true
@@ -302,6 +305,7 @@ object ConfigBackupHelper {
             reconnectIntervalSeconds = cfg.optInt("reconnectIntervalSeconds", 5)
             maxReconnectAttempts = cfg.optInt("maxReconnectAttempts", 3)
             autoRotate = cfg.optBoolean("autoRotate", true)
+            autoExportExcel = cfg.optBoolean("autoExportExcel", false)
             bufferThreshold = cfg.optInt("bufferThreshold", 10000)
             backgroundKeepAlive = cfg.optBoolean("backgroundKeepAlive", true)
             wakeLockEnabled = cfg.optBoolean("wakeLockEnabled", true)
@@ -328,6 +332,7 @@ object ConfigBackupHelper {
             reconnectIntervalSeconds = reconnectIntervalSeconds,
             maxReconnectAttempts = maxReconnectAttempts,
             autoRotate = autoRotate,
+            autoExportExcel = autoExportExcel,
             bufferThreshold = bufferThreshold,
             backgroundKeepAlive = backgroundKeepAlive,
             wakeLockEnabled = wakeLockEnabled,

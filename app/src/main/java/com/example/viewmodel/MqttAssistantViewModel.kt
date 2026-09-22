@@ -8,6 +8,7 @@ import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.net.Uri
 import android.util.Log
+import com.example.util.AutoExportHelper
 import com.example.util.AutoStartUtil
 import com.example.util.BackupData
 import com.example.util.ConfigBackupHelper
@@ -161,6 +162,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                     reconnectIntervalSeconds = storage.loadReconnectInterval(),
                     maxReconnectAttempts = storage.loadMaxReconnectAttempts(),
                     autoRotate = storage.loadAutoRotate(),
+                    autoExportExcel = storage.loadAutoExportExcel(),
                     bufferThreshold = storage.loadBufferThreshold(),
                     backgroundKeepAliveEnabled = storage.loadBackgroundKeepAlive(),
                     wakeLockEnabled = storage.loadWakeLock(),
@@ -183,6 +185,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                     reconnectIntervalSeconds = storage.loadReconnectInterval(),
                     maxReconnectAttempts = storage.loadMaxReconnectAttempts(),
                     autoRotate = storage.loadAutoRotate(),
+                    autoExportExcel = storage.loadAutoExportExcel(),
                     bufferThreshold = storage.loadBufferThreshold(),
                     backgroundKeepAliveEnabled = storage.loadBackgroundKeepAlive(),
                     wakeLockEnabled = storage.loadWakeLock(),
@@ -296,7 +299,23 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 }
                 refreshStorageStats()
 
-                // 3. 更新通知栏
+                // 3. 满额自动导出 Excel 归档检查 (滚动分卷转储)
+                if (serverConfig.value.autoExportExcel) {
+                    AutoExportHelper.checkAndTrigger(
+                        context = getApplication(),
+                        storage = storage,
+                        bufferThreshold = maxBuffer,
+                        clientId = serverConfig.value.clientId
+                    ) { exportedCount, _ ->
+                        viewModelScope.launch(Dispatchers.Main) {
+                            livePackets.update { it.drop(exportedCount) }
+                            showToast("已自动归档 $exportedCount 条报文至系统 Download 目录")
+                        }
+                        refreshStorageStats()
+                    }
+                }
+
+                // 4. 更新通知栏
                 if (MqttBackgroundService.isRunning) {
                     val lastPacket = currentBatch.lastOrNull()
                     if (lastPacket != null) {
@@ -1259,6 +1278,17 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
         storage.saveAutoRotate(next)
     }
 
+    fun toggleAutoExportExcel() {
+        val next = !serverConfig.value.autoExportExcel
+        serverConfig.update { it.copy(autoExportExcel = next) }
+        storage.saveAutoExportExcel(next)
+        if (next) {
+            showToast("已开启满额自动导出 Excel (满 ${serverConfig.value.bufferThreshold} 条转储至 Download 目录)")
+        } else {
+            showToast("已关闭满额自动导出 Excel")
+        }
+    }
+
     fun updateBufferThreshold(thStr: String) {
         val th = thStr.toIntOrNull() ?: 10000
         serverConfig.update { it.copy(bufferThreshold = th) }
@@ -1810,6 +1840,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
         storage.saveReconnectInterval(backup.reconnectIntervalSeconds)
         storage.saveMaxReconnectAttempts(backup.maxReconnectAttempts)
         storage.saveAutoRotate(backup.autoRotate)
+        storage.saveAutoExportExcel(backup.autoExportExcel)
         storage.saveBufferThreshold(backup.bufferThreshold)
         storage.saveBackgroundKeepAlive(backup.backgroundKeepAlive)
         storage.saveWakeLock(backup.wakeLockEnabled)
@@ -1826,6 +1857,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 reconnectIntervalSeconds = backup.reconnectIntervalSeconds,
                 maxReconnectAttempts = backup.maxReconnectAttempts,
                 autoRotate = backup.autoRotate,
+                autoExportExcel = backup.autoExportExcel,
                 bufferThreshold = backup.bufferThreshold,
                 backgroundKeepAliveEnabled = backup.backgroundKeepAlive,
                 wakeLockEnabled = backup.wakeLockEnabled,

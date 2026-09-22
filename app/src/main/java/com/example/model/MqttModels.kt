@@ -123,6 +123,7 @@ data class MqttServerConfig(
     val processGuardEnabled: Boolean = true,
     val tlsEnabled: Boolean = false,
     val autoRotate: Boolean = true,
+    val autoExportExcel: Boolean = false,
     val bufferThreshold: Int = 10000,
     val usedSpaceMb: Double = 1.2,
     val packetCount: Int = 0,

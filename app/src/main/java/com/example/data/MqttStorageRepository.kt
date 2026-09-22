@@ -282,6 +282,15 @@ class MqttStorageRepository(context: Context) {
         dbHelper.saveSetting("key_auto_rotate", enabled.toString())
     }
 
+    fun loadAutoExportExcel(): Boolean {
+        val v = dbHelper.loadSetting("key_auto_export_excel", "false")
+        return v.toBooleanStrictOrNull() ?: false
+    }
+
+    fun saveAutoExportExcel(enabled: Boolean) {
+        dbHelper.saveSetting("key_auto_export_excel", enabled.toString())
+    }
+
     fun loadBufferThreshold(): Int {
         val v = dbHelper.loadSetting("key_buffer_threshold", "10000")
         return v.toIntOrNull() ?: 10000
@@ -313,9 +322,14 @@ class MqttStorageRepository(context: Context) {
 
     fun exportPacketsStream(
         limit: Int = 10000,
+        maxCreatedAt: Long = Long.MAX_VALUE,
         consumer: (packet: MqttLogPacket, createdAt: Long) -> Unit
     ): Int {
-        return dbHelper.exportPacketsStream(limit, consumer)
+        return dbHelper.exportPacketsStream(limit, maxCreatedAt, consumer)
+    }
+
+    fun deletePacketsBefore(maxCreatedAt: Long): Int {
+        return dbHelper.deletePacketsBefore(maxCreatedAt)
     }
 
     fun clearAllPackets() {

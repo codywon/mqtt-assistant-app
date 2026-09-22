@@ -26,6 +26,7 @@ import com.example.model.MqttLogPacket
 import com.example.model.MqttServerConfig
 import com.example.mqtt.MqttClientManager
 import com.example.receiver.AlarmPulseReceiver
+import com.example.util.AutoExportHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -81,7 +82,24 @@ class MqttBackgroundService : Service() {
                     dotColorHex = 0xFF10B981
                 )
                 val storage = MqttStorageRepository(applicationContext)
-                storage.savePackets(listOf(packet), storage.loadBufferThreshold())
+                val bufferTh = storage.loadBufferThreshold()
+                storage.savePackets(listOf(packet), bufferTh)
+
+                if (storage.loadAutoExportExcel()) {
+                    AutoExportHelper.checkAndTrigger(
+                        context = applicationContext,
+                        storage = storage,
+                        bufferThreshold = bufferTh,
+                        clientId = ""
+                    ) { exportedCount, _ ->
+                        updateNotification(
+                            context = applicationContext,
+                            brokerHost = currentBrokerHost,
+                            count = totalPacketCount,
+                            latestTopic = "已自动归档 $exportedCount 条报文至 Download 目录"
+                        )
+                    }
+                }
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to persist background message", e)
             }

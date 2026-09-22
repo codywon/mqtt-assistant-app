@@ -434,14 +434,17 @@ class MqttDatabaseHelper(context: Context) : SQLiteOpenHelper(
      */
     fun exportPacketsStream(
         limit: Int = 10000,
+        maxCreatedAt: Long = Long.MAX_VALUE,
         consumer: (packet: MqttLogPacket, createdAt: Long) -> Unit
     ): Int {
         val db = readableDatabase
+        val selection = if (maxCreatedAt < Long.MAX_VALUE) "created_at <= ?" else null
+        val selectionArgs = if (maxCreatedAt < Long.MAX_VALUE) arrayOf(maxCreatedAt.toString()) else null
         val cursor = db.query(
             TABLE_PACKETS,
             null,
-            null,
-            null,
+            selection,
+            selectionArgs,
             null,
             null,
             "created_at ASC",
@@ -480,6 +483,13 @@ class MqttDatabaseHelper(context: Context) : SQLiteOpenHelper(
             }
         }
         return count
+    }
+
+    fun deletePacketsBefore(maxCreatedAt: Long): Int {
+        val db = writableDatabase
+        val deleted = db.delete(TABLE_PACKETS, "created_at <= ?", arrayOf(maxCreatedAt.toString()))
+        vacuumDatabase()
+        return deleted
     }
 
     fun clearAllPackets() {
