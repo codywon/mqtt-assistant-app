@@ -126,6 +126,7 @@ fun SettingsScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val config by viewModel.serverConfig.collectAsState()
     val brokerProfiles by viewModel.brokerProfiles.collectAsState()
     val activeBrokerId by viewModel.activeBrokerId.collectAsState()
     val isExporting by viewModel.isExporting.collectAsState()
