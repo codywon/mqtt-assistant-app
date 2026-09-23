@@ -773,38 +773,6 @@ fun SettingsScreen(
                     }
                 }
 
-                // Auto rotate toggle
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "自动轮转备份",
-                            style = MaterialTheme.typography.labelMedium.copy(
-                                fontWeight = FontWeight.SemiBold,
-                                color = PrimaryBlack
-                            )
-                        )
-                        Text(
-                            text = "达到存储阈值后自动压缩落盘",
-                            style = MaterialTheme.typography.bodySmall.copy(
-                                fontSize = 12.sp,
-                                color = OnSurfaceVariantGray
-                            )
-                        )
-                    }
-                    Switch(
-                        checked = config.autoRotate,
-                        onCheckedChange = { viewModel.toggleAutoRotate() },
-                        modifier = Modifier.testTag("auto_rotate_switch"),
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = SurfaceContainerLowest,
-                            checkedTrackColor = PrimaryBlack
-                        )
-                    )
-                }
 
                 // 满额自动导出 Excel
                 Row(
