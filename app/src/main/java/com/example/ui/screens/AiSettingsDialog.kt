@@ -98,6 +98,7 @@ fun AiSettingsDialog(
     var baseUrl by remember { mutableStateOf(initialConfig.baseUrl) }
     var modelName by remember { mutableStateOf(initialConfig.modelName) }
     var contextWindow by remember { mutableIntStateOf(initialConfig.contextWindow) }
+    var customContextWindowText by remember { mutableStateOf(initialConfig.contextWindow.toString()) }
     var isApiKeyVisible by remember { mutableStateOf(false) }
 
     // Tab 2 state
@@ -316,7 +317,7 @@ fun AiSettingsDialog(
                             )
 
                             // Context Window Selector (Pi-Agent 内存管理)
-                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -331,31 +332,59 @@ fun AiSettingsDialog(
                                         style = TextStyle(fontSize = 11.sp, color = Color(0xFF10B981), fontWeight = FontWeight.Medium)
                                     )
                                 }
+
+                                // 预设快捷选择 (包含 128K, 256K, 512K, 1M)
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    horizontalArrangement = Arrangement.spacedBy(5.dp)
                                 ) {
-                                    val windows = listOf(8192 to "8K", 16384 to "16K", 32768 to "32K", 65536 to "64K", 131072 to "128K")
+                                    val windows = listOf(
+                                        32768 to "32K",
+                                        65536 to "64K",
+                                        131072 to "128K",
+                                        262144 to "256K",
+                                        524288 to "512K",
+                                        1048576 to "1M"
+                                    )
                                     windows.forEach { (w, label) ->
                                         val isSelected = contextWindow == w
                                         Box(
                                             modifier = Modifier
+                                                .weight(1f)
                                                 .clip(RoundedCornerShape(6.dp))
                                                 .background(if (isSelected) PrimaryBlack else SurfaceContainerLow)
-                                                .clickable { contextWindow = w }
-                                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                                                .clickable {
+                                                    contextWindow = w
+                                                    customContextWindowText = w.toString()
+                                                }
+                                                .padding(vertical = 5.dp),
+                                            contentAlignment = Alignment.Center
                                         ) {
                                             Text(
                                                 text = label,
                                                 style = TextStyle(
-                                                    fontSize = 11.5.sp,
-                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                    fontSize = 11.sp,
+                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                                                     color = if (isSelected) OnPrimaryWhite else OnSurfaceVariantGray
                                                 )
                                             )
                                         }
                                     }
                                 }
+
+                                // 手工自由输入框 (支持 1M, 2M 或任意大小)
+                                SettingInputField(
+                                    label = "自定义上下文 Tokens (支持手工输入任意数值)",
+                                    value = customContextWindowText,
+                                    placeholder = "如: 1048576 (1M) 或 2097152 (2M)",
+                                    onValueChange = { input ->
+                                        customContextWindowText = input.filter { it.isDigit() }
+                                        val parsed = customContextWindowText.toIntOrNull()
+                                        if (parsed != null && parsed > 0) {
+                                            contextWindow = parsed
+                                        }
+                                    }
+                                )
                             }
 
                             // Pi Agent ReAct 架构提示卡片

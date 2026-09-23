@@ -385,31 +385,39 @@ private fun AiEmptyWelcomeView(
     ) {
         Box(
             modifier = Modifier
-                .size(48.dp)
+                .size(54.dp)
                 .clip(CircleShape)
-                .background(SurfaceContainerLow),
+                .background(PrimaryBlack.copy(alpha = 0.05f)),
             contentAlignment = Alignment.Center
         ) {
-            Icon(
-                imageVector = Icons.Default.AutoAwesome,
-                contentDescription = null,
-                tint = PrimaryBlack,
-                modifier = Modifier.size(24.dp)
-            )
+            Box(
+                modifier = Modifier
+                    .size(38.dp)
+                    .clip(CircleShape)
+                    .background(PrimaryBlack),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.AutoAwesome,
+                    contentDescription = null,
+                    tint = OnPrimaryWhite,
+                    modifier = Modifier.size(19.dp)
+                )
+            }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(14.dp))
 
         Text(
-            text = "MQTT 数据智能分析专家",
-            style = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.Bold, color = PrimaryBlack)
+            text = "有什么我可以帮您分析的？",
+            style = TextStyle(fontSize = 17.5.sp, fontWeight = FontWeight.Bold, color = PrimaryBlack, letterSpacing = (-0.2).sp)
         )
 
         Spacer(modifier = Modifier.height(4.dp))
 
         Text(
-            text = "随时针对接收到的体征报文、设备流量或归档 Excel 进行深度洞察",
-            style = TextStyle(fontSize = 12.5.sp, color = OnSurfaceVariantGray, lineHeight = 17.sp),
+            text = "内嵌 SI 智能体 · 检索本地 SQLite · 解码硬件私有协议 · 穿透归档 Excel",
+            style = TextStyle(fontSize = 11.5.sp, color = OnSurfaceVariantGray, lineHeight = 16.sp),
             textAlign = androidx.compose.ui.text.style.TextAlign.Center
         )
 
@@ -420,49 +428,119 @@ private fun AiEmptyWelcomeView(
                     .clip(RoundedCornerShape(8.dp))
                     .background(Color(0xFFFEF3C7))
                     .clickable(onClick = onOpenSettings)
-                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                    .padding(horizontal = 12.dp, vertical = 5.dp)
             ) {
                 Text(
-                    text = "⚠️ 尚未配置大模型 API Key，点击立即配置",
+                    text = "⚙️ 尚未配置模型 API Key，点击立即配置",
                     style = TextStyle(fontSize = 11.5.sp, color = Color(0xFFB45309), fontWeight = FontWeight.SemiBold)
                 )
             }
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(26.dp))
 
-        // Suggestion Pill Chips
+        // 2x2 高级极简场景建议卡片网格
         Column(
             modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            SuggestionPill("📊 统计当前 SQLite 数据库中各网关收到的报文总数") { onPillClick(it) }
-            SuggestionPill("⚠️ 筛查最新收到的体征数据，排查是否有高血压或心率异常") { onPillClick(it) }
-            SuggestionPill("📁 查看 Download 目录下已导出的 Excel 历史报文并汇总") { onPillClick(it) }
-            SuggestionPill("📖 查看当前已录入的硬件私有 Hex 协议澄清规则") { onPillClick(it) }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                SuggestionCard(
+                    tag = "流量聚合",
+                    title = "网关报文统计",
+                    desc = "统计各网关吞吐与频次",
+                    prompt = "统计当前 SQLite 数据库中各网关收到的报文总数与频次",
+                    modifier = Modifier.weight(1f),
+                    onClick = onPillClick
+                )
+                SuggestionCard(
+                    tag = "健康筛查",
+                    title = "异常体征排查",
+                    desc = "排查超标血压与心率",
+                    prompt = "基于私有协议筛查最新收到的体征数据，排查是否有高血压或心率异常",
+                    modifier = Modifier.weight(1f),
+                    onClick = onPillClick
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                SuggestionCard(
+                    tag = "离线分卷",
+                    title = "Excel 穿透分析",
+                    desc = "读取 Download 归档报文",
+                    prompt = "查看系统 Download 目录下已转储的 Excel 历史报文并汇总趋势",
+                    modifier = Modifier.weight(1f),
+                    onClick = onPillClick
+                )
+                SuggestionCard(
+                    tag = "硬件协议",
+                    title = "私有规则核对",
+                    desc = "人话测试 Hex 报文结构",
+                    prompt = "测试并核对当前硬件私有协议知识库，告诉我支持哪些 Hex 报文规则",
+                    modifier = Modifier.weight(1f),
+                    onClick = onPillClick
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun SuggestionPill(text: String, onClick: (String) -> Unit) {
+private fun SuggestionCard(
+    tag: String,
+    title: String,
+    desc: String,
+    prompt: String,
+    modifier: Modifier = Modifier,
+    onClick: (String) -> Unit
+) {
     Card(
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(13.dp),
         colors = CardDefaults.cardColors(containerColor = SurfaceContainerLowest),
-        border = BorderStroke(0.8.dp, OutlineVariantLight),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onClick(text) }
+        border = BorderStroke(0.7.dp, OutlineVariantLight),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.5.dp),
+        modifier = modifier.clickable { onClick(prompt) }
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 11.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(SurfaceContainerLow)
+                        .padding(horizontal = 5.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        text = tag,
+                        style = TextStyle(fontSize = 9.5.sp, fontWeight = FontWeight.SemiBold, color = OnSurfaceVariantGray)
+                    )
+                }
+                Text(
+                    text = "↗",
+                    style = TextStyle(fontSize = 12.sp, color = OutlineGray, fontWeight = FontWeight.Bold)
+                )
+            }
+            Spacer(modifier = Modifier.height(7.dp))
             Text(
-                text = text,
-                style = TextStyle(fontSize = 12.5.sp, color = PrimaryBlack, fontWeight = FontWeight.Medium),
-                maxLines = 2,
+                text = title,
+                style = TextStyle(fontSize = 12.5.sp, fontWeight = FontWeight.Bold, color = PrimaryBlack),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = desc,
+                style = TextStyle(fontSize = 10.5.sp, color = OnSurfaceVariantGray),
+                maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
         }
@@ -585,34 +663,40 @@ private fun AiMessageBubble(
             }
 
             // Main Message Bubble
-            Card(
-                shape = RoundedCornerShape(
-                    topStart = 16.dp,
-                    topEnd = 16.dp,
-                    bottomStart = if (isUser) 16.dp else 4.dp,
-                    bottomEnd = if (isUser) 4.dp else 16.dp
-                ),
-                colors = CardDefaults.cardColors(
-                    containerColor = if (isUser) PrimaryBlack else SurfaceContainerLowest
-                ),
-                border = if (isUser) null else BorderStroke(0.8.dp, OutlineVariantLight),
-                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-            ) {
-                Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
-                    if (message.content.isBlank() && message.isThinking) {
-                        Text(
-                            text = "● ● ●",
-                            style = TextStyle(fontSize = 12.sp, color = OutlineGray, letterSpacing = 2.sp)
-                        )
-                    } else {
-                        Text(
-                            text = message.content,
-                            style = TextStyle(
-                                fontSize = 13.5.sp,
-                                color = if (isUser) OnPrimaryWhite else if (message.isError) Color(0xFFDC2626) else PrimaryBlack,
-                                lineHeight = 19.sp
+            val hasContent = message.content.isNotBlank()
+            val isThinkingOnly = message.content.isBlank() && message.isThinking
+            val isActionExecutingOnly = message.content.isBlank() && actionStatus.isNotBlank()
+
+            if (hasContent || isThinkingOnly || (isUser && !isActionExecutingOnly)) {
+                Card(
+                    shape = RoundedCornerShape(
+                        topStart = 16.dp,
+                        topEnd = 16.dp,
+                        bottomStart = if (isUser) 16.dp else 4.dp,
+                        bottomEnd = if (isUser) 4.dp else 16.dp
+                    ),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isUser) PrimaryBlack else SurfaceContainerLowest
+                    ),
+                    border = if (isUser) null else BorderStroke(0.8.dp, OutlineVariantLight),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                ) {
+                    Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                        if (isThinkingOnly) {
+                            Text(
+                                text = "● ● ●",
+                                style = TextStyle(fontSize = 12.sp, color = OutlineGray, letterSpacing = 2.sp)
                             )
-                        )
+                        } else {
+                            Text(
+                                text = message.content,
+                                style = TextStyle(
+                                    fontSize = 13.5.sp,
+                                    color = if (isUser) OnPrimaryWhite else if (message.isError) Color(0xFFDC2626) else PrimaryBlack,
+                                    lineHeight = 19.sp
+                                )
+                            )
+                        }
                     }
                 }
             }

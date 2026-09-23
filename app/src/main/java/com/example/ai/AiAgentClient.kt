@@ -19,7 +19,8 @@ import java.net.URL
  * 1. 【纯粹 ReAct 循环】：Thought(推理思考) -> Action(工具调用) -> Observation(环境观测) -> Thought -> Final Answer；
  * 2. 【70% 上下文自动压缩】：动态感知 Token 水位，超过 70% 阈值时自动触发无损记忆提炼，实现无上限安全会话；
  * 3. 【四大原子工具集成】：查库(SQL)、读文件(Excel)、查协议(Protocol)、搜归档(Find)；
- * 4. 【零外部库纯原生实现】：纯 HttpURLConnection + SSE 流式解析，完美兼容 DeepSeek-R1 思考链、通义千问、OpenAI、Ollama。
+ * 4. 【零外部库纯原生实现】：纯 HttpURLConnection + SSE 流式解析，全面兼容 Gemini/OpenAI/DeepSeek/Qwen/Ollama；
+ * 5. 【严谨 Null-Safe 协议清洗】：杜绝 Android 原生 JSONObject 将 null 解析为字符串 "null" 的经典巨坑。
  */
 class AiAgentClient(
     private val toolRegistry: SIAgentToolRegistry
@@ -61,7 +62,7 @@ class AiAgentClient(
         onComplete: (fullContent: String, reasoningContent: String) -> Unit
     ) = withContext(Dispatchers.IO) {
         if (config.apiKey.isBlank()) {
-            onError("未配置 API Key。请点击右上角设置图标填入大模型 API Key（推荐使用 DeepSeek 或通义千问）")
+            onError("未配置 API Key。请点击右上角设置图标填入大模型 API Key（推荐使用 DeepSeek、通义千问或 Gemini）")
             return@withContext
         }
 
@@ -84,8 +85,8 @@ class AiAgentClient(
 
         var step = 0
         val maxSteps = 8 // 遵循 Pi Agent 范式，支持多达 8 步推理与动作链
-        val fullAccumulatedContent = StringBuilder()
         val fullAccumulatedReasoning = StringBuilder()
+        var finalAnswerContent = StringBuilder()
 
         // ==========================================
         // 2. The ReAct Loop (Thought -> Action -> Observation)
@@ -161,19 +162,24 @@ class AiAgentClient(
                                 val delta = choice.optJSONObject("delta")
                                 if (delta != null) {
                                     // 1. Thought / 思考链 (DeepSeek-R1 / QwQ 等)
-                                    val reasoningDelta = delta.optString("reasoning_content", "")
-                                    if (reasoningDelta.isNotEmpty()) {
-                                        currentStepReasoning.append(reasoningDelta)
-                                        fullAccumulatedReasoning.append(reasoningDelta)
-                                        onChunk(reasoningDelta, true)
+                                    // 严密防护：避免 org.json 将 null 解析为 "null" 字符串
+                                    if (!delta.isNull("reasoning_content")) {
+                                        val reasoningDelta = delta.optString("reasoning_content", "")
+                                        if (reasoningDelta.isNotEmpty() && reasoningDelta != "null") {
+                                            currentStepReasoning.append(reasoningDelta)
+                                            fullAccumulatedReasoning.append(reasoningDelta)
+                                            onChunk(reasoningDelta, true)
+                                        }
                                     }
 
                                     // 2. 正文打字机增量
-                                    val contentDelta = delta.optString("content", "")
-                                    if (contentDelta.isNotEmpty()) {
-                                        currentStepContent.append(contentDelta)
-                                        fullAccumulatedContent.append(contentDelta)
-                                        onChunk(contentDelta, false)
+                                    // 严密防护：如果字段为 null（如 tool-call 阶段），绝对不输出 "null" 字符！
+                                    if (!delta.isNull("content")) {
+                                        val contentDelta = delta.optString("content", "")
+                                        if (contentDelta.isNotEmpty() && contentDelta != "null") {
+                                            currentStepContent.append(contentDelta)
+                                            onChunk(contentDelta, false)
+                                        }
                                     }
 
                                     // 3. Action 动作增量 (tool_calls)
@@ -182,16 +188,16 @@ class AiAgentClient(
                                         for (i in 0 until deltaTools.length()) {
                                             val t = deltaTools.getJSONObject(i)
                                             val idx = t.optInt("index", 0)
-                                            val id = t.optString("id", "")
+                                            val id = if (!t.isNull("id")) t.optString("id", "") else ""
                                             val func = t.optJSONObject("function")
-                                            val name = func?.optString("name", "") ?: ""
-                                            val argsPart = func?.optString("arguments", "") ?: ""
+                                            val name = if (func != null && !func.isNull("name")) func.optString("name", "") else ""
+                                            val argsPart = if (func != null && !func.isNull("arguments")) func.optString("arguments", "") else ""
 
                                             val triple = toolCallMap.getOrPut(idx) {
                                                 Triple(StringBuilder(), StringBuilder(), StringBuilder())
                                             }
-                                            if (id.isNotEmpty()) triple.first.append(id)
-                                            if (name.isNotEmpty()) triple.second.append(name)
+                                            if (id.isNotEmpty() && id != "null") triple.first.append(id)
+                                            if (name.isNotEmpty() && name != "null") triple.second.append(name)
                                             if (argsPart.isNotEmpty()) triple.third.append(argsPart)
                                         }
                                     }
@@ -204,19 +210,19 @@ class AiAgentClient(
 
                 // 汇总当前步生成的 Action
                 for ((_, triple) in toolCallMap) {
-                    val id = triple.first.toString()
-                    val name = triple.second.toString()
-                    val args = triple.third.toString()
+                    val id = triple.first.toString().trim()
+                    val name = triple.second.toString().trim()
+                    val args = triple.third.toString().trim()
                     if (name.isNotEmpty()) {
                         toolCallsDetected.add(
                             JSONObject().apply {
-                                put("id", if (id.isNotEmpty()) id else "call_${System.currentTimeMillis()}")
+                                put("id", if (id.isNotEmpty()) id else "call_${System.currentTimeMillis()}_${(100..999).random()}")
                                 put("type", "function")
                                 put(
                                     "function",
                                     JSONObject().apply {
                                         put("name", name)
-                                        put("arguments", args)
+                                        put("arguments", if (args.isNotBlank()) args else "{}")
                                     }
                                 )
                             }
@@ -236,18 +242,22 @@ class AiAgentClient(
             // 3. 终答判定 (Final Answer)
             // ==========================================
             if (toolCallsDetected.isEmpty()) {
-                // 模型无需再采取 Action，已得出最终结论
-                onComplete(fullAccumulatedContent.toString(), fullAccumulatedReasoning.toString())
+                // 模型无需再采取 Action，当前输出即为最终报告解答！
+                finalAnswerContent = currentStepContent
+                onToolAction("") // 清除工具 Action 提示
+                onComplete(finalAnswerContent.toString(), fullAccumulatedReasoning.toString())
                 return@withContext
             }
 
             // ==========================================
             // 4. 执行 Action 并获取 Observation
             // ==========================================
+            // 关键：在 OpenAI / Gemini 规范中，发起 tool_calls 的 assistant 消息，如果无文本 content 必须为 JSONObject.NULL
             val assistantMsg = JSONObject().apply {
                 put("role", "assistant")
-                if (currentStepContent.isNotEmpty()) {
-                    put("content", currentStepContent.toString())
+                val cleanContent = currentStepContent.toString().trim()
+                if (cleanContent.isNotEmpty() && cleanContent != "null") {
+                    put("content", cleanContent)
                 } else {
                     put("content", JSONObject.NULL)
                 }
@@ -257,12 +267,12 @@ class AiAgentClient(
             }
             messagesArray.put(assistantMsg)
 
-            // 依次执行每个 Action 工具
+            // 依次执行每个 Action 工具并产出 Observation
             for (toolObj in toolCallsDetected) {
                 val callId = toolObj.getString("id")
                 val funcObj = toolObj.getJSONObject("function")
                 val funcName = funcObj.getString("name")
-                val funcArgs = funcObj.getString("arguments")
+                val funcArgs = funcObj.optString("arguments", "{}")
 
                 val statusText = when (funcName) {
                     "execute_sqlite_query" -> "🔍 [Action] 正在执行只读 SQL 查询..."
@@ -276,7 +286,7 @@ class AiAgentClient(
                 // 产生 Observation
                 val observation = toolRegistry.executeTool(funcName, funcArgs)
 
-                // 将 Observation 回填进入上下文，作为下一次 Thought 的决策输入
+                // 将 Observation 回填进入上下文，作为下一次 Thought 的决策依据
                 messagesArray.put(
                     JSONObject().apply {
                         put("role", "tool")
@@ -289,6 +299,7 @@ class AiAgentClient(
         }
 
         // 达到最大步数安全上限时完结
-        onComplete(fullAccumulatedContent.toString(), fullAccumulatedReasoning.toString())
+        onToolAction("")
+        onComplete(finalAnswerContent.toString(), fullAccumulatedReasoning.toString())
     }
 }
