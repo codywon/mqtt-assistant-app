@@ -234,16 +234,20 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
         storage = storage,
         context = application,
         livePacketsProvider = { livePackets.value },
-        onMessagePublished = { topic, qos, retain, payload ->
+        onMessagePublished = { topic, qos, _, payload ->
             viewModelScope.launch(Dispatchers.Main) {
+                val dotColor = when (qos) {
+                    0 -> 0xFFF59E0B
+                    1 -> 0xFF10B981
+                    else -> 0xFF3980F4
+                }
                 val newHistory = PublishHistoryItem(
                     id = UUID.randomUUID().toString(),
                     topic = topic,
-                    payload = payload,
                     qos = qos,
-                    retain = retain,
                     timestamp = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date()),
-                    status = "Agent 下发成功"
+                    payload = payload,
+                    dotColorHex = dotColor
                 )
                 publishHistory.update { listOf(newHistory) + it }
                 showToast("Agent 已向 $topic 成功下发报文")

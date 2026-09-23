@@ -1772,7 +1772,7 @@ private fun AiPacketInspectorDialog(
                     } else {
                         SelectionContainer {
                             MarkdownRenderer(
-                                markdown = result,
+                                content = result,
                                 modifier = Modifier.fillMaxWidth()
                             )
                         }
