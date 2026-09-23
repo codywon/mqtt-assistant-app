@@ -16,12 +16,19 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.exclude
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -79,6 +86,7 @@ import com.example.ui.theme.SurfaceCanvas
 import com.example.ui.theme.SurfaceContainerDefault
 import com.example.ui.theme.SurfaceContainerLow
 import com.example.ui.theme.SurfaceContainerLowest
+import com.example.ui.components.MarkdownRenderer
 import com.example.viewmodel.MqttAssistantViewModel
 
 /**
@@ -127,6 +135,7 @@ fun AiChatScreen(
         modifier = modifier
             .fillMaxSize()
             .background(SurfaceCanvas)
+            .imePadding()
     ) {
         // ==========================================
         // 1. ChatGPT-Style TopBar
@@ -265,8 +274,7 @@ fun AiChatScreen(
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .imePadding()
-                .navigationBarsPadding(),
+                .windowInsetsPadding(WindowInsets.navigationBars.exclude(WindowInsets.ime)),
             color = SurfaceContainerLowest,
             shadowElevation = 4.dp
         ) {
@@ -379,6 +387,7 @@ private fun AiEmptyWelcomeView(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp, vertical = 20.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
@@ -688,14 +697,21 @@ private fun AiMessageBubble(
                                 style = TextStyle(fontSize = 12.sp, color = OutlineGray, letterSpacing = 2.sp)
                             )
                         } else {
-                            Text(
-                                text = message.content,
-                                style = TextStyle(
-                                    fontSize = 13.5.sp,
-                                    color = if (isUser) OnPrimaryWhite else if (message.isError) Color(0xFFDC2626) else PrimaryBlack,
-                                    lineHeight = 19.sp
+                            if (isUser) {
+                                Text(
+                                    text = message.content,
+                                    style = TextStyle(
+                                        fontSize = 13.5.sp,
+                                        color = OnPrimaryWhite,
+                                        lineHeight = 19.sp
+                                    )
                                 )
-                            )
+                            } else {
+                                MarkdownRenderer(
+                                    content = message.content,
+                                    isUser = false
+                                )
+                            }
                         }
                     }
                 }

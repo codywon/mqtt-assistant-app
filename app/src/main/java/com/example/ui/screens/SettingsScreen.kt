@@ -27,6 +27,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
@@ -155,6 +156,9 @@ fun SettingsScreen(
 
     var showBrokerDialog by remember { mutableStateOf(false) }
     var editingBroker by remember { mutableStateOf<BrokerProfile?>(null) }
+    val aiConfig by viewModel.aiConfig.collectAsState()
+    val protocols by viewModel.protocolKnowledgeList.collectAsState()
+    var showAiSettingsDialog by remember { mutableStateOf(false) }
 
     Column(
         modifier = modifier
@@ -928,6 +932,166 @@ fun SettingsScreen(
             }
         }
 
+        // 5. AI Agent & LLM Management Card
+        Card(
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = SurfaceContainerLowest),
+            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { showAiSettingsDialog = true }
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AutoAwesome,
+                            contentDescription = null,
+                            tint = PrimaryBlack,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Text(
+                            text = "AI 智能体与大模型",
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = PrimaryBlack,
+                                fontSize = 15.sp
+                            )
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(if (aiConfig.apiKey.isNotBlank()) Color(0xFFDCFCE7) else SurfaceContainerLow)
+                            .padding(horizontal = 8.dp, vertical = 3.dp)
+                    ) {
+                        Text(
+                            text = if (aiConfig.apiKey.isNotBlank()) "已就绪" else "未配置 Key",
+                            style = TextStyle(
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (aiConfig.apiKey.isNotBlank()) Color(0xFF15803D) else OnSurfaceVariantGray
+                            )
+                        )
+                    }
+                }
+
+                HorizontalDivider(color = SurfaceContainerDefault, thickness = 0.5.dp)
+
+                // Current Model & Context Window
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            text = "当前模型",
+                            style = TextStyle(fontSize = 11.sp, color = OnSurfaceVariantGray)
+                        )
+                        Text(
+                            text = aiConfig.modelName.ifBlank { "未指定" },
+                            style = TextStyle(
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = PrimaryBlack
+                            )
+                        )
+                    }
+                    Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            text = "上下文窗口",
+                            style = TextStyle(fontSize = 11.sp, color = OnSurfaceVariantGray)
+                        )
+                        val windowLabel = when (aiConfig.contextWindow) {
+                            131072 -> "128K"
+                            262144 -> "256K"
+                            1048576 -> "1M"
+                            else -> "${aiConfig.contextWindow / 1024}K"
+                        }
+                        Text(
+                            text = "$windowLabel (${aiConfig.contextWindow} tokens)",
+                            style = TextStyle(
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = PrimaryBlack
+                            )
+                        )
+                    }
+                }
+
+                // Base URL & Protocols count
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f, fill = false), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            text = "接口基础地址 (Base URL)",
+                            style = TextStyle(fontSize = 11.sp, color = OnSurfaceVariantGray)
+                        )
+                        Text(
+                            text = aiConfig.baseUrl.ifBlank { "默认" },
+                            style = TextStyle(
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 11.5.sp,
+                                color = PrimaryBlack
+                            ),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            text = "硬件私有协议",
+                            style = TextStyle(fontSize = 11.sp, color = OnSurfaceVariantGray)
+                        )
+                        Text(
+                            text = "${protocols.size} 条澄清规则",
+                            style = TextStyle(
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = PrimaryBlack
+                            )
+                        )
+                    }
+                }
+
+                // Action Button
+                Button(
+                    onClick = { showAiSettingsDialog = true },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(38.dp),
+                    shape = RoundedCornerShape(8.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = PrimaryBlack,
+                        contentColor = OnPrimaryWhite
+                    )
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Tune,
+                        contentDescription = null,
+                        modifier = Modifier.size(15.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("管理模型与私有协议", fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+
         // Footer version info
         Column(
             modifier = Modifier
@@ -979,6 +1143,18 @@ fun SettingsScreen(
                 showBrokerDialog = false
                 editingBroker = null
             }
+        )
+    }
+
+    // Modal dialog for AI model and protocol clarification workbench
+    if (showAiSettingsDialog) {
+        AiSettingsDialog(
+            initialConfig = aiConfig,
+            protocols = protocols,
+            onDismiss = { showAiSettingsDialog = false },
+            onSaveConfig = { viewModel.updateAiConfig(it) },
+            onSaveProtocol = { viewModel.saveProtocolKnowledge(it) },
+            onDeleteProtocol = { viewModel.deleteProtocolKnowledge(it) }
         )
     }
 }

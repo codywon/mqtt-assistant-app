@@ -333,17 +333,14 @@ fun AiSettingsDialog(
                                     )
                                 }
 
-                                // 预设快捷选择 (包含 128K, 256K, 512K, 1M)
+                                // 预设快捷选择：严格仅保留 128K, 256K, 1M 三档规格
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
                                     val windows = listOf(
-                                        32768 to "32K",
-                                        65536 to "64K",
                                         131072 to "128K",
                                         262144 to "256K",
-                                        524288 to "512K",
                                         1048576 to "1M"
                                     )
                                     windows.forEach { (w, label) ->
@@ -351,19 +348,19 @@ fun AiSettingsDialog(
                                         Box(
                                             modifier = Modifier
                                                 .weight(1f)
-                                                .clip(RoundedCornerShape(6.dp))
+                                                .clip(RoundedCornerShape(8.dp))
                                                 .background(if (isSelected) PrimaryBlack else SurfaceContainerLow)
                                                 .clickable {
                                                     contextWindow = w
                                                     customContextWindowText = w.toString()
                                                 }
-                                                .padding(vertical = 5.dp),
+                                                .padding(vertical = 7.dp),
                                             contentAlignment = Alignment.Center
                                         ) {
                                             Text(
                                                 text = label,
                                                 style = TextStyle(
-                                                    fontSize = 11.sp,
+                                                    fontSize = 12.sp,
                                                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                                                     color = if (isSelected) OnPrimaryWhite else OnSurfaceVariantGray
                                                 )
@@ -372,7 +369,7 @@ fun AiSettingsDialog(
                                     }
                                 }
 
-                                // 手工自由输入框 (支持 1M, 2M 或任意大小)
+                                // 手工自由输入框 (支持 1M, 2M 或任意数值)
                                 SettingInputField(
                                     label = "自定义上下文 Tokens (支持手工输入任意数值)",
                                     value = customContextWindowText,
@@ -385,26 +382,6 @@ fun AiSettingsDialog(
                                         }
                                     }
                                 )
-                            }
-
-                            // Pi Agent ReAct 架构提示卡片
-                            Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = SurfaceContainerLow,
-                                border = BorderStroke(0.6.dp, OutlineVariantLight),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Column(modifier = Modifier.padding(10.dp)) {
-                                    Text(
-                                        text = "⚡ Pi Agent 范式 ReAct 引擎已启用",
-                                        style = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Bold, color = PrimaryBlack)
-                                    )
-                                    Spacer(modifier = Modifier.height(3.dp))
-                                    Text(
-                                        text = "具备标准的 Thought → Action → Observation 闭环；当历史记录与海量报文占用达到 70% 水位时，系统将自动进行事实提炼压缩，保障长效会话永不溢出。",
-                                        style = TextStyle(fontSize = 11.sp, color = OnSurfaceVariantGray, lineHeight = 15.sp)
-                                    )
-                                }
                             }
 
                             Spacer(modifier = Modifier.height(4.dp))
