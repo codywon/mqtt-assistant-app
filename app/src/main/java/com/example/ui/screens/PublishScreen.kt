@@ -359,7 +359,7 @@ private fun PublishPresetCard(
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // Part 1: Topic Header (Click to copy topic name like in Subscribe screen)
+            // Row 1: Title (Remark name if available, otherwise Topic) - Consistent with Subscribe screen
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
@@ -367,17 +367,47 @@ private fun PublishPresetCard(
                     .clip(RoundedCornerShape(4.dp))
                     .clickable { onCopyTopic() }
             ) {
+                if (preset.name.isNotBlank()) {
+                    Text(
+                        text = preset.name,
+                        style = TextStyle(
+                            fontSize = 14.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = PrimaryBlack
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                } else {
+                    Text(
+                        text = preset.topic,
+                        style = TextStyle(
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.5.sp,
+                            lineHeight = 18.sp,
+                            color = PrimaryBlack
+                        ),
+                        softWrap = true
+                    )
+                }
+            }
+
+            // Row 2: Full topic (Auto-wrap monospace) when Remark Name is present (consistent with Subscribe screen)
+            if (preset.name.isNotBlank()) {
                 Text(
                     text = preset.topic,
                     style = TextStyle(
                         fontFamily = FontFamily.Monospace,
-                        fontSize = 13.5.sp,
-                        fontWeight = FontWeight.Bold,
-                        lineHeight = 18.sp,
-                        color = PrimaryBlack
+                        fontSize = 12.5.sp,
+                        fontWeight = FontWeight.Medium,
+                        lineHeight = 17.sp,
+                        color = OnSurfaceDark
                     ),
                     softWrap = true,
-                    modifier = Modifier.weight(1f, fill = false)
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(4.dp))
+                        .clickable { onCopyTopic() }
                 )
             }
 
@@ -405,30 +435,18 @@ private fun PublishPresetCard(
                 )
             }
 
-            // Part 3: Bottom Row - Left: Custom Remark Name (and non-default QoS/Retain); Right: Action buttons
+            // Part 3: Bottom Row - Left: Non-default QoS/Retain badges; Right: Action buttons
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                // Left area: Remark Name and non-default QoS/Retain badges
+                // Left area: Non-default QoS/Retain badges
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(5.dp),
                     modifier = Modifier.weight(1f, fill = false)
                 ) {
-                    if (preset.name.isNotBlank()) {
-                        Text(
-                            text = preset.name,
-                            style = TextStyle(
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = OnSurfaceVariantGray
-                            ),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
 
                     if (preset.qos > 0) {
                         Box(
