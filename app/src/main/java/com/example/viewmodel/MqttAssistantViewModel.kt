@@ -210,7 +210,11 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
     private val incomingPacketChannel = Channel<MqttLogPacket>(capacity = Channel.UNLIMITED)
 
     // --- AI SI Agent & Protocol Clarification State ---
-    private val toolRegistry = SIAgentToolRegistry(storage, application)
+    private val toolRegistry = SIAgentToolRegistry(
+        storage = storage,
+        context = application,
+        livePacketsProvider = { livePackets.value }
+    )
     private val aiAgentClient = AiAgentClient(toolRegistry)
 
     val aiConfig = MutableStateFlow<AiAgentConfig>(storage.loadAiConfig())
@@ -332,7 +336,11 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
 
                 // 2. 异步批量单事务入库 SQLite
                 withContext(Dispatchers.IO) {
-                    storage.savePackets(currentBatch, maxBuffer)
+                    try {
+                        storage.savePackets(currentBatch, maxBuffer)
+                    } catch (e: Exception) {
+                        android.util.Log.e("MqttViewModel", "写入 SQLite 异常: ${e.message}", e)
+                    }
                 }
                 refreshStorageStats()
 

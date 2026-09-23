@@ -2,6 +2,7 @@ package com.example.ai
 
 import android.content.Context
 import com.example.data.MqttStorageRepository
+import com.example.model.MqttLogPacket
 import com.example.model.ProtocolKnowledge
 import com.example.util.ArchivedExcelReader
 import org.json.JSONArray
@@ -9,9 +10,13 @@ import org.json.JSONObject
 
 /**
  * SI 智能数据分析 Agent 工具注册中心与执行引擎：
- * 遵循 OpenAI Tool Calling (Function Calling) 规范，为大模型提供操作底层 SQLite 与历史 Excel 文件的工具箱。
+ * 遵循 OpenAI Tool Calling (Function Calling) 规范，为大模型提供操作底层 SQLite、内存实时流与历史 Excel 文件的工具箱。
  */
-class SIAgentToolRegistry(val storage: MqttStorageRepository, val context: Context? = null) {
+class SIAgentToolRegistry(
+    val storage: MqttStorageRepository,
+    val context: Context? = null,
+    val livePacketsProvider: (() -> List<MqttLogPacket>)? = null
+) {
 
     companion object {
         /**
@@ -59,7 +64,49 @@ class SIAgentToolRegistry(val storage: MqttStorageRepository, val context: Conte
                 }
             )
 
-            // 工具 2: get_protocol_clarification
+            // 工具 2: get_live_packets (直接检索内存热报文)
+            tools.put(
+                JSONObject().apply {
+                    put("type", "function")
+                    put(
+                        "function",
+                        JSONObject().apply {
+                            put("name", "get_live_packets")
+                            put(
+                                "description",
+                                "【内存实时热报文检索】直接从应用内存实时消息流中获取最新收到的 MQTT 报文。当需要分析当前最新推送的报文、排查实时数据流、或 SQLite 数据库查无记录时，调用此工具获取内存中热数据。"
+                            )
+                            put(
+                                "parameters",
+                                JSONObject().apply {
+                                    put("type", "object")
+                                    put(
+                                        "properties",
+                                        JSONObject().apply {
+                                            put(
+                                                "topicFilter",
+                                                JSONObject().apply {
+                                                    put("type", "string")
+                                                    put("description", "可选的主题过滤关键词或通配符，默认为空匹配所有主题")
+                                                }
+                                            )
+                                            put(
+                                                "limit",
+                                                JSONObject().apply {
+                                                    put("type", "integer")
+                                                    put("description", "获取的最新报文数量，默认 20 条，最大 50 条")
+                                                }
+                                            )
+                                        }
+                                    )
+                                }
+                            )
+                        }
+                    )
+                }
+            )
+
+            // 工具 3: get_protocol_clarification
             tools.put(
                 JSONObject().apply {
                     put("type", "function")
@@ -289,6 +336,15 @@ class SIAgentToolRegistry(val storage: MqttStorageRepository, val context: Conte
                     if (sql.isBlank()) return "错误: SQL 语句不能为空"
                     try {
                         val rows = storage.executeReadOnlyQuery(sql)
+                        if (rows.isEmpty()) {
+                            val liveCount = livePacketsProvider?.invoke()?.size ?: 0
+                            val hint = if (liveCount > 0) {
+                                "提示：当前内存实时队列中正活跃缓存着 $liveCount 条最新接收的报文！若您需要分析当前在线数据，建议立即调用 get_live_packets 工具直接查看内存中的最新数据！"
+                            } else {
+                                "提示：当前暂未接收到 MQTT 报文，请确认 Broker 是否已连接且订阅已启用。"
+                            }
+                            return "SQL 执行完成，未检索到数据（结果 0 行）。$hint"
+                        }
                         val array = JSONArray()
                         for (row in rows) {
                             array.put(JSONObject(row))
@@ -301,6 +357,45 @@ class SIAgentToolRegistry(val storage: MqttStorageRepository, val context: Conte
                     } catch (e: Exception) {
                         "SQL 执行失败: ${e.message}。特别提醒: 表 tbl_mqtt_packets 真实可用列名仅有 (id, topic, qos, packetSeq, timestamp, payload, devInfo, sizeText, category, created_at)。绝不存在名为 gateway 或 gateway_id 的列！查询各网关吞吐或设备，请以 topic 字段进行分组聚合，例如: SELECT topic, count(*) as count FROM tbl_mqtt_packets GROUP BY topic ORDER BY count DESC。请修正 SQL 后重新执行。"
                     }
+                }
+
+                "get_live_packets" -> {
+                    val packets = livePacketsProvider?.invoke() ?: emptyList()
+                    if (packets.isEmpty()) {
+                        return "【内存状态】当前内存实时报文队列为空（暂未收到新报文，或刚启动未建立连接）。"
+                    }
+                    val filter = args.optString("topicFilter", "").trim()
+                    val limit = args.optInt("limit", 20).coerceIn(1, 50)
+                    val filtered = if (filter.isBlank()) {
+                        packets.takeLast(limit)
+                    } else {
+                        packets.filter {
+                            it.topic.contains(filter, ignoreCase = true) ||
+                            it.payload.contains(filter, ignoreCase = true) ||
+                            it.category.contains(filter, ignoreCase = true)
+                        }.takeLast(limit)
+                    }
+                    if (filtered.isEmpty()) {
+                        return "【内存状态】内存中共有 ${packets.size} 条报文，但未匹配到包含 '$filter' 的报文。"
+                    }
+                    val array = JSONArray()
+                    for (p in filtered.reversed()) {
+                        array.put(
+                            JSONObject().apply {
+                                put("seq", p.packetSeq)
+                                put("topic", p.topic)
+                                put("time", p.timestamp)
+                                put("payload", p.payload)
+                                put("devInfo", p.devInfo)
+                            }
+                        )
+                    }
+                    val res = JSONObject().apply {
+                        put("totalInMemory", packets.size)
+                        put("returnedCount", filtered.size)
+                        put("packets", array)
+                    }
+                    res.toString()
                 }
 
                 "get_protocol_clarification" -> {

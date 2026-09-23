@@ -62,7 +62,8 @@ class AiAgentClient(
             2. 当用户在对话中直接告诉你某种私有协议规则（例如：“网关上报的 Hex 第4字节是心率，第5-6字节是收缩压/舒张压...”），你必须立即调用 save_protocol_knowledge 工具将该规则沉淀持久化到知识库，并向用户确认已保存！
             
             【可用工具箱】
-            - execute_sqlite_query: 执行只读 SQL 语句查询当前 SQLite 数据库 (tbl_mqtt_packets)，分析实时/离线报文；
+            - execute_sqlite_query: 执行只读 SQL 语句查询当前 SQLite 数据库 (tbl_mqtt_packets)，分析历史/离线报文；
+            - get_live_packets: 【内存实时热报文检索】直接从应用内存实时消息流中获取最新到达的报文（无需经过磁盘或 SQL），排查实时数据流或当 SQLite 查无记录时使用；
             - get_protocol_clarification: 按需查询硬件私有协议解码规范与字段偏移；
             - save_protocol_knowledge: 对话即沉淀，将用户描述的私有协议持久化入库；
             - list_archived_excels: 全渠道穿透检索已导出的 Excel 历史分卷列表（覆盖系统公共 Download、微信/QQ目录及应用私有导出目录）；
