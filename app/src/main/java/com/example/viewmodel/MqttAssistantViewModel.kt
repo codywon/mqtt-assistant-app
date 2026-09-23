@@ -50,6 +50,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -61,6 +62,25 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.Date
 import java.util.Locale
 import java.util.UUID
+
+/**
+ * 现场主动巡检与异常预警雷达数据模型
+ */
+data class LiveHealthWatchdogState(
+    val activeGatewayCount: Int = 0,
+    val packetRatePerMin: Int = 0,
+    val anomalyCount: Int = 0,
+    val anomalies: List<WatchdogAnomaly> = emptyList(),
+    val isHealthy: Boolean = true
+)
+
+data class WatchdogAnomaly(
+    val id: String,
+    val topic: String,
+    val reason: String,
+    val timestamp: String,
+    val rawPacket: MqttLogPacket
+)
 
 class MqttAssistantViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -213,7 +233,22 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
     private val toolRegistry = SIAgentToolRegistry(
         storage = storage,
         context = application,
-        livePacketsProvider = { livePackets.value }
+        livePacketsProvider = { livePackets.value },
+        onMessagePublished = { topic, qos, retain, payload ->
+            viewModelScope.launch(Dispatchers.Main) {
+                val newHistory = PublishHistoryItem(
+                    id = UUID.randomUUID().toString(),
+                    topic = topic,
+                    payload = payload,
+                    qos = qos,
+                    retain = retain,
+                    timestamp = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date()),
+                    status = "Agent 下发成功"
+                )
+                publishHistory.update { listOf(newHistory) + it }
+                showToast("Agent 已向 $topic 成功下发报文")
+            }
+        }
     )
     private val aiAgentClient = AiAgentClient(toolRegistry)
 
@@ -227,6 +262,18 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
     val currentAiActionStatus = MutableStateFlow("")
     val pendingAiPromptQueue = MutableStateFlow<List<String>>(emptyList())
     private var aiJob: Job? = null
+
+    // --- 场景 1: 单条报文 AI 结构化透视与逆向解码状态 ---
+    val inspectingPacket = MutableStateFlow<MqttLogPacket?>(null)
+    val packetInspectionResult = MutableStateFlow<String>("")
+    val isPacketInspecting = MutableStateFlow(false)
+    val packetInspectionThinking = MutableStateFlow("")
+    private var packetInspectJob: Job? = null
+
+    // --- 场景 3: 现场主动巡检与异常预警雷达状态 (Proactive Watchdog) ---
+    val liveHealthWatchdogState: StateFlow<LiveHealthWatchdogState> = livePackets.map { packets ->
+        computeHealthWatchdogState(packets)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), LiveHealthWatchdogState())
 
     init {
         // 异步从 SQLite 加载历史最近报文，消除类构造期间主线程磁盘 I/O 阻塞
@@ -2381,6 +2428,188 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
             storage.deleteProtocolKnowledge(id)
         }
         showToast("已删除该协议澄清")
+    }
+
+    // --- 现场主动巡检与异常预警雷达 (Proactive Watchdog) ---
+    private fun computeHealthWatchdogState(packets: List<MqttLogPacket>): LiveHealthWatchdogState {
+        if (packets.isEmpty()) {
+            return LiveHealthWatchdogState(
+                activeGatewayCount = 0,
+                packetRatePerMin = 0,
+                anomalyCount = 0,
+                anomalies = emptyList(),
+                isHealthy = true
+            )
+        }
+
+        // 提取去重活跃网关 (取前两级路径作为网关标识)
+        val gateways = packets.map { p ->
+            val parts = p.topic.split('/')
+            if (parts.size >= 2) "${parts[0]}/${parts[1]}" else parts.firstOrNull() ?: p.topic
+        }.distinct()
+
+        val recentPackets = packets.takeLast(100)
+        val anomalies = mutableListOf<WatchdogAnomaly>()
+        val errorKeywords = listOf("error", "alarm", "fault", "fail", "crc_err", "offline", "timeout", "warn")
+
+        for (p in recentPackets) {
+            val isAnomaly = p.category.equals("ERROR", ignoreCase = true) ||
+                errorKeywords.any { kw -> p.payload.contains(kw, ignoreCase = true) || p.topic.contains(kw, ignoreCase = true) }
+            if (isAnomaly) {
+                val reason = when {
+                    p.payload.contains("alarm", ignoreCase = true) -> "检测到告警标志 (alarm)"
+                    p.payload.contains("error", ignoreCase = true) -> "报文携带错误标识 (error)"
+                    p.payload.contains("fault", ignoreCase = true) -> "设备故障状态 (fault)"
+                    p.payload.contains("crc", ignoreCase = true) -> "CRC 校验失败特征"
+                    p.category.equals("ERROR", ignoreCase = true) -> "系统标记异常分类"
+                    else -> "异常体征数据"
+                }
+                anomalies.add(
+                    WatchdogAnomaly(
+                        id = p.id,
+                        topic = p.topic,
+                        reason = reason,
+                        timestamp = p.timestamp,
+                        rawPacket = p
+                    )
+                )
+            }
+        }
+
+        val rate = (packets.size.coerceAtMost(60) * 1.2).toInt()
+        return LiveHealthWatchdogState(
+            activeGatewayCount = gateways.size,
+            packetRatePerMin = rate,
+            anomalyCount = anomalies.size,
+            anomalies = anomalies.take(10),
+            isHealthy = anomalies.isEmpty()
+        )
+    }
+
+    // --- 场景 1: 单条报文 AI 结构化透视与逆向反推 ---
+    fun inspectPacketWithAi(packet: MqttLogPacket) {
+        inspectingPacket.value = packet
+        isPacketInspecting.value = true
+        packetInspectionResult.value = ""
+        packetInspectionThinking.value = ""
+        packetInspectJob?.cancel()
+
+        packetInspectJob = viewModelScope.launch(Dispatchers.IO) {
+            val cfg = aiConfig.value
+            if (cfg.apiKey.isBlank()) {
+                withContext(Dispatchers.Main) {
+                    packetInspectionResult.value = "⚠️ 未配置 AI 模型 API Key。请在「设置 - AI 大模型设置」中配置 API Key 后再使用 AI 透视功能。"
+                    isPacketInspecting.value = false
+                }
+                return@launch
+            }
+
+            val matchedProtocols = protocolKnowledgeList.value.filter {
+                it.topicFilter.isNotBlank() && packet.topic.contains(it.topicFilter, ignoreCase = true)
+            }
+            val protocolContext = if (matchedProtocols.isNotEmpty()) {
+                "【本地已命中私有协议规则】:\n" + matchedProtocols.joinToString("\n---\n") {
+                    "协议名称: ${it.name}\n规则描述: ${it.description}\n样例 Hex: ${it.sampleHex}"
+                }
+            } else {
+                "【本地暂无该主题规则】: 请基于工业物联网私有协议通用规范（帧头AA 55/EB 90/Modbus/TLV/定长帧/心跳包等）进行逆向反推与字节切片分析。"
+            }
+
+            val inspectionPrompt = """
+                请作为资深工业物联网协议逆向与排查专家，深度透视并解码以下捕获到的 MQTT 报文：
+                
+                【报文主题 Topic】: ${packet.topic}
+                【报文序号】: ${packet.packetSeq}
+                【接收时间】: ${packet.timestamp}
+                【QoS 等级】: ${packet.qos}
+                【数据载荷 Payload】:
+                ```
+                ${packet.payload}
+                ```
+                
+                $protocolContext
+                
+                【透视解析要求】
+                请严格输出以下结构化内容：
+                1. ### 1. 协议特征与类型推断
+                   - 判定报文类型（心跳包/设备体征数据/控制应答/物模型JSON/私有Hex定长帧等）
+                   - 识别报文格式（HEX 十六进制、UTF-8 文本或 JSON）
+                2. ### 2. 字段字节切片对照表 (核心)
+                   输出 Markdown 表格，列名包含: | 偏移量(Offset) | 字段名称 | 原始十六进制/原始值 | 物理量解析值 | 工程单位 | 详细说明 |
+                   (若为 Hex 报文，逐字节切片拆解帧头、设备号、功能码、数据区各指标、校验码；若为 JSON，拆解各 key 含义)
+                3. ### 3. 校验码审计与数值健康度
+                   - CRC/LRC/累加和校验判定（推算校验算法与是否匹配）
+                   - 关键指标阈值判断（是否有超标、异常体征或故障报警标志位）
+                4. ### 4. 建议与协议沉淀
+                   - 给出 SI 现场排查建议或一键存入协议知识库的建议说明
+            """.trimIndent()
+
+            val tempHistory = listOf(
+                AiChatMessage(
+                    id = UUID.randomUUID().toString(),
+                    role = "user",
+                    content = inspectionPrompt,
+                    timestamp = System.currentTimeMillis()
+                )
+            )
+
+            aiAgentClient.chatStream(
+                config = cfg,
+                conversationHistory = tempHistory,
+                onChunk = { delta, isThinking ->
+                    if (isThinking) {
+                        packetInspectionThinking.value += delta
+                    } else {
+                        packetInspectionResult.value += delta
+                    }
+                },
+                onToolAction = { _ -> },
+                onError = { err ->
+                    packetInspectionResult.value = "AI 透视解析失败: $err"
+                    isPacketInspecting.value = false
+                },
+                onComplete = { _, _ ->
+                    isPacketInspecting.value = false
+                }
+            )
+        }
+    }
+
+    fun dismissPacketInspection() {
+        packetInspectJob?.cancel()
+        packetInspectJob = null
+        inspectingPacket.value = null
+        isPacketInspecting.value = false
+        packetInspectionResult.value = ""
+        packetInspectionThinking.value = ""
+    }
+
+    fun continueInspectionInChat(packet: MqttLogPacket) {
+        val analysis = packetInspectionResult.value
+        dismissPacketInspection()
+        navigateTo(AppScreen.AiChat)
+        val followUpPrompt = "关于报文 [${packet.topic}] (Payload: ${packet.payload.take(60)}...) 的 AI 透视结果，我想深入追问："
+        sendAiMessage(followUpPrompt)
+    }
+
+    fun saveInspectionAsProtocolKnowledge(packet: MqttLogPacket, ruleName: String, description: String) {
+        val proto = ProtocolKnowledge(
+            id = UUID.randomUUID().toString(),
+            name = ruleName.ifBlank { packet.topic.substringAfterLast('/') + " 协议规则" },
+            topicFilter = packet.topic,
+            description = description.ifBlank { packetInspectionResult.value },
+            sampleHex = packet.payload,
+            createdAt = System.currentTimeMillis()
+        )
+        saveProtocolKnowledge(proto)
+        showToast("已将此报文特征成功沉淀为新协议规则！")
+    }
+
+    // --- 场景 4: 一键生成“SI 现场验收与排查工程报告” ---
+    fun generateFieldAcceptanceReport() {
+        navigateTo(AppScreen.AiChat)
+        val prompt = "请全面盘点当前 MQTT Broker 采集到的所有网关数据、内存实时流与通信质量，生成一份标准的《MQTT 工业物联网现场验收与排查工程报告》。请调用工具查询真实数据，报告必须包含：1. 现场工程概况；2. 网关与设备在线清单及吞吐；3. 通信质量与连通性评估；4. 业务指标与私有协议解码审计；5. 整改建议与交付验收结论。"
+        sendAiMessage(prompt)
     }
 
     override fun onCleared() {

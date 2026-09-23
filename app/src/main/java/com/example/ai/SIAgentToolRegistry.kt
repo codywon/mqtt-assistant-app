@@ -15,7 +15,8 @@ import org.json.JSONObject
 class SIAgentToolRegistry(
     val storage: MqttStorageRepository,
     val context: Context? = null,
-    val livePacketsProvider: (() -> List<MqttLogPacket>)? = null
+    val livePacketsProvider: (() -> List<MqttLogPacket>)? = null,
+    val onMessagePublished: ((topic: String, qos: Int, retain: Boolean, payload: String) -> Unit)? = null
 ) {
 
     companion object {
@@ -318,6 +319,73 @@ class SIAgentToolRegistry(
                 }
             )
 
+            // 工具 7: publish_mqtt_message (自然语言双向发包与 Mock)
+            tools.put(
+                JSONObject().apply {
+                    put("type", "function")
+                    put(
+                        "function",
+                        JSONObject().apply {
+                            put("name", "publish_mqtt_message")
+                            put(
+                                "description",
+                                "【MQTT 报文下发与 Mock 发送】直接向 Broker 指定主题发布消息（支持纯文本/JSON，或以空格分隔的 Hex 16进制串如 'AA 55 01 02'）。当用户要求模拟发包、下发控制指令、发送心跳或调试设备时调用此工具。"
+                            )
+                            put(
+                                "parameters",
+                                JSONObject().apply {
+                                    put("type", "object")
+                                    put(
+                                        "properties",
+                                        JSONObject().apply {
+                                            put(
+                                                "topic",
+                                                JSONObject().apply {
+                                                    put("type", "string")
+                                                    put("description", "发布的目标主题，例如: 'college/breaker/control/THFC012CCCBDDC' 或 'gateway/cmd'")
+                                                }
+                                            )
+                                            put(
+                                                "payload",
+                                                JSONObject().apply {
+                                                    put("type", "string")
+                                                    put("description", "报文内容，可为 JSON 字符串、纯文本，或 Hex 字符串（如 'AA 55 01 04 00 00'）")
+                                                }
+                                            )
+                                            put(
+                                                "format",
+                                                JSONObject().apply {
+                                                    put("type", "string")
+                                                    put("description", "报文编码格式: TEXT（纯文本/JSON，默认）或 HEX（十六进制字节流）")
+                                                }
+                                            )
+                                            put(
+                                                "qos",
+                                                JSONObject().apply {
+                                                    put("type", "integer")
+                                                    put("description", "MQTT QoS 服务质量等级，可选 0, 1, 2，默认为 0")
+                                                }
+                                            )
+                                            put(
+                                                "retain",
+                                                JSONObject().apply {
+                                                    put("type", "boolean")
+                                                    put("description", "是否保留消息 (Retain)，默认为 false")
+                                                }
+                                            )
+                                        }
+                                    )
+                                    put("required", JSONArray().apply {
+                                        put("topic")
+                                        put("payload")
+                                    })
+                                }
+                            )
+                        }
+                    )
+                }
+            )
+
             return tools
         }
     }
@@ -519,6 +587,51 @@ class SIAgentToolRegistry(
                         )
                         storage.saveProtocolKnowledge(item)
                         "协议规则【$name】已成功沉淀并持久化至应用知识库！后续涉及相关主题或设备时将自动应用该解析规则。"
+                    }
+                }
+
+                "publish_mqtt_message" -> {
+                    val topic = args.optString("topic", "").trim()
+                    val payloadStr = args.optString("payload", "")
+                    val format = args.optString("format", "TEXT").uppercase()
+                    val qos = args.optInt("qos", 0).coerceIn(0, 2)
+                    val retain = args.optBoolean("retain", false)
+
+                    if (topic.isBlank()) {
+                        "发布失败: 目标主题 (topic) 不能为空"
+                    } else {
+                        try {
+                            val payloadBytes = if (format == "HEX") {
+                                val cleanHex = payloadStr.replace(" ", "").replace("\n", "").replace("0x", "").replace("0X", "")
+                                if (cleanHex.length % 2 != 0) {
+                                    return "发布失败: HEX 格式的报文十六进制字符总数必须为偶数，当前长度为 ${cleanHex.length}"
+                                }
+                                cleanHex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+                            } else {
+                                payloadStr.toByteArray(Charsets.UTF_8)
+                            }
+
+                            val result = kotlinx.coroutines.runBlocking {
+                                com.example.mqtt.MqttClientManager.publish(topic, payloadBytes, qos, retain)
+                            }
+                            if (result.isSuccess) {
+                                onMessagePublished?.invoke(topic, qos, retain, payloadStr)
+                                JSONObject().apply {
+                                    put("status", "SUCCESS")
+                                    put("message", "报文已成功送达 Broker 并下发")
+                                    put("topic", topic)
+                                    put("qos", qos)
+                                    put("retain", retain)
+                                    put("bytesSent", payloadBytes.size)
+                                    put("format", format)
+                                }.toString()
+                            } else {
+                                val err = result.exceptionOrNull()?.message ?: "未知错误"
+                                "发布失败: $err。请确认 MQTT Broker 当前是否已连接且有发布权限。"
+                            }
+                        } catch (e: Exception) {
+                            "报文编码处理或发布异常: ${e.message}"
+                        }
                     }
                 }
 

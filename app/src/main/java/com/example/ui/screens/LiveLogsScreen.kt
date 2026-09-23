@@ -47,7 +47,18 @@ import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Pause
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.AlertDialog
@@ -62,6 +73,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -91,7 +103,9 @@ import androidx.compose.ui.window.DialogProperties
 import com.example.model.AppScreen
 import com.example.model.MqttLogPacket
 import com.example.model.PublishPreset
+import com.example.ui.components.ClaudeOrbitLoading
 import com.example.ui.components.JsonCodeBlockView
+import com.example.ui.components.MarkdownRenderer
 import com.example.ui.theme.AccentEmerald
 import com.example.ui.theme.OnPrimaryWhite
 import com.example.ui.theme.OnSurfaceDark
@@ -104,7 +118,9 @@ import com.example.ui.theme.SurfaceContainerDefault
 import com.example.ui.theme.SurfaceContainerLow
 import com.example.ui.theme.SurfaceContainerLowest
 import com.example.util.MqttTopicUtil
+import com.example.viewmodel.LiveHealthWatchdogState
 import com.example.viewmodel.MqttAssistantViewModel
+import com.example.viewmodel.WatchdogAnomaly
 import java.util.UUID
 
 @Composable
@@ -129,11 +145,21 @@ fun LiveLogsScreen(
     var showClearConfirmDialog by remember { mutableStateOf(false) }
     val totalFilterRules = includeFilters.size + excludeFilters.size
 
+    val inspectingPacket by viewModel.inspectingPacket.collectAsState()
+    val inspectionResult by viewModel.packetInspectionResult.collectAsState()
+    val isInspecting by viewModel.isPacketInspecting.collectAsState()
+    val inspectionThinking by viewModel.packetInspectionThinking.collectAsState()
+    val watchdogState by viewModel.liveHealthWatchdogState.collectAsState()
+    var isWatchdogExpanded by remember { mutableStateOf(false) }
+
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
 
     val onSelectPacket: (MqttLogPacket) -> Unit = remember {
         { packet -> selectedDetailsPacket = packet }
+    }
+    val onInspectPacket: (MqttLogPacket) -> Unit = remember {
+        { packet -> viewModel.inspectPacketWithAi(packet) }
     }
     val onCopyTopicText: (String) -> Unit = remember {
         { topic ->
@@ -343,6 +369,19 @@ fun LiveLogsScreen(
             }
         }
 
+        // 1.5 现场通信健康度雷达 (Proactive Watchdog Strip)
+        LiveHealthWatchdogStrip(
+            state = watchdogState,
+            isExpanded = isWatchdogExpanded,
+            onToggleExpand = { isWatchdogExpanded = !isWatchdogExpanded },
+            onInspectAnomaly = { anomaly ->
+                onInspectPacket(anomaly.rawPacket)
+            },
+            onGenerateReport = {
+                viewModel.generateFieldAcceptanceReport()
+            }
+        )
+
         // 2. 独立滚动的消息流列表 (正向自然流序，自动向下吸底滚动与暂停自由翻阅)
         Box(
             modifier = Modifier
@@ -362,7 +401,7 @@ fun LiveLogsScreen(
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 60.dp),
+                                .padding(vertical = 40.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
@@ -376,6 +415,7 @@ fun LiveLogsScreen(
                         CompactMessageCard(
                             packet = packet,
                             onCardClick = onSelectPacket,
+                            onInspectWithAi = onInspectPacket,
                             onCopyTopic = onCopyTopicText,
                             onCopyPayload = onCopyPayloadText
                         )
@@ -416,6 +456,10 @@ fun LiveLogsScreen(
         MessageDetailsModalDialog(
             packet = packet,
             onDismiss = { selectedDetailsPacket = null },
+            onInspectWithAi = {
+                selectedDetailsPacket = null
+                onInspectPacket(packet)
+            },
             onCopyTopic = {
                 clipboardManager.setPrimaryClip(ClipData.newPlainText("topic", packet.topic))
                 viewModel.showToast("已复制主题: ${packet.topic}")
@@ -441,6 +485,27 @@ fun LiveLogsScreen(
                 viewModel.navigateTo(AppScreen.Publish)
                 selectedDetailsPacket = null
                 viewModel.showToast("已载入至发布页配置")
+            }
+        )
+    }
+
+    // 3.5 AI 结构化透视与逆向解码弹窗 (AiPacketInspectorDialog)
+    inspectingPacket?.let { packet ->
+        AiPacketInspectorDialog(
+            packet = packet,
+            result = inspectionResult,
+            isInspecting = isInspecting,
+            thinkingText = inspectionThinking,
+            onDismiss = { viewModel.dismissPacketInspection() },
+            onSaveAsRule = { name, desc ->
+                viewModel.saveInspectionAsProtocolKnowledge(packet, name, desc)
+            },
+            onContinueInChat = {
+                viewModel.continueInspectionInChat(packet)
+            },
+            onCopyResult = {
+                clipboardManager.setPrimaryClip(ClipData.newPlainText("ai_inspection", inspectionResult))
+                viewModel.showToast("已复制 AI 透视结果")
             }
         )
     }
@@ -524,6 +589,7 @@ fun LiveLogsScreen(
 private fun CompactMessageCard(
     packet: MqttLogPacket,
     onCardClick: (MqttLogPacket) -> Unit,
+    onInspectWithAi: (MqttLogPacket) -> Unit,
     onCopyTopic: (String) -> Unit,
     onCopyPayload: (String) -> Unit
 ) {
@@ -541,7 +607,7 @@ private fun CompactMessageCard(
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(5.dp)
         ) {
-            // Row 1: Colored Dot + Topic (支持多行完整换行，点击直接复制主题) + Copy Payload Button
+            // Row 1: Colored Dot + Topic (支持多行完整换行，点击直接复制主题) + AI Inspect & Copy Payload Buttons
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -575,16 +641,32 @@ private fun CompactMessageCard(
                     )
                 }
 
-                IconButton(
-                    onClick = { onCopyPayload(packet.payload) },
-                    modifier = Modifier.size(24.dp)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.ContentCopy,
-                        contentDescription = "复制消息",
-                        tint = OnSurfaceVariantGray,
-                        modifier = Modifier.size(15.dp)
-                    )
+                    IconButton(
+                        onClick = { onInspectWithAi(packet) },
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Psychology,
+                            contentDescription = "AI 结构化透视",
+                            tint = PrimaryBlack,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                    IconButton(
+                        onClick = { onCopyPayload(packet.payload) },
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ContentCopy,
+                            contentDescription = "复制消息",
+                            tint = OnSurfaceVariantGray,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
                 }
             }
 
@@ -702,6 +784,7 @@ private fun CompactMessageCard(
 private fun MessageDetailsModalDialog(
     packet: MqttLogPacket,
     onDismiss: () -> Unit,
+    onInspectWithAi: () -> Unit,
     onCopyTopic: () -> Unit,
     onCopyPayload: () -> Unit,
     onCopyValue: (String) -> Unit,
@@ -885,16 +968,16 @@ private fun MessageDetailsModalDialog(
                 HorizontalDivider(color = OutlineVariantLight, thickness = 0.5.dp)
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // 3. 底部绝对常驻操作栏 (关闭, 载入至发布页) - 无论内容多长，100% 完整显示在底部，绝不被截断
+                // 3. 底部绝对常驻操作栏 (关闭, AI 智能透视, 载入发布页) - 无论内容多长，100% 完整显示在底部，绝不被截断
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     OutlinedButton(
                         onClick = onDismiss,
                         modifier = Modifier
-                            .weight(1f)
+                            .weight(0.8f)
                             .height(38.dp),
                         shape = RoundedCornerShape(8.dp),
                         border = BorderStroke(0.8.dp, OutlineVariantLight),
@@ -906,7 +989,7 @@ private fun MessageDetailsModalDialog(
                         Text(
                             text = "关闭",
                             style = TextStyle(
-                                fontSize = 12.5.sp,
+                                fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = PrimaryBlack
                             )
@@ -914,7 +997,7 @@ private fun MessageDetailsModalDialog(
                     }
 
                     Button(
-                        onClick = onLoadIntoPublish,
+                        onClick = onInspectWithAi,
                         modifier = Modifier
                             .weight(1.3f)
                             .height(38.dp),
@@ -927,17 +1010,45 @@ private fun MessageDetailsModalDialog(
                         elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Send,
+                            imageVector = Icons.Default.Psychology,
                             contentDescription = null,
                             modifier = Modifier.size(15.dp)
                         )
-                        Spacer(modifier = Modifier.width(6.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = "载入至发布页",
+                            text = "AI 智能透视",
                             style = TextStyle(
-                                fontSize = 13.sp,
+                                fontSize = 12.5.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = OnPrimaryWhite
+                            )
+                        )
+                    }
+
+                    OutlinedButton(
+                        onClick = onLoadIntoPublish,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(38.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(0.8.dp, OutlineVariantLight),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = PrimaryBlack
+                        ),
+                        contentPadding = PaddingValues(0.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Send,
+                            contentDescription = null,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text(
+                            text = "去发布",
+                            style = TextStyle(
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = PrimaryBlack
                             )
                         )
                     }
@@ -1364,3 +1475,410 @@ private fun TopicFilterRulesModalDialog(
         }
     }
 }
+
+/**
+ * 现场通信健康度主动巡检雷达卡片 (Proactive Watchdog Strip)
+ */
+@Composable
+private fun LiveHealthWatchdogStrip(
+    state: LiveHealthWatchdogState,
+    isExpanded: Boolean,
+    onToggleExpand: () -> Unit,
+    onInspectAnomaly: (WatchdogAnomaly) -> Unit,
+    onGenerateReport: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+        shape = RoundedCornerShape(10.dp),
+        color = if (state.isHealthy) SurfaceContainerLowest else Color(0xFFFFFBEB),
+        border = BorderStroke(
+            0.6.dp,
+            if (state.isHealthy) OutlineVariantLight else Color(0xFFFDE68A)
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 7.dp)
+        ) {
+            // Header Row: 状态指示点 + 网关/速率概览 + 展开按钮
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onToggleExpand),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(7.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .clip(CircleShape)
+                            .background(if (state.isHealthy) Color(0xFF10B981) else Color(0xFFF59E0B))
+                    )
+                    Text(
+                        text = if (state.isHealthy) "现场通信良好" else "发现 ${state.anomalyCount} 处体征异常",
+                        style = TextStyle(
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (state.isHealthy) PrimaryBlack else Color(0xFFB45309)
+                        )
+                    )
+                    Text(
+                        text = "· ${state.activeGatewayCount} 个网关 · ~${state.packetRatePerMin} pkt/min",
+                        style = TextStyle(
+                            fontSize = 11.sp,
+                            color = OnSurfaceVariantGray,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    )
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                        contentDescription = "展开巡检雷达",
+                        tint = OnSurfaceVariantGray,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+
+            // Expanded Panel: 异常事件抓包与报告生成动作
+            AnimatedVisibility(
+                visible = isExpanded,
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut()
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    HorizontalDivider(color = OutlineVariantLight, thickness = 0.5.dp)
+
+                    if (state.anomalies.isEmpty()) {
+                        Text(
+                            text = "各网关数据链路与心跳正常，未检测到丢包、报错标志或超时体征。",
+                            style = TextStyle(fontSize = 11.5.sp, color = OnSurfaceVariantGray)
+                        )
+                    } else {
+                        Text(
+                            text = "异常体征抓包（轻触直接调用 AI 透视分析）:",
+                            style = TextStyle(fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold, color = PrimaryBlack)
+                        )
+                        Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                            state.anomalies.take(3).forEach { anomaly ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(SurfaceContainerLow)
+                                        .clickable { onInspectAnomaly(anomaly) }
+                                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = anomaly.topic,
+                                            style = TextStyle(
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                fontFamily = FontFamily.Monospace,
+                                                color = PrimaryBlack
+                                            ),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = "${anomaly.reason} · ${anomaly.timestamp}",
+                                            style = TextStyle(fontSize = 10.sp, color = Color(0xFFDC2626))
+                                        )
+                                    }
+                                    Icon(
+                                        imageVector = Icons.Default.Psychology,
+                                        contentDescription = "AI 诊断",
+                                        tint = PrimaryBlack,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // 底部操作区：一键生成交付报告
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        OutlinedButton(
+                            onClick = onGenerateReport,
+                            shape = RoundedCornerShape(6.dp),
+                            border = BorderStroke(0.6.dp, PrimaryBlack),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = PrimaryBlack),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                            modifier = Modifier.height(28.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Description,
+                                contentDescription = null,
+                                modifier = Modifier.size(12.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(text = "一键生成现场验收报告", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * AI 报文透视与逆向解码工作台弹窗 (AiPacketInspectorDialog)
+ */
+@Composable
+private fun AiPacketInspectorDialog(
+    packet: MqttLogPacket,
+    result: String,
+    isInspecting: Boolean,
+    thinkingText: String,
+    onDismiss: () -> Unit,
+    onSaveAsRule: (name: String, desc: String) -> Unit,
+    onContinueInChat: () -> Unit,
+    onCopyResult: () -> Unit
+) {
+    val maxHeight = (LocalConfiguration.current.screenHeightDp * 0.88f).dp
+    var showSaveRuleModal by remember { mutableStateOf(false) }
+    var ruleNameInput by remember { mutableStateOf(packet.topic.substringAfterLast('/') + " 协议规则") }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = SurfaceContainerLowest),
+            elevation = CardDefaults.cardElevation(defaultElevation = 10.dp),
+            modifier = Modifier
+                .fillMaxWidth(0.94f)
+                .heightIn(max = maxHeight)
+                .padding(vertical = 16.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(18.dp)
+            ) {
+                // Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Psychology,
+                            contentDescription = null,
+                            tint = PrimaryBlack,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Text(
+                            text = "AI 报文透视与解码",
+                            style = TextStyle(
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = PrimaryBlack
+                            )
+                        )
+                    }
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "关闭",
+                            tint = OutlineGray
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Scroll Content
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f, fill = false)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    // Packet meta
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(SurfaceContainerLow)
+                            .padding(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = "主题: ${packet.topic}",
+                            style = TextStyle(
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = PrimaryBlack
+                            )
+                        )
+                        Text(
+                            text = "原始载荷: ${packet.payload}",
+                            style = TextStyle(
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 11.sp,
+                                color = OnSurfaceVariantGray
+                            ),
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+
+                    // Loading or Markdown Output
+                    if (isInspecting && result.isBlank()) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            ClaudeOrbitLoading(modifier = Modifier.size(36.dp))
+                            Text(
+                                text = "正在匹配协议知识库与逆向切片...",
+                                style = TextStyle(fontSize = 12.5.sp, color = OnSurfaceVariantGray)
+                            )
+                        }
+                    } else {
+                        SelectionContainer {
+                            MarkdownRenderer(
+                                markdown = result,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+                HorizontalDivider(color = OutlineVariantLight, thickness = 0.5.dp)
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Action Bar
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedButton(
+                        onClick = onCopyResult,
+                        enabled = result.isNotBlank(),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(36.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(0.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ContentCopy,
+                            contentDescription = null,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(text = "复制结果", fontSize = 11.5.sp)
+                    }
+
+                    OutlinedButton(
+                        onClick = { showSaveRuleModal = true },
+                        enabled = result.isNotBlank(),
+                        modifier = Modifier
+                            .weight(1.1f)
+                            .height(36.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(0.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Bookmark,
+                            contentDescription = null,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(text = "沉淀为规则", fontSize = 11.5.sp)
+                    }
+
+                    Button(
+                        onClick = onContinueInChat,
+                        enabled = result.isNotBlank(),
+                        modifier = Modifier
+                            .weight(1.2f)
+                            .height(36.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlack),
+                        contentPadding = PaddingValues(0.dp)
+                    ) {
+                        Text(text = "深入追问", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    }
+                }
+            }
+        }
+    }
+
+    if (showSaveRuleModal) {
+        AlertDialog(
+            onDismissRequest = { showSaveRuleModal = false },
+            title = { Text("沉淀为此主题协议规则", fontSize = 16.sp, fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = "将当前报文解码特征保存至本地私有协议库，后续该设备或主题的所有报文将自动应用该规则：",
+                        fontSize = 12.sp,
+                        color = OnSurfaceVariantGray
+                    )
+                    OutlinedTextField(
+                        value = ruleNameInput,
+                        onValueChange = { ruleNameInput = it },
+                        label = { Text("协议规则名称") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onSaveAsRule(ruleNameInput, result)
+                        showSaveRuleModal = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlack)
+                ) {
+                    Text("保存沉淀", color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSaveRuleModal = false }) {
+                    Text("取消", color = PrimaryBlack)
+                }
+            }
+        )
+    }
+}
+

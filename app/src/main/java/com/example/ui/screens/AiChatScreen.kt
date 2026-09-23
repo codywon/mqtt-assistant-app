@@ -48,6 +48,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
@@ -522,6 +523,16 @@ fun AiChatScreen(
                                 }
                                 HorizontalDivider(color = SurfaceContainerDefault, thickness = 0.5.dp)
                                 DropdownMenuItem(
+                                    text = { Text("生成现场验收报告", fontSize = 13.5.sp, color = PrimaryBlack) },
+                                    leadingIcon = {
+                                        Icon(Icons.Default.Description, contentDescription = null, modifier = Modifier.size(18.dp), tint = PrimaryBlack)
+                                    },
+                                    onClick = {
+                                        showMoreMenu = false
+                                        viewModel.generateFieldAcceptanceReport()
+                                    }
+                                )
+                                DropdownMenuItem(
                                     text = { Text("协议澄清规则库", fontSize = 13.5.sp, color = PrimaryBlack) },
                                     leadingIcon = {
                                         Icon(Icons.Default.Psychology, contentDescription = null, modifier = Modifier.size(18.dp), tint = PrimaryBlack)
@@ -806,18 +817,18 @@ private fun AiEmptyWelcomeView(
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 SuggestionCard(
-                    tag = "流量聚合",
-                    title = "网关报文统计",
-                    desc = "统计各网关吞吐与频次",
-                    prompt = "统计当前 SQLite 数据库中各网关收到的报文总数与频次",
+                    tag = "工程交付",
+                    title = "现场验收工程报告",
+                    desc = "一键生成通信验收报告",
+                    prompt = "请全面盘点当前 MQTT Broker 采集到的所有网关数据、内存实时流与通信质量，生成一份标准的《MQTT 工业物联网现场验收与排查工程报告》。请调用工具查询真实数据，报告必须包含：1. 现场工程概况；2. 网关与设备在线清单及吞吐；3. 通信质量与连通性评估；4. 业务指标与私有协议解码审计；5. 整改建议与交付验收结论。",
                     modifier = Modifier.weight(1f),
                     onClick = onPillClick
                 )
                 SuggestionCard(
-                    tag = "健康筛查",
-                    title = "异常体征排查",
-                    desc = "排查超标血压与心率",
-                    prompt = "基于私有协议筛查最新收到的体征数据，排查是否有高血压或心率异常",
+                    tag = "异常巡检",
+                    title = "现场体征排查",
+                    desc = "排查心跳失联与告警",
+                    prompt = "基于内存实时流与本地私有协议库，全面排查各网关与设备的心跳失联、报错报文与异常体征数据",
                     modifier = Modifier.weight(1f),
                     onClick = onPillClick
                 )
@@ -828,18 +839,18 @@ private fun AiEmptyWelcomeView(
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 SuggestionCard(
-                    tag = "离线分卷",
-                    title = "Excel 穿透分析",
-                    desc = "读取 Download 归档报文",
-                    prompt = "查看系统 Download 目录下已转储的 Excel 历史报文并汇总趋势",
+                    tag = "双向联调",
+                    title = "自然语言 Mock 发包",
+                    desc = "AI 构造心跳并一键下发",
+                    prompt = "帮我构造一条心跳上报 Mock 报文，并调用 publish_mqtt_message 直接发布到当前网关主题",
                     modifier = Modifier.weight(1f),
                     onClick = onPillClick
                 )
                 SuggestionCard(
-                    tag = "硬件协议",
-                    title = "私有规则核对",
-                    desc = "人话测试 Hex 报文结构",
-                    prompt = "测试并核对当前硬件私有协议知识库，告诉我支持哪些 Hex 报文规则",
+                    tag = "离线归档",
+                    title = "Excel 穿透分析",
+                    desc = "读取 Download 归档画像",
+                    prompt = "查看系统 Download 目录下已转储的 Excel 历史报文并汇总趋势画像",
                     modifier = Modifier.weight(1f),
                     onClick = onPillClick
                 )

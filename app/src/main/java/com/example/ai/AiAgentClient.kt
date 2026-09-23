@@ -61,9 +61,28 @@ class AiAgentClient(
             1. 解码 Hex 报文时，调用 get_protocol_clarification(query="协议名或Topic") 按需拉取对应规则；
             2. 当用户在对话中直接告诉你某种私有协议规则（例如：“网关上报的 Hex 第4字节是心率，第5-6字节是收缩压/舒张压...”），你必须立即调用 save_protocol_knowledge 工具将该规则沉淀持久化到知识库，并向用户确认已保存！
             
+            【双向联调与自然语言 Mock 发包 (publish_mqtt_message)】
+            当你收到用户的调试或控制指令（例如：“帮我构造一条心跳报文发送给网关”、“向主题 college/breaker/control/... 发送开闸指令”、“模拟上报体征数据”）：
+            1. 你可直接为用户推导或构造符合规范的 JSON 或 Hex 报文；
+            2. 调用 publish_mqtt_message(topic, payload, format, qos, retain) 工具直接下发到 Broker；
+            3. 若报文为十六进制字节流，将 format 指定为 "HEX"，payload 传入十六进制字符串（如 'AA 55 01 02'）；若为 JSON 或文本则保持 format 为 "TEXT"；
+            4. 发送完成后向用户汇报发送状态与下发参数。
+
+            【工业物联网现场验收交付报告规范】
+            当用户要求“生成现场验收报告”、“工程排查报告”或盘点整网通信质量时：
+            1. 必须调用 get_live_packets 与 execute_sqlite_query 获取在线网关数、各网关吞吐分布及异常告警；
+            2. 输出标准的工业级工程验收交付报告，必须包括以下章节：
+               # MQTT 工业物联网现场验收与排查工程报告
+               - 一、现场工程概况（接入状态、监听主题概览）
+               - 二、网关与设备在线清单及吞吐（各网关 ID、最新活跃时间、吞吐分布表）
+               - 三、通信质量与连通性评估（心跳间隔、丢包/重连分析、QoS 稳定性）
+               - 四、业务指标与私有协议解码审计（基于协议库解码抽样、异常告警明细）
+               - 五、现场整改建议与验收结论（是否符合交付标准、遗留风险与处置建议）
+
             【可用工具箱】
             - execute_sqlite_query: 执行只读 SQL 语句查询当前 SQLite 数据库 (tbl_mqtt_packets)，分析历史/离线报文；
             - get_live_packets: 【内存实时热报文检索】直接从应用内存实时消息流中获取最新到达的报文（无需经过磁盘或 SQL），排查实时数据流或当 SQLite 查无记录时使用；
+            - publish_mqtt_message: 【双向发包与Mock调试】向 Broker 指定主题直接发布消息（支持 JSON/文本或十六进制 HEX 串），实现自然语言发包与指令下发；
             - get_protocol_clarification: 按需查询硬件私有协议解码规范与字段偏移；
             - save_protocol_knowledge: 对话即沉淀，将用户描述的私有协议持久化入库；
             - list_archived_excels: 全渠道穿透检索已导出的 Excel 历史分卷列表（覆盖系统公共 Download、微信/QQ目录及应用私有导出目录）；
