@@ -9,7 +9,7 @@ import org.json.JSONObject
  * SI 智能数据分析 Agent 工具注册中心与执行引擎：
  * 遵循 OpenAI Tool Calling (Function Calling) 规范，为大模型提供操作底层 SQLite 与历史 Excel 文件的工具箱。
  */
-class SIAgentToolRegistry(private val storage: MqttStorageRepository) {
+class SIAgentToolRegistry(val storage: MqttStorageRepository) {
 
     companion object {
         /**
