@@ -37,6 +37,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -1024,75 +1025,53 @@ private fun AiMessageBubble(
                     elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
                 ) {
                     Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
-                        if (isUser) {
-                            Text(
-                                text = message.content,
-                                style = TextStyle(
-                                    fontSize = 13.5.sp,
-                                    color = OnPrimaryWhite,
-                                    lineHeight = 19.sp
+                        SelectionContainer {
+                            if (isUser) {
+                                Text(
+                                    text = message.content,
+                                    style = TextStyle(
+                                        fontSize = 13.5.sp,
+                                        color = OnPrimaryWhite,
+                                        lineHeight = 19.sp
+                                    )
                                 )
-                            )
-                        } else {
-                            MarkdownRenderer(
-                                content = message.content,
-                                isUser = false
-                            )
+                            } else {
+                                MarkdownRenderer(
+                                    content = message.content,
+                                    isUser = false
+                                )
+                            }
+                        }
 
-                            // AI 回复卡片底部操作栏 (复制全文)
-                            if (!message.isError && message.content.isNotBlank()) {
-                                Spacer(modifier = Modifier.height(4.dp))
+                        // AI 回复卡片底部操作栏 (复制全文)
+                        if (!isUser && !message.isError && message.content.isNotBlank()) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.End,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
                                 Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.End,
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .clickable { onCopy(message.content, "AI回复") }
+                                        .padding(horizontal = 5.dp, vertical = 2.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Row(
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(4.dp))
-                                            .clickable { onCopy(message.content, "AI回复") }
-                                            .padding(horizontal = 5.dp, vertical = 2.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.ContentCopy,
-                                            contentDescription = "复制",
-                                            tint = OnSurfaceVariantGray,
-                                            modifier = Modifier.size(11.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(3.dp))
-                                        Text(
-                                            text = "复制",
-                                            style = TextStyle(fontSize = 10.sp, color = OnSurfaceVariantGray)
-                                        )
-                                    }
+                                    Icon(
+                                        imageVector = Icons.Default.ContentCopy,
+                                        contentDescription = "复制",
+                                        tint = OnSurfaceVariantGray,
+                                        modifier = Modifier.size(11.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(3.dp))
+                                    Text(
+                                        text = "复制",
+                                        style = TextStyle(fontSize = 10.sp, color = OnSurfaceVariantGray)
+                                    )
                                 }
                             }
                         }
-                    }
-                }
-
-                // 用户提问消息下方的复制小按钮
-                if (isUser) {
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Row(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(4.dp))
-                            .clickable { onCopy(message.content, "我的提问") }
-                            .padding(horizontal = 4.dp, vertical = 1.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.ContentCopy,
-                            contentDescription = "复制",
-                            tint = OutlineGray,
-                            modifier = Modifier.size(11.dp)
-                        )
-                        Spacer(modifier = Modifier.width(2.dp))
-                        Text(
-                            text = "复制",
-                            style = TextStyle(fontSize = 9.5.sp, color = OutlineGray)
-                        )
                     }
                 }
             }

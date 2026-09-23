@@ -1,6 +1,7 @@
 package com.example.ai
 
 import com.example.data.MqttStorageRepository
+import com.example.model.ProtocolKnowledge
 import com.example.util.ArchivedExcelReader
 import org.json.JSONArray
 import org.json.JSONObject
@@ -116,17 +117,17 @@ class SIAgentToolRegistry(val storage: MqttStorageRepository) {
                 }
             )
 
-            // 工具 4: query_excel_data
+            // 工具 4: get_excel_summary (极速宏观统计画像，防爆上下文)
             tools.put(
                 JSONObject().apply {
                     put("type", "function")
                     put(
                         "function",
                         JSONObject().apply {
-                            put("name", "query_excel_data")
+                            put("name", "get_excel_summary")
                             put(
                                 "description",
-                                "流式穿透读取指定的已归档 Excel (.xlsx) 文件内的报文行数据。支持按主题或内容关键字检索前 N 条数据。"
+                                "【防爆核心工具】极速流式分析指定的已归档 Excel (.xlsx) 文件的宏观画像（总报文行数、起止时间戳、Top 10 热门主题分布、涉及设备概况）。分析一个 10,000 行的 Excel 仅需几十毫秒且仅耗费 ~150 tokens。在分析任何历史 Excel 时，必须最先调用此工具获取概况，严禁盲目读取大量原始明细！"
                             )
                             put(
                                 "parameters",
@@ -139,26 +140,129 @@ class SIAgentToolRegistry(val storage: MqttStorageRepository) {
                                                 "fileName",
                                                 JSONObject().apply {
                                                     put("type", "string")
-                                                    put("description", "Excel 文件名，例如: MQTT_Packets_20260923_180000.xlsx")
+                                                    put("description", "Excel 文件名，例如: mqtt_packets_20260923_180000.xlsx")
+                                                }
+                                            )
+                                        }
+                                    )
+                                    put("required", JSONArray().apply { put("fileName") })
+                                }
+                            )
+                        }
+                    )
+                }
+            )
+
+            // 工具 5: query_excel_data (受控按需采样读取，单次上限 30 条)
+            tools.put(
+                JSONObject().apply {
+                    put("type", "function")
+                    put(
+                        "function",
+                        JSONObject().apply {
+                            put("name", "query_excel_data")
+                            put(
+                                "description",
+                                "流式读取指定 Excel (.xlsx) 文件内的具体报文行数据。为保护上下文防止模型崩溃，单次上限严格限制为 30 条。必须结合 keyword 关键字过滤或 offset 分页进行按需精准采样，严禁无差别全量拉取！"
+                            )
+                            put(
+                                "parameters",
+                                JSONObject().apply {
+                                    put("type", "object")
+                                    put(
+                                        "properties",
+                                        JSONObject().apply {
+                                            put(
+                                                "fileName",
+                                                JSONObject().apply {
+                                                    put("type", "string")
+                                                    put("description", "Excel 文件名，例如: mqtt_packets_20260923_180000.xlsx")
                                                 }
                                             )
                                             put(
                                                 "keyword",
                                                 JSONObject().apply {
                                                     put("type", "string")
-                                                    put("description", "过滤关键词，如特定网关ID、主题前缀或 Hex 标记，为空则读取全部")
+                                                    put("description", "过滤关键词，如特定主题前缀、设备ID或 Hex 特征码，建议明确指定")
                                                 }
                                             )
                                             put(
                                                 "limit",
                                                 JSONObject().apply {
                                                     put("type", "integer")
-                                                    put("description", "最多读取行数，默认 50，最大 150")
+                                                    put("description", "单次最多读取行数，默认 20，最大允许 30")
+                                                }
+                                            )
+                                            put(
+                                                "offset",
+                                                JSONObject().apply {
+                                                    put("type", "integer")
+                                                    put("description", "跳过的匹配行数（用于分页检索），默认为 0")
                                                 }
                                             )
                                         }
                                     )
                                     put("required", JSONArray().apply { put("fileName") })
+                                }
+                            )
+                        }
+                    )
+                }
+            )
+
+            // 工具 6: save_protocol_knowledge (对话即沉淀协议规则)
+            tools.put(
+                JSONObject().apply {
+                    put("type", "function")
+                    put(
+                        "function",
+                        JSONObject().apply {
+                            put("name", "save_protocol_knowledge")
+                            put(
+                                "description",
+                                "【协议沉淀】当用户在对话中说明、定义或解释某种硬件私有协议格式、报文规范（如血压计Hex格式、心跳包规范）时，调用此工具将协议规则即时持久化到应用知识库中，以便后续所有会话均可自动应用。"
+                            )
+                            put(
+                                "parameters",
+                                JSONObject().apply {
+                                    put("type", "object")
+                                    put(
+                                        "properties",
+                                        JSONObject().apply {
+                                            put(
+                                                "name",
+                                                JSONObject().apply {
+                                                    put("type", "string")
+                                                    put("description", "协议简短名称，例如: '迈瑞血压计协议' 或 '网关心跳包'")
+                                                }
+                                            )
+                                            put(
+                                                "topicFilter",
+                                                JSONObject().apply {
+                                                    put("type", "string")
+                                                    put("description", "关联的 MQTT 主题或关键字过滤条件，如 'vital/bp'，可为空")
+                                                }
+                                            )
+                                            put(
+                                                "description",
+                                                JSONObject().apply {
+                                                    put("type", "string")
+                                                    put("description", "详细的协议字段解码规则、字节偏移、计算公式等说明")
+                                                }
+                                            )
+                                            put(
+                                                "sampleHex",
+                                                JSONObject().apply {
+                                                    put("type", "string")
+                                                    put("description", "示例 Hex 串或报文样例，可为空")
+                                                }
+                                            )
+                                        }
+                                    )
+                                    put("required", JSONArray().apply {
+                                        put("name")
+                                        put("description")
+                                    })
                                 }
                             )
                         }
@@ -254,11 +358,32 @@ class SIAgentToolRegistry(val storage: MqttStorageRepository) {
                     array.toString()
                 }
 
+                "get_excel_summary" -> {
+                    val fileName = args.optString("fileName", "").trim()
+                    if (fileName.isBlank()) return "错误: fileName 不能为空"
+                    val summary = ArchivedExcelReader.analyzeExcelSummary(fileName)
+                    if (summary == null) {
+                        "无法分析文件 '$fileName'，请检查文件是否存在且格式有效。"
+                    } else {
+                        val obj = JSONObject().apply {
+                            put("fileName", summary.fileName)
+                            put("totalRows", summary.totalRows)
+                            put("startTime", summary.startTime)
+                            put("endTime", summary.endTime)
+                            put("topTopics", JSONObject(summary.topTopics))
+                            put("uniqueDevicesCount", summary.uniqueDevices.size)
+                            put("sampleDevices", JSONArray(summary.uniqueDevices.take(10)))
+                        }
+                        obj.toString()
+                    }
+                }
+
                 "query_excel_data" -> {
-                    val fileName = args.optString("fileName", "")
-                    val keyword = args.optString("keyword", "")
-                    val limit = args.optInt("limit", 50).coerceIn(1, 150)
-                    val rows = ArchivedExcelReader.readExcelRows(fileName, keyword, limit)
+                    val fileName = args.optString("fileName", "").trim()
+                    val keyword = args.optString("keyword", "").trim()
+                    val limit = args.optInt("limit", 20).coerceIn(1, 30)
+                    val offset = args.optInt("offset", 0).coerceAtLeast(0)
+                    val rows = ArchivedExcelReader.readExcelRows(fileName, keyword, limit, offset)
                     val array = JSONArray()
                     for (r in rows) {
                         array.put(
@@ -273,10 +398,31 @@ class SIAgentToolRegistry(val storage: MqttStorageRepository) {
                     }
                     val resultObj = JSONObject().apply {
                         put("fileName", fileName)
-                        put("matchedCount", rows.size)
+                        put("offset", offset)
+                        put("returnedCount", rows.size)
+                        put("hasMore", rows.size == limit)
                         put("rows", array)
                     }
                     resultObj.toString()
+                }
+
+                "save_protocol_knowledge" -> {
+                    val name = args.optString("name", "").trim()
+                    val desc = args.optString("description", "").trim()
+                    val topic = args.optString("topicFilter", "").trim()
+                    val hex = args.optString("sampleHex", "").trim()
+                    if (name.isBlank() || desc.isBlank()) {
+                        "保存失败: 协议名称(name)和协议解码描述(description)不能为空"
+                    } else {
+                        val item = ProtocolKnowledge(
+                            name = name,
+                            topicFilter = topic,
+                            description = desc,
+                            sampleHex = hex
+                        )
+                        storage.saveProtocolKnowledge(item)
+                        "协议规则【$name】已成功沉淀并持久化至应用知识库！后续涉及相关主题或设备时将自动应用该解析规则。"
+                    }
                 }
 
                 else -> "未知工具: $functionName"
