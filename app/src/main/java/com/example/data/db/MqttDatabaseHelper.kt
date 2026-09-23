@@ -6,6 +6,7 @@ import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import com.example.model.AiChatMessage
+import com.example.model.AiChatSession
 import com.example.model.BrokerProfile
 import com.example.model.MqttLogPacket
 import com.example.model.ProtocolKnowledge
@@ -29,7 +30,7 @@ class MqttDatabaseHelper(context: Context) : SQLiteOpenHelper(
 
     companion object {
         const val DATABASE_NAME = "mqtt_assistant.db"
-        const val DATABASE_VERSION = 2
+        const val DATABASE_VERSION = 3
 
         // Tables
         private const val TABLE_BROKERS = "tbl_broker_profiles"
@@ -38,6 +39,7 @@ class MqttDatabaseHelper(context: Context) : SQLiteOpenHelper(
         private const val TABLE_PACKETS = "tbl_mqtt_packets"
         private const val TABLE_SETTINGS = "tbl_app_settings"
         private const val TABLE_PROTOCOLS = "tbl_protocol_knowledge"
+        private const val TABLE_AI_SESSIONS = "tbl_ai_sessions"
         private const val TABLE_AI_MESSAGES = "tbl_ai_messages"
     }
 
@@ -144,11 +146,24 @@ class MqttDatabaseHelper(context: Context) : SQLiteOpenHelper(
             """.trimIndent()
         )
 
-        // 7. AI Chat Messages history table
+        // 7. AI Chat Sessions table
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS $TABLE_AI_SESSIONS (
+                id TEXT PRIMARY KEY,
+                title TEXT,
+                created_at INTEGER,
+                updated_at INTEGER
+            )
+            """.trimIndent()
+        )
+
+        // 8. AI Chat Messages history table
         db.execSQL(
             """
             CREATE TABLE IF NOT EXISTS $TABLE_AI_MESSAGES (
                 id TEXT PRIMARY KEY,
+                sessionId TEXT DEFAULT 'default',
                 role TEXT,
                 content TEXT,
                 reasoningContent TEXT,
@@ -162,7 +177,21 @@ class MqttDatabaseHelper(context: Context) : SQLiteOpenHelper(
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        // Safe migration: ensuring newly added tables exist
+        if (oldVersion < 3) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS $TABLE_AI_SESSIONS (
+                    id TEXT PRIMARY KEY,
+                    title TEXT,
+                    created_at INTEGER,
+                    updated_at INTEGER
+                )
+                """.trimIndent()
+            )
+            try {
+                db.execSQL("ALTER TABLE $TABLE_AI_MESSAGES ADD COLUMN sessionId TEXT DEFAULT 'default'")
+            } catch (_: Exception) {}
+        }
         onCreate(db)
     }
 
@@ -712,13 +741,67 @@ class MqttDatabaseHelper(context: Context) : SQLiteOpenHelper(
     }
 
     // =========================================================================
-    // AI Chat History CRUD
+    // AI Chat Sessions & Messages History CRUD
     // =========================================================================
+
+    fun saveAiSession(session: AiChatSession) {
+        val db = writableDatabase
+        val cv = ContentValues().apply {
+            put("id", session.id)
+            put("title", session.title)
+            put("created_at", session.createdAt)
+            put("updated_at", session.updatedAt)
+        }
+        db.insertWithOnConflict(TABLE_AI_SESSIONS, null, cv, SQLiteDatabase.CONFLICT_REPLACE)
+    }
+
+    fun loadAllAiSessions(): List<AiChatSession> {
+        val db = readableDatabase
+        val list = mutableListOf<AiChatSession>()
+        val cursor = db.query(
+            TABLE_AI_SESSIONS,
+            null,
+            null,
+            null,
+            null,
+            null,
+            "updated_at DESC"
+        )
+        cursor.use { c ->
+            while (c.moveToNext()) {
+                list.add(
+                    AiChatSession(
+                        id = c.getString(c.getColumnIndexOrThrow("id")),
+                        title = c.getString(c.getColumnIndexOrThrow("title")),
+                        createdAt = c.getLong(c.getColumnIndexOrThrow("created_at")),
+                        updatedAt = c.getLong(c.getColumnIndexOrThrow("updated_at"))
+                    )
+                )
+            }
+        }
+        return list
+    }
+
+    fun updateAiSessionTitle(sessionId: String, title: String) {
+        val db = writableDatabase
+        val cv = ContentValues().apply {
+            put("title", title)
+            put("updated_at", System.currentTimeMillis())
+        }
+        db.update(TABLE_AI_SESSIONS, cv, "id = ?", arrayOf(sessionId))
+    }
+
+    fun deleteAiSession(sessionId: String) {
+        val db = writableDatabase
+        db.delete(TABLE_AI_SESSIONS, "id = ?", arrayOf(sessionId))
+        db.delete(TABLE_AI_MESSAGES, "sessionId = ?", arrayOf(sessionId))
+    }
 
     fun saveAiMessage(msg: AiChatMessage) {
         val db = writableDatabase
         val cv = ContentValues().apply {
             put("id", msg.id)
+            put("sessionId", msg.sessionId)
             put("role", msg.role)
             put("content", msg.content)
             put("reasoningContent", msg.reasoningContent)
@@ -728,16 +811,23 @@ class MqttDatabaseHelper(context: Context) : SQLiteOpenHelper(
             put("isError", if (msg.isError) 1 else 0)
         }
         db.insertWithOnConflict(TABLE_AI_MESSAGES, null, cv, SQLiteDatabase.CONFLICT_REPLACE)
+
+        // 更新所属会话的活跃时间戳
+        val updateCv = ContentValues().apply {
+            put("updated_at", msg.timestamp)
+        }
+        db.update(TABLE_AI_SESSIONS, updateCv, "id = ?", arrayOf(msg.sessionId))
     }
 
-    fun loadAiMessages(limit: Int = 100): List<AiChatMessage> {
+    fun loadAiMessages(sessionId: String = "default", limit: Int = 100): List<AiChatMessage> {
         val db = readableDatabase
         val list = mutableListOf<AiChatMessage>()
+        val selection = if (sessionId == "default") "sessionId = ? OR sessionId IS NULL" else "sessionId = ?"
         val cursor = db.query(
             TABLE_AI_MESSAGES,
             null,
-            null,
-            null,
+            selection,
+            arrayOf(sessionId),
             null,
             null,
             "timestamp ASC",
@@ -745,9 +835,12 @@ class MqttDatabaseHelper(context: Context) : SQLiteOpenHelper(
         )
         cursor.use { c ->
             while (c.moveToNext()) {
+                val sIdCol = c.getColumnIndex("sessionId")
+                val sId = if (sIdCol >= 0 && !c.isNull(sIdCol)) c.getString(sIdCol) else "default"
                 list.add(
                     AiChatMessage(
                         id = c.getString(c.getColumnIndexOrThrow("id")),
+                        sessionId = sId,
                         role = c.getString(c.getColumnIndexOrThrow("role")),
                         content = c.getString(c.getColumnIndexOrThrow("content")),
                         reasoningContent = c.getString(c.getColumnIndexOrThrow("reasoningContent")),
@@ -762,7 +855,12 @@ class MqttDatabaseHelper(context: Context) : SQLiteOpenHelper(
         return list
     }
 
-    fun clearAiMessages() {
-        writableDatabase.delete(TABLE_AI_MESSAGES, null, null)
+    fun clearAiMessages(sessionId: String? = null) {
+        val db = writableDatabase
+        if (sessionId != null) {
+            db.delete(TABLE_AI_MESSAGES, "sessionId = ?", arrayOf(sessionId))
+        } else {
+            db.delete(TABLE_AI_MESSAGES, null, null)
+        }
     }
 }

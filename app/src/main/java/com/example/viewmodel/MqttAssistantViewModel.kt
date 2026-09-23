@@ -19,6 +19,7 @@ import com.example.ai.SIAgentToolRegistry
 import com.example.data.MqttStorageRepository
 import com.example.model.AiAgentConfig
 import com.example.model.AiChatMessage
+import com.example.model.AiChatSession
 import com.example.model.AppScreen
 import com.example.model.BrokerProfile
 import com.example.model.MqttConnectionState
@@ -211,6 +212,8 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
     private val aiAgentClient = AiAgentClient(toolRegistry)
 
     val aiConfig = MutableStateFlow<AiAgentConfig>(storage.loadAiConfig())
+    val aiSessions = MutableStateFlow<List<AiChatSession>>(emptyList())
+    val currentSessionId = MutableStateFlow<String>("default")
     val aiMessages = MutableStateFlow<List<AiChatMessage>>(emptyList())
     val protocolKnowledgeList = MutableStateFlow<List<ProtocolKnowledge>>(emptyList())
     val isAiResponding = MutableStateFlow(false)
@@ -222,10 +225,19 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
         // 异步从 SQLite 加载历史最近报文，消除类构造期间主线程磁盘 I/O 阻塞
         viewModelScope.launch(Dispatchers.IO) {
             val cached = storage.loadRecentPackets(300).reversed()
-            val savedAiMsgs = storage.loadAiMessages(100)
+            var savedSessions = storage.loadAllAiSessions()
+            if (savedSessions.isEmpty()) {
+                val initialSession = AiChatSession(id = "default", title = "新会话")
+                storage.saveAiSession(initialSession)
+                savedSessions = listOf(initialSession)
+            }
+            val activeSessionId = savedSessions.first().id
+            val savedAiMsgs = storage.loadAiMessages(activeSessionId, 100)
             val savedProtocols = storage.loadAllProtocolKnowledge()
             withContext(Dispatchers.Main) {
                 livePackets.value = cached
+                aiSessions.value = savedSessions
+                currentSessionId.value = activeSessionId
                 aiMessages.value = savedAiMsgs
                 protocolKnowledgeList.value = savedProtocols
             }
@@ -1904,11 +1916,70 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
     // AI SI Agent & Protocol Clarification Actions
     // ==========================================
 
+    fun createNewAiSession() {
+        stopAiResponse()
+        val newSession = AiChatSession(
+            id = java.util.UUID.randomUUID().toString(),
+            title = "新会话"
+        )
+        aiSessions.update { listOf(newSession) + it }
+        currentSessionId.value = newSession.id
+        aiMessages.value = emptyList()
+        viewModelScope.launch(Dispatchers.IO) {
+            storage.saveAiSession(newSession)
+        }
+    }
+
+    fun switchAiSession(sessionId: String) {
+        if (currentSessionId.value == sessionId) return
+        stopAiResponse()
+        currentSessionId.value = sessionId
+        viewModelScope.launch(Dispatchers.IO) {
+            val msgs = storage.loadAiMessages(sessionId, 100)
+            withContext(Dispatchers.Main) {
+                aiMessages.value = msgs
+            }
+        }
+    }
+
+    fun deleteAiSession(sessionId: String) {
+        stopAiResponse()
+        viewModelScope.launch(Dispatchers.IO) {
+            storage.deleteAiSession(sessionId)
+            var remaining = storage.loadAllAiSessions()
+            if (remaining.isEmpty()) {
+                val fresh = AiChatSession(id = "default", title = "新会话")
+                storage.saveAiSession(fresh)
+                remaining = listOf(fresh)
+            }
+            val targetActiveId = if (currentSessionId.value == sessionId) remaining.first().id else currentSessionId.value
+            val msgs = storage.loadAiMessages(targetActiveId, 100)
+            withContext(Dispatchers.Main) {
+                aiSessions.value = remaining
+                currentSessionId.value = targetActiveId
+                aiMessages.value = msgs
+                showToast("已删除该会话")
+            }
+        }
+    }
+
+    fun renameAiSession(sessionId: String, newTitle: String) {
+        val trimmed = newTitle.trim().ifBlank { "会话" }
+        aiSessions.update { list ->
+            list.map { if (it.id == sessionId) it.copy(title = trimmed) else it }
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            storage.updateAiSessionTitle(sessionId, trimmed)
+        }
+    }
+
     fun sendAiMessage(promptText: String) {
         val trimmed = promptText.trim()
         if (trimmed.isBlank() || isAiResponding.value) return
 
+        val activeSessionId = currentSessionId.value
         val userMsg = AiChatMessage(
+            sessionId = activeSessionId,
             role = "user",
             content = trimmed
         )
@@ -1917,9 +1988,17 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
             storage.saveAiMessage(userMsg)
         }
 
+        // 若当前会话是默认名称且首条消息，自动根据首问提炼会话标题
+        val currentSession = aiSessions.value.find { it.id == activeSessionId }
+        if (currentSession != null && (currentSession.title == "新会话" || currentSession.title.isBlank())) {
+            val newTitle = trimmed.take(12)
+            renameAiSession(activeSessionId, newTitle)
+        }
+
         val assistantMsgId = java.util.UUID.randomUUID().toString()
         val initialAssistantMsg = AiChatMessage(
             id = assistantMsgId,
+            sessionId = activeSessionId,
             role = "assistant",
             content = "",
             isThinking = true
@@ -1956,6 +2035,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                     val finalError = if (contentAccumulator.isNotEmpty()) "${contentAccumulator}\n\n⚠️ $errorText" else "⚠️ $errorText"
                     val errorMsg = AiChatMessage(
                         id = assistantMsgId,
+                        sessionId = activeSessionId,
                         role = "assistant",
                         content = finalError,
                         isError = true,
@@ -1971,6 +2051,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 onComplete = { fullContent, reasoningContent ->
                     val finalMsg = AiChatMessage(
                         id = assistantMsgId,
+                        sessionId = activeSessionId,
                         role = "assistant",
                         content = fullContent.ifBlank { "（无回答内容）" },
                         reasoningContent = reasoningContent,
@@ -2002,10 +2083,11 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
         currentAiActionStatus.value = ""
         currentAiThinkingText.value = ""
         aiMessages.value = emptyList()
+        val activeSessionId = currentSessionId.value
         viewModelScope.launch(Dispatchers.IO) {
-            storage.clearAiMessages()
+            storage.clearAiMessages(activeSessionId)
         }
-        showToast("已清空 AI 对话记录")
+        showToast("已清空当前会话记录")
     }
 
     fun updateAiConfig(config: AiAgentConfig) {

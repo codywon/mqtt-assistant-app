@@ -178,7 +178,9 @@ class SIAgentToolRegistry(private val storage: MqttStorageRepository) {
             val args = if (argumentsJson.isNotBlank()) JSONObject(argumentsJson) else JSONObject()
             when (functionName) {
                 "execute_sqlite_query" -> {
-                    val sql = args.optString("sql", "").trim()
+                    var sql = args.optString("sql", "").trim()
+                    if (sql.isBlank()) sql = args.optString("query", "").trim()
+                    if (sql.isBlank()) sql = args.optString("statement", "").trim()
                     if (sql.isBlank()) return "错误: SQL 语句不能为空"
                     val rows = storage.executeReadOnlyQuery(sql)
                     val array = JSONArray()

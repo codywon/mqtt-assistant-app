@@ -40,21 +40,31 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -108,8 +118,16 @@ fun AiChatScreen(
     val aiConfig by viewModel.aiConfig.collectAsState()
     val protocols by viewModel.protocolKnowledgeList.collectAsState()
 
+    val sessions by viewModel.aiSessions.collectAsState()
+    val currentSessionId by viewModel.currentSessionId.collectAsState()
+    val currentSession = sessions.find { it.id == currentSessionId } ?: sessions.firstOrNull()
+
     var inputText by remember { mutableStateOf("") }
     var showSettingsDialog by remember { mutableStateOf(false) }
+    var showSessionMenu by remember { mutableStateOf(false) }
+    var showMoreMenu by remember { mutableStateOf(false) }
+    var showRenameDialog by remember { mutableStateOf(false) }
+    var renameSessionTitle by remember { mutableStateOf("") }
 
     val listState = rememberLazyListState()
 
@@ -128,6 +146,50 @@ fun AiChatScreen(
             onSaveConfig = { viewModel.updateAiConfig(it) },
             onSaveProtocol = { viewModel.saveProtocolKnowledge(it) },
             onDeleteProtocol = { viewModel.deleteProtocolKnowledge(it) }
+        )
+    }
+
+    if (showRenameDialog) {
+        AlertDialog(
+            onDismissRequest = { showRenameDialog = false },
+            title = {
+                Text(
+                    text = "重命名对话",
+                    style = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Bold, color = PrimaryBlack)
+                )
+            },
+            text = {
+                BasicTextField(
+                    value = renameSessionTitle,
+                    onValueChange = { renameSessionTitle = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(SurfaceContainerLow)
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    textStyle = TextStyle(fontSize = 14.sp, color = PrimaryBlack),
+                    singleLine = true
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        if (renameSessionTitle.isNotBlank()) {
+                            viewModel.renameAiSession(currentSessionId, renameSessionTitle.trim())
+                        }
+                        showRenameDialog = false
+                    }
+                ) {
+                    Text("确定", color = PrimaryBlack, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRenameDialog = false }) {
+                    Text("取消", color = OnSurfaceVariantGray)
+                }
+            },
+            containerColor = SurfaceContainerLowest,
+            shape = RoundedCornerShape(16.dp)
         )
     }
 
@@ -151,76 +213,212 @@ fun AiChatScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .statusBarsPadding()
-                        .height(56.dp)
-                        .padding(horizontal = 8.dp),
+                        .height(54.dp)
+                        .padding(horizontal = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(onClick = onBack, modifier = Modifier.size(38.dp)) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "返回",
-                                tint = PrimaryBlack,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Column {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = "SI 数据分析专家",
-                                    style = TextStyle(
-                                        fontSize = 15.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = PrimaryBlack
-                                    )
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Box(
-                                    modifier = Modifier
-                                        .size(6.dp)
-                                        .clip(CircleShape)
-                                        .background(if (aiConfig.apiKey.isNotBlank()) Color(0xFF10B981) else Color(0xFFF59E0B))
-                                )
-                            }
+                    // Left: Back Button
+                    IconButton(onClick = onBack, modifier = Modifier.size(38.dp)) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "返回",
+                            tint = PrimaryBlack,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    // Center: Session Title & Switcher Dropdown
+                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { showSessionMenu = true }
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
                             Text(
-                                text = if (aiConfig.apiKey.isNotBlank()) "${aiConfig.modelName} · SQLite & Excel 工具已挂载" else "未配置 API Key · 点击右侧设置",
+                                text = currentSession?.title?.ifBlank { "新对话" } ?: "新对话",
                                 style = TextStyle(
-                                    fontSize = 10.5.sp,
-                                    fontFamily = FontFamily.Monospace,
-                                    color = OnSurfaceVariantGray
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = PrimaryBlack
                                 ),
                                 maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.widthIn(max = 160.dp)
+                            )
+                            Spacer(modifier = Modifier.width(2.dp))
+                            Icon(
+                                imageVector = if (showSessionMenu) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                contentDescription = "切换对话",
+                                tint = OnSurfaceVariantGray,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+
+                        // Sessions Dropdown Menu
+                        DropdownMenu(
+                            expanded = showSessionMenu,
+                            onDismissRequest = { showSessionMenu = false },
+                            modifier = Modifier
+                                .widthIn(min = 230.dp, max = 290.dp)
+                                .background(SurfaceContainerLowest)
+                        ) {
+                            Text(
+                                text = "历史对话",
+                                style = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.Bold, color = OnSurfaceVariantGray),
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                            )
+                            HorizontalDivider(color = SurfaceContainerDefault, thickness = 0.5.dp)
+
+                            sessions.forEach { session ->
+                                val isSelected = session.id == currentSessionId
+                                DropdownMenuItem(
+                                    text = {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Text(
+                                                text = session.title,
+                                                style = TextStyle(
+                                                    fontSize = 13.5.sp,
+                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                    color = if (isSelected) PrimaryBlack else OnSurfaceDark
+                                                ),
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                            if (sessions.size > 1) {
+                                                IconButton(
+                                                    onClick = {
+                                                        viewModel.deleteAiSession(session.id)
+                                                    },
+                                                    modifier = Modifier.size(24.dp)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Close,
+                                                        contentDescription = "删除",
+                                                        tint = OutlineGray,
+                                                        modifier = Modifier.size(14.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    },
+                                    onClick = {
+                                        viewModel.switchAiSession(session.id)
+                                        showSessionMenu = false
+                                    },
+                                    modifier = if (isSelected) Modifier.background(SurfaceContainerLow) else Modifier
+                                )
+                            }
+
+                            HorizontalDivider(color = SurfaceContainerDefault, thickness = 0.5.dp)
+                            DropdownMenuItem(
+                                text = {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Default.Add,
+                                            contentDescription = null,
+                                            tint = PrimaryBlack,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = "新建对话",
+                                            style = TextStyle(fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, color = PrimaryBlack)
+                                        )
+                                    }
+                                },
+                                onClick = {
+                                    viewModel.createNewAiSession()
+                                    showSessionMenu = false
+                                }
                             )
                         }
                     }
 
-                    // Top Action Buttons
+                    // Right: New Chat (+) and More Menu (···)
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         IconButton(
-                            onClick = { viewModel.clearAiMessages() },
-                            modifier = Modifier.size(34.dp)
+                            onClick = { viewModel.createNewAiSession() },
+                            modifier = Modifier.size(36.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.DeleteSweep,
-                                contentDescription = "清空会话",
-                                tint = OnSurfaceVariantGray,
-                                modifier = Modifier.size(19.dp)
+                                imageVector = Icons.Default.Add,
+                                contentDescription = "新建对话",
+                                tint = PrimaryBlack,
+                                modifier = Modifier.size(22.dp)
                             )
                         }
-                        IconButton(
-                            onClick = { showSettingsDialog = true },
-                            modifier = Modifier.size(34.dp),
-                            enabled = true
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Settings,
-                                contentDescription = "设置与协议澄清",
-                                tint = PrimaryBlack,
-                                modifier = Modifier.size(19.dp)
-                            )
+
+                        Box {
+                            IconButton(
+                                onClick = { showMoreMenu = true },
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.MoreVert,
+                                    contentDescription = "更多",
+                                    tint = PrimaryBlack,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+
+                            DropdownMenu(
+                                expanded = showMoreMenu,
+                                onDismissRequest = { showMoreMenu = false },
+                                modifier = Modifier.background(SurfaceContainerLowest)
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("重命名当前对话", fontSize = 13.5.sp, color = PrimaryBlack) },
+                                    leadingIcon = {
+                                        Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(18.dp), tint = PrimaryBlack)
+                                    },
+                                    onClick = {
+                                        showMoreMenu = false
+                                        renameSessionTitle = currentSession?.title ?: ""
+                                        showRenameDialog = true
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("清空当前消息", fontSize = 13.5.sp, color = PrimaryBlack) },
+                                    leadingIcon = {
+                                        Icon(Icons.Default.DeleteSweep, contentDescription = null, modifier = Modifier.size(18.dp), tint = PrimaryBlack)
+                                    },
+                                    onClick = {
+                                        showMoreMenu = false
+                                        viewModel.clearAiMessages()
+                                    }
+                                )
+                                if (sessions.size > 1) {
+                                    DropdownMenuItem(
+                                        text = { Text("删除此对话", fontSize = 13.5.sp, color = Color(0xFFDC2626)) },
+                                        leadingIcon = {
+                                            Icon(Icons.Default.DeleteOutline, contentDescription = null, modifier = Modifier.size(18.dp), tint = Color(0xFFDC2626))
+                                        },
+                                        onClick = {
+                                            showMoreMenu = false
+                                            viewModel.deleteAiSession(currentSessionId)
+                                        }
+                                    )
+                                }
+                                HorizontalDivider(color = SurfaceContainerDefault, thickness = 0.5.dp)
+                                DropdownMenuItem(
+                                    text = { Text("AI 设置与协议澄清", fontSize = 13.5.sp, color = PrimaryBlack) },
+                                    leadingIcon = {
+                                        Icon(Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(18.dp), tint = PrimaryBlack)
+                                    },
+                                    onClick = {
+                                        showMoreMenu = false
+                                        showSettingsDialog = true
+                                    }
+                                )
+                            }
                         }
                     }
                 }

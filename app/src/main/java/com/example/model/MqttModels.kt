@@ -145,8 +145,16 @@ data class ProtocolKnowledge(
     val createdAt: Long = System.currentTimeMillis()
 )
 
+data class AiChatSession(
+    val id: String = java.util.UUID.randomUUID().toString(),
+    val title: String = "新会话",
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis()
+)
+
 data class AiChatMessage(
     val id: String = java.util.UUID.randomUUID().toString(),
+    val sessionId: String = "default",
     val role: String, // "user", "assistant", "system", "tool"
     val content: String,
     val reasoningContent: String = "",

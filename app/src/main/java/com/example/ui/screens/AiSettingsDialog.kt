@@ -21,17 +21,22 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -48,6 +53,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
+import java.io.BufferedReader
+import java.io.InputStreamReader
+import java.net.HttpURLConnection
+import java.net.URL
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -215,33 +231,6 @@ fun AiSettingsDialog(
                                 .verticalScroll(rememberScrollState()),
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            // Quick Template Chips
-                            Text(
-                                text = "快捷预置服务商",
-                                style = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = OnSurfaceDark)
-                            )
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                QuickTemplateChip("DeepSeek 官方") {
-                                    baseUrl = "https://api.deepseek.com"
-                                    modelName = "deepseek-chat"
-                                }
-                                QuickTemplateChip("通义千问") {
-                                    baseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-                                    modelName = "qwen-plus"
-                                }
-                                QuickTemplateChip("OpenAI") {
-                                    baseUrl = "https://api.openai.com/v1"
-                                    modelName = "gpt-4o"
-                                }
-                                QuickTemplateChip("本地 Ollama") {
-                                    baseUrl = "http://10.0.2.2:11434/v1"
-                                    modelName = "qwen2.5:7b"
-                                }
-                            }
-
                             // Base URL Input
                             SettingInputField(
                                 label = "接口基础地址 (Base URL)",
@@ -308,13 +297,168 @@ fun AiSettingsDialog(
                                 }
                             }
 
-                            // Model Name Input
-                            SettingInputField(
-                                label = "模型名称 (Model ID)",
-                                value = modelName,
-                                placeholder = "如: deepseek-chat 或 deepseek-reasoner",
-                                onValueChange = { modelName = it }
-                            )
+                            // Model Name Input with dynamic /v1/models fetch
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "模型名称 (Model ID)",
+                                        style = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = OnSurfaceDark)
+                                    )
+                                    Box {
+                                        TextButton(
+                                            onClick = {
+                                                if (baseUrl.isBlank()) {
+                                                    modelFetchMessage = "请先输入 Base URL"
+                                                    return@TextButton
+                                                }
+                                                isFetchingModels = true
+                                                modelFetchMessage = ""
+                                                coroutineScope.launch(Dispatchers.IO) {
+                                                    try {
+                                                        val clean = baseUrl.trim().trimEnd('/')
+                                                        val endpoint = if (clean.endsWith("/v1")) "$clean/models" else "$clean/v1/models"
+                                                        val url = URL(endpoint)
+                                                        val conn = (url.openConnection() as HttpURLConnection).apply {
+                                                            requestMethod = "GET"
+                                                            connectTimeout = 8000
+                                                            readTimeout = 12000
+                                                            if (apiKey.isNotBlank()) {
+                                                                setRequestProperty("Authorization", "Bearer ${apiKey.trim()}")
+                                                            }
+                                                        }
+                                                        val code = conn.responseCode
+                                                        if (code in 200..299) {
+                                                            val body = conn.inputStream.bufferedReader().use { it.readText() }
+                                                            val json = JSONObject(body)
+                                                            val dataArray = json.optJSONArray("data") ?: json.optJSONArray("models")
+                                                            val list = mutableListOf<String>()
+                                                            if (dataArray != null) {
+                                                                for (i in 0 until dataArray.length()) {
+                                                                    val item = dataArray.opt(i)
+                                                                    if (item is JSONObject) {
+                                                                        val id = item.optString("id", "").ifBlank { item.optString("name", "") }
+                                                                        if (id.isNotBlank()) list.add(id)
+                                                                    } else if (item is String && item.isNotBlank()) {
+                                                                        list.add(item)
+                                                                    }
+                                                                }
+                                                            }
+                                                            val sorted = list.distinct().sorted()
+                                                            withContext(Dispatchers.Main) {
+                                                                isFetchingModels = false
+                                                                if (sorted.isNotEmpty()) {
+                                                                    fetchedModels = sorted
+                                                                    showModelDropdown = true
+                                                                } else {
+                                                                    modelFetchMessage = "接口未返回模型列表"
+                                                                }
+                                                            }
+                                                        } else {
+                                                            withContext(Dispatchers.Main) {
+                                                                isFetchingModels = false
+                                                                modelFetchMessage = "拉取失败 (HTTP $code)"
+                                                            }
+                                                        }
+                                                    } catch (e: Exception) {
+                                                        withContext(Dispatchers.Main) {
+                                                            isFetchingModels = false
+                                                            modelFetchMessage = "拉取超时或接口无效"
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                                            modifier = Modifier.height(26.dp)
+                                        ) {
+                                            if (isFetchingModels) {
+                                                CircularProgressIndicator(modifier = Modifier.size(12.dp), strokeWidth = 1.5.dp, color = PrimaryBlack)
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text("拉取中...", fontSize = 11.sp, color = OnSurfaceVariantGray)
+                                            } else {
+                                                Icon(imageVector = Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(12.dp), tint = PrimaryBlack)
+                                                Spacer(modifier = Modifier.width(3.dp))
+                                                Text("拉取模型列表", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = PrimaryBlack)
+                                            }
+                                        }
+
+                                        DropdownMenu(
+                                            expanded = showModelDropdown,
+                                            onDismissRequest = { showModelDropdown = false },
+                                            modifier = Modifier.widthIn(min = 200.dp, max = 280.dp).background(SurfaceContainerLowest)
+                                        ) {
+                                            fetchedModels.forEach { m ->
+                                                DropdownMenuItem(
+                                                    text = {
+                                                        Text(
+                                                            text = m,
+                                                            style = TextStyle(fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = PrimaryBlack)
+                                                        )
+                                                    },
+                                                    onClick = {
+                                                        modelName = m
+                                                        showModelDropdown = false
+                                                    }
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(42.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(SurfaceContainerLow)
+                                        .padding(horizontal = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    BasicTextField(
+                                        value = modelName,
+                                        onValueChange = { modelName = it },
+                                        modifier = Modifier.weight(1f),
+                                        textStyle = TextStyle(
+                                            fontFamily = FontFamily.Monospace,
+                                            fontSize = 12.5.sp,
+                                            color = PrimaryBlack
+                                        ),
+                                        singleLine = true,
+                                        cursorBrush = SolidColor(PrimaryBlack),
+                                        decorationBox = { inner ->
+                                            if (modelName.isEmpty()) {
+                                                Text(
+                                                    text = "如: deepseek-chat 或 gpt-4o",
+                                                    style = TextStyle(fontSize = 12.sp, color = OutlineGray)
+                                                )
+                                            }
+                                            inner()
+                                        }
+                                    )
+                                    if (fetchedModels.isNotEmpty()) {
+                                        IconButton(
+                                            onClick = { showModelDropdown = !showModelDropdown },
+                                            modifier = Modifier.size(24.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.ArrowDropDown,
+                                                contentDescription = "选择",
+                                                tint = OutlineGray
+                                            )
+                                        }
+                                    }
+                                }
+
+                                if (modelFetchMessage.isNotBlank()) {
+                                    Text(
+                                        text = modelFetchMessage,
+                                        style = TextStyle(fontSize = 10.5.sp, color = Color(0xFFDC2626))
+                                    )
+                                }
+                            }
 
                             // Context Window Selector (Pi-Agent 内存管理)
                             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {

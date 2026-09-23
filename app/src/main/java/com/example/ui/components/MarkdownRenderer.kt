@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -31,7 +32,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
@@ -51,17 +51,43 @@ import com.example.ui.theme.PrimaryBlack
 import com.example.ui.theme.SurfaceContainerDefault
 import com.example.ui.theme.SurfaceContainerLow
 import com.example.ui.theme.SurfaceContainerLowest
+import org.commonmark.ext.gfm.tables.TableBlock
+import org.commonmark.ext.gfm.tables.TableBody
+import org.commonmark.ext.gfm.tables.TableCell
+import org.commonmark.ext.gfm.tables.TableHead
+import org.commonmark.ext.gfm.tables.TableRow
+import org.commonmark.ext.gfm.tables.TablesExtension
+import org.commonmark.node.BlockQuote
+import org.commonmark.node.BulletList
+import org.commonmark.node.Code
+import org.commonmark.node.Emphasis
+import org.commonmark.node.FencedCodeBlock
+import org.commonmark.node.HardLineBreak
+import org.commonmark.node.Heading
+import org.commonmark.node.IndentedCodeBlock
+import org.commonmark.node.Link
+import org.commonmark.node.ListItem
+import org.commonmark.node.Node
+import org.commonmark.node.OrderedList
+import org.commonmark.node.Paragraph
+import org.commonmark.node.SoftLineBreak
+import org.commonmark.node.StrongEmphasis
+import org.commonmark.node.Text as MdText
+import org.commonmark.node.ThematicBreak
+import org.commonmark.parser.Parser
 
 /**
- * 生产级轻量 Markdown 富文本渲染器：
- * 纯原生 Compose 实现，零第三方库依赖，全面解析与排版大模型输出：
- * 1. 多级标题 (#, ##, ###)
- * 2. 粗体 (**bold**)、斜体 (*italic*)、行内代码 (`code`)
- * 3. 独立代码块 (```lang ... ``` 带灰底卡片与一键复制)
- * 4. 引用块 (> quote)
- * 5. 有序 / 无序列表 (- item, • item, 1. item)
- * 6. Markdown 数据分析表格 (| col1 | col2 |)
- * 7. 异常健康警告段落 (⚠️)
+ * 生产级工业标准 CommonMark AST 富文本渲染器：
+ * 采用 Google / GitHub 官方标准 CommonMark 规范与 GFM 表格扩展，
+ * 将 AST 语法树递归解析为极简 Jetpack Compose 原生组件：
+ * 
+ * 1. 深度解析表格 (TableBlock) 内部嵌套的加粗、代码徽标、斜体；支持手机窄屏横向平滑滑动；
+ * 2. 完美解析横向分割线 (ThematicBreak ---)；
+ * 3. 独立代码块 (```lang ... ```) 配备深色卡片与一键剪贴板复制；
+ * 4. 引用块 (> quote) 优雅竖线微晕卡片；
+ * 5. 多级标题 (#, ##, ###)；
+ * 6. 有序/无序列表 (• / 1.)；
+ * 7. 异常健康警告段落 (⚠️) 自动识别为警示卡片。
  */
 @Composable
 fun MarkdownRenderer(
@@ -71,98 +97,351 @@ fun MarkdownRenderer(
 ) {
     if (content.isBlank()) return
 
-    val blocks = remember(content) { parseMarkdownBlocks(content) }
+    val document = remember(content) {
+        val extensions = listOf(TablesExtension.create())
+        val parser = Parser.builder().extensions(extensions).build()
+        parser.parse(content)
+    }
 
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        for (block in blocks) {
-            when (block) {
-                is MdBlock.Heading -> {
-                    val fontSize = when (block.level) {
-                        1 -> 16.sp
-                        2 -> 14.5.sp
-                        else -> 13.5.sp
-                    }
+        var childNode = document.firstChild
+        while (childNode != null) {
+            RenderAstBlockNode(node = childNode, isUser = isUser)
+            childNode = childNode.next
+        }
+    }
+}
+
+@Composable
+private fun RenderAstBlockNode(node: Node, isUser: Boolean) {
+    when (node) {
+        is Heading -> {
+            val fontSize = when (node.level) {
+                1 -> 16.sp
+                2 -> 14.5.sp
+                3 -> 13.5.sp
+                else -> 12.5.sp
+            }
+            val annotated = buildInlineAnnotatedString(node, isUser)
+            Text(
+                text = annotated,
+                style = TextStyle(
+                    fontSize = fontSize,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isUser) OnPrimaryWhite else PrimaryBlack,
+                    letterSpacing = (-0.2).sp
+                ),
+                modifier = Modifier.padding(top = 4.dp, bottom = 2.dp)
+            )
+        }
+
+        is Paragraph -> {
+            val textContent = extractPlainNodeText(node).trim()
+            if (textContent.startsWith("⚠️") || (textContent.contains("异常") && textContent.contains("高血压"))) {
+                // 自动识别为健康告警卡片
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = Color(0xFFFEF2F2),
+                    border = BorderStroke(0.8.dp, Color(0xFFFCA5A5)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
                     Text(
-                        text = block.text,
+                        text = buildInlineAnnotatedString(node, isUser),
                         style = TextStyle(
-                            fontSize = fontSize,
-                            fontWeight = FontWeight.Bold,
-                            color = if (isUser) OnPrimaryWhite else PrimaryBlack,
-                            letterSpacing = (-0.2).sp
+                            fontSize = 12.5.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Color(0xFFB91C1C),
+                            lineHeight = 17.5.sp
                         ),
-                        modifier = Modifier.padding(top = 4.dp, bottom = 2.dp)
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)
                     )
                 }
+            } else {
+                Text(
+                    text = buildInlineAnnotatedString(node, isUser),
+                    style = TextStyle(
+                        fontSize = 13.5.sp,
+                        color = if (isUser) OnPrimaryWhite else PrimaryBlack,
+                        lineHeight = 19.5.sp
+                    )
+                )
+            }
+        }
 
-                is MdBlock.CodeBlock -> {
-                    CodeBlockCard(code = block.code, language = block.language)
-                }
+        is FencedCodeBlock -> {
+            CodeBlockCard(code = node.literal.trimEnd(), language = node.info ?: "")
+        }
 
-                is MdBlock.Table -> {
-                    MarkdownTableCard(headers = block.headers, rows = block.rows)
-                }
+        is IndentedCodeBlock -> {
+            CodeBlockCard(code = node.literal.trimEnd(), language = "")
+        }
 
-                is MdBlock.Quote -> {
-                    Surface(
-                        shape = RoundedCornerShape(topEnd = 6.dp, bottomEnd = 6.dp),
-                        color = if (isUser) Color.White.copy(alpha = 0.1f) else SurfaceContainerLow,
-                        border = BorderStroke(0.6.dp, OutlineVariantLight),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
-                            Box(
-                                modifier = Modifier
-                                    .width(3.dp)
-                                    .height(18.dp)
-                                    .background(PrimaryBlack.copy(alpha = 0.6f))
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = block.text,
-                                style = TextStyle(
-                                    fontSize = 12.5.sp,
-                                    fontStyle = FontStyle.Italic,
-                                    color = if (isUser) OnPrimaryWhite.copy(alpha = 0.9f) else OnSurfaceDark,
-                                    lineHeight = 17.sp
-                                )
-                            )
+        is TableBlock -> {
+            AstTableCard(tableNode = node, isUser = isUser)
+        }
+
+        is ThematicBreak -> {
+            HorizontalDivider(
+                color = SurfaceContainerDefault,
+                thickness = 0.8.dp,
+                modifier = Modifier.padding(vertical = 4.dp)
+            )
+        }
+
+        is BlockQuote -> {
+            Surface(
+                shape = RoundedCornerShape(topEnd = 6.dp, bottomEnd = 6.dp),
+                color = if (isUser) Color.White.copy(alpha = 0.1f) else SurfaceContainerLow,
+                border = BorderStroke(0.6.dp, OutlineVariantLight),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
+                    Box(
+                        modifier = Modifier
+                            .width(3.dp)
+                            .height(18.dp)
+                            .background(PrimaryBlack.copy(alpha = 0.6f))
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        var quoteChild = node.firstChild
+                        while (quoteChild != null) {
+                            RenderAstBlockNode(node = quoteChild, isUser = isUser)
+                            quoteChild = quoteChild.next
                         }
                     }
                 }
+            }
+        }
 
-                is MdBlock.WarningCallout -> {
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = Color(0xFFFEF2F2),
-                        border = BorderStroke(0.8.dp, Color(0xFFFCA5A5)),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            text = block.text,
-                            style = TextStyle(
-                                fontSize = 12.5.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = Color(0xFFB91C1C),
-                                lineHeight = 17.sp
-                            ),
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)
-                        )
+        is BulletList -> {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                var item = node.firstChild
+                while (item != null) {
+                    if (item is ListItem) {
+                        Row(modifier = Modifier.fillMaxWidth()) {
+                            Text(
+                                text = "• ",
+                                style = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Bold, color = if (isUser) OnPrimaryWhite else PrimaryBlack),
+                                modifier = Modifier.padding(start = 4.dp, end = 2.dp)
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                var itemChild = item.firstChild
+                                while (itemChild != null) {
+                                    RenderAstBlockNode(node = itemChild, isUser = isUser)
+                                    itemChild = itemChild.next
+                                }
+                            }
+                        }
+                    }
+                    item = item.next
+                }
+            }
+        }
+
+        is OrderedList -> {
+            var index = node.startNumber
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                var item = node.firstChild
+                while (item != null) {
+                    if (item is ListItem) {
+                        Row(modifier = Modifier.fillMaxWidth()) {
+                            Text(
+                                text = "$index. ",
+                                style = TextStyle(fontSize = 12.5.sp, fontWeight = FontWeight.Bold, color = if (isUser) OnPrimaryWhite else PrimaryBlack),
+                                modifier = Modifier.padding(start = 4.dp, end = 2.dp)
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                var itemChild = item.firstChild
+                                while (itemChild != null) {
+                                    RenderAstBlockNode(node = itemChild, isUser = isUser)
+                                    itemChild = itemChild.next
+                                }
+                            }
+                        }
+                        index++
+                    }
+                    item = item.next
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 递归构建包含加粗、行内代码、斜体和链接的 AnnotatedString
+ */
+private fun buildInlineAnnotatedString(parentNode: Node, isUser: Boolean): AnnotatedString {
+    return buildAnnotatedString {
+        appendInlineChildren(parentNode, this, isUser)
+    }
+}
+
+private fun appendInlineChildren(parent: Node, builder: AnnotatedString.Builder, isUser: Boolean) {
+    var child = parent.firstChild
+    while (child != null) {
+        when (child) {
+            is MdText -> {
+                builder.append(child.literal)
+            }
+
+            is StrongEmphasis -> {
+                builder.pushStyle(SpanStyle(fontWeight = FontWeight.Bold))
+                appendInlineChildren(child, builder, isUser)
+                builder.pop()
+            }
+
+            is Emphasis -> {
+                builder.pushStyle(SpanStyle(fontStyle = FontStyle.Italic))
+                appendInlineChildren(child, builder, isUser)
+                builder.pop()
+            }
+
+            is Code -> {
+                builder.pushStyle(
+                    SpanStyle(
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.sp,
+                        background = if (isUser) Color.White.copy(alpha = 0.2f) else Color(0xFFF1F5F9),
+                        color = if (isUser) Color.White else Color(0xFF0F172A)
+                    )
+                )
+                builder.append(" ${child.literal} ")
+                builder.pop()
+            }
+
+            is Link -> {
+                builder.pushStyle(SpanStyle(color = if (isUser) Color(0xFF93C5FD) else Color(0xFF2563EB), fontWeight = FontWeight.Medium))
+                appendInlineChildren(child, builder, isUser)
+                builder.pop()
+            }
+
+            is SoftLineBreak -> {
+                builder.append(" ")
+            }
+
+            is HardLineBreak -> {
+                builder.append("\n")
+            }
+
+            else -> {
+                appendInlineChildren(child, builder, isUser)
+            }
+        }
+        child = child.next
+    }
+}
+
+private fun extractPlainNodeText(node: Node): String {
+    val sb = StringBuilder()
+    var child = node.firstChild
+    while (child != null) {
+        when (child) {
+            is MdText -> sb.append(child.literal)
+            is Code -> sb.append(child.literal)
+            else -> sb.append(extractPlainNodeText(child))
+        }
+        child = child.next
+    }
+    return sb.toString()
+}
+
+/**
+ * CommonMark GFM 表格卡片：
+ * 深度解析单元格内的富文本，支持在窄屏上自由横向滑动
+ */
+@Composable
+private fun AstTableCard(tableNode: TableBlock, isUser: Boolean) {
+    Card(
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = SurfaceContainerLowest),
+        border = BorderStroke(0.8.dp, OutlineVariantLight),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.5.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+    ) {
+        Column(modifier = Modifier.padding(6.dp)) {
+            var tablePart = tableNode.firstChild
+            while (tablePart != null) {
+                when (tablePart) {
+                    is TableHead -> {
+                        var rowNode = tablePart.firstChild
+                        while (rowNode != null) {
+                            if (rowNode is TableRow) {
+                                Row(
+                                    modifier = Modifier
+                                        .background(SurfaceContainerLow, RoundedCornerShape(4.dp))
+                                        .padding(vertical = 6.dp)
+                                ) {
+                                    var cellNode = rowNode.firstChild
+                                    while (cellNode != null) {
+                                        if (cellNode is TableCell) {
+                                            val cellAnnotated = buildInlineAnnotatedString(cellNode, isUser = false)
+                                            Text(
+                                                text = cellAnnotated,
+                                                style = TextStyle(
+                                                    fontSize = 11.5.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = PrimaryBlack
+                                                ),
+                                                modifier = Modifier
+                                                    .widthIn(min = 90.dp, max = 220.dp)
+                                                    .padding(horizontal = 8.dp)
+                                            )
+                                        }
+                                        cellNode = cellNode.next
+                                    }
+                                }
+                                HorizontalDivider(
+                                    color = SurfaceContainerDefault,
+                                    thickness = 0.6.dp,
+                                    modifier = Modifier.padding(vertical = 2.dp)
+                                )
+                            }
+                            rowNode = rowNode.next
+                        }
+                    }
+
+                    is TableBody -> {
+                        var rowIdx = 0
+                        var rowNode = tablePart.firstChild
+                        while (rowNode != null) {
+                            if (rowNode is TableRow) {
+                                val bg = if (rowIdx % 2 == 1) SurfaceContainerLow.copy(alpha = 0.35f) else Color.Transparent
+                                Row(
+                                    modifier = Modifier
+                                        .background(bg, RoundedCornerShape(3.dp))
+                                        .padding(vertical = 5.dp)
+                                ) {
+                                    var cellNode = rowNode.firstChild
+                                    while (cellNode != null) {
+                                        if (cellNode is TableCell) {
+                                            val cellAnnotated = buildInlineAnnotatedString(cellNode, isUser = false)
+                                            Text(
+                                                text = cellAnnotated,
+                                                style = TextStyle(
+                                                    fontSize = 11.sp,
+                                                    color = OnSurfaceDark
+                                                ),
+                                                modifier = Modifier
+                                                    .widthIn(min = 90.dp, max = 220.dp)
+                                                    .padding(horizontal = 8.dp)
+                                            )
+                                        }
+                                        cellNode = cellNode.next
+                                    }
+                                }
+                                rowIdx++
+                            }
+                            rowNode = rowNode.next
+                        }
                     }
                 }
-
-                is MdBlock.Paragraph -> {
-                    Text(
-                        text = buildInlineMarkdown(block.text, isUser),
-                        style = TextStyle(
-                            fontSize = 13.5.sp,
-                            color = if (isUser) OnPrimaryWhite else PrimaryBlack,
-                            lineHeight = 19.5.sp
-                        )
-                    )
-                }
+                tablePart = tablePart.next
             }
         }
     }
@@ -218,177 +497,6 @@ private fun CodeBlockCard(code: String, language: String) {
                     .horizontalScroll(rememberScrollState())
                     .padding(10.dp)
             )
-        }
-    }
-}
-
-@Composable
-private fun MarkdownTableCard(headers: List<String>, rows: List<List<String>>) {
-    Card(
-        shape = RoundedCornerShape(8.dp),
-        colors = CardDefaults.cardColors(containerColor = SurfaceContainerLowest),
-        border = BorderStroke(0.8.dp, OutlineVariantLight),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.5.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
-    ) {
-        Column(modifier = Modifier.padding(6.dp)) {
-            // Header Row
-            Row(
-                modifier = Modifier
-                    .background(SurfaceContainerLow, RoundedCornerShape(4.dp))
-                    .padding(vertical = 6.dp)
-            ) {
-                for (h in headers) {
-                    Text(
-                        text = h.trim(),
-                        style = TextStyle(fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = PrimaryBlack),
-                        modifier = Modifier
-                            .width(100.dp)
-                            .padding(horizontal = 8.dp)
-                    )
-                }
-            }
-            HorizontalDivider(color = SurfaceContainerDefault, thickness = 0.6.dp, modifier = Modifier.padding(vertical = 2.dp))
-            // Body Rows
-            for ((idx, row) in rows.withIndex()) {
-                val bg = if (idx % 2 == 1) SurfaceContainerLow.copy(alpha = 0.35f) else Color.Transparent
-                Row(
-                    modifier = Modifier
-                        .background(bg, RoundedCornerShape(3.dp))
-                        .padding(vertical = 5.dp)
-                ) {
-                    for (cell in row) {
-                        Text(
-                            text = cell.trim(),
-                            style = TextStyle(fontSize = 11.sp, color = OnSurfaceDark),
-                            modifier = Modifier
-                                .width(100.dp)
-                                .padding(horizontal = 8.dp)
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-private sealed class MdBlock {
-    data class Heading(val level: Int, val text: String) : MdBlock()
-    data class Paragraph(val text: String) : MdBlock()
-    data class CodeBlock(val language: String, val code: String) : MdBlock()
-    data class Quote(val text: String) : MdBlock()
-    data class WarningCallout(val text: String) : MdBlock()
-    data class Table(val headers: List<String>, val rows: List<List<String>>) : MdBlock()
-}
-
-private fun parseMarkdownBlocks(rawText: String): List<MdBlock> {
-    val blocks = mutableListOf<MdBlock>()
-    val lines = rawText.lines()
-    var i = 0
-
-    while (i < lines.size) {
-        val line = lines[i]
-        val trimmed = line.trim()
-
-        // 1. Code block fence ```
-        if (trimmed.startsWith("```")) {
-            val language = trimmed.removePrefix("```").trim()
-            val codeLines = mutableListOf<String>()
-            i++
-            while (i < lines.size && !lines[i].trim().startsWith("```")) {
-                codeLines.add(lines[i])
-                i++
-            }
-            blocks.add(MdBlock.CodeBlock(language, codeLines.joinToString("\n")))
-            i++
-            continue
-        }
-
-        // 2. Table row starting with |
-        if (trimmed.startsWith("|") && trimmed.endsWith("|") && i + 1 < lines.size && lines[i + 1].trim().contains("---")) {
-            val headers = trimmed.split("|").filter { it.isNotBlank() }
-            i += 2 // skip separator row
-            val rows = mutableListOf<List<String>>()
-            while (i < lines.size && lines[i].trim().startsWith("|")) {
-                val cells = lines[i].trim().split("|").filter { it.isNotBlank() }
-                rows.add(cells)
-                i++
-            }
-            blocks.add(MdBlock.Table(headers, rows))
-            continue
-        }
-
-        // 3. Headings
-        if (trimmed.startsWith("#")) {
-            val level = trimmed.takeWhile { it == '#' }.length.coerceIn(1, 3)
-            val text = trimmed.dropWhile { it == '#' }.trim()
-            blocks.add(MdBlock.Heading(level, text))
-            i++
-            continue
-        }
-
-        // 4. Warning callout
-        if (trimmed.startsWith("⚠️") || (trimmed.contains("异常") && trimmed.contains("高血压"))) {
-            blocks.add(MdBlock.WarningCallout(trimmed))
-            i++
-            continue
-        }
-
-        // 5. Quote
-        if (trimmed.startsWith(">")) {
-            blocks.add(MdBlock.Quote(trimmed.removePrefix(">").trim()))
-            i++
-            continue
-        }
-
-        // 6. Normal paragraph or list
-        if (trimmed.isNotBlank()) {
-            blocks.add(MdBlock.Paragraph(line))
-        }
-
-        i++
-    }
-
-    return blocks
-}
-
-private fun buildInlineMarkdown(text: String, isUser: Boolean): AnnotatedString {
-    return buildAnnotatedString {
-        var currentIndex = 0
-        val regex = Regex("(\\*\\*([^*]+)\\*\\*)|(`([^`]+)`)")
-        val matches = regex.findAll(text)
-
-        for (match in matches) {
-            if (match.range.first > currentIndex) {
-                append(text.substring(currentIndex, match.range.first))
-            }
-
-            val boldContent = match.groups[2]?.value
-            val codeContent = match.groups[4]?.value
-
-            if (boldContent != null) {
-                pushStyle(SpanStyle(fontWeight = FontWeight.Bold))
-                append(boldContent)
-                pop()
-            } else if (codeContent != null) {
-                pushStyle(
-                    SpanStyle(
-                        fontFamily = FontFamily.Monospace,
-                        background = if (isUser) Color.White.copy(alpha = 0.2f) else Color(0xFFF1F5F9),
-                        color = if (isUser) Color.White else Color(0xFF0F172A)
-                    )
-                )
-                append(" $codeContent ")
-                pop()
-            }
-
-            currentIndex = match.range.last + 1
-        }
-
-        if (currentIndex < text.length) {
-            append(text.substring(currentIndex))
         }
     }
 }

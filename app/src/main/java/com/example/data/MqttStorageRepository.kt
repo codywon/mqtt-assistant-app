@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import com.example.data.db.MqttDatabaseHelper
 import com.example.model.AiAgentConfig
 import com.example.model.AiChatMessage
+import com.example.model.AiChatSession
 import com.example.model.BrokerProfile
 import com.example.model.MqttLogPacket
 import com.example.model.ProtocolKnowledge
@@ -371,16 +372,32 @@ class MqttStorageRepository(context: Context) {
         dbHelper.deleteProtocolKnowledge(id)
     }
 
+    fun saveAiSession(session: AiChatSession) {
+        dbHelper.saveAiSession(session)
+    }
+
+    fun loadAllAiSessions(): List<AiChatSession> {
+        return dbHelper.loadAllAiSessions()
+    }
+
+    fun updateAiSessionTitle(sessionId: String, title: String) {
+        dbHelper.updateAiSessionTitle(sessionId, title)
+    }
+
+    fun deleteAiSession(sessionId: String) {
+        dbHelper.deleteAiSession(sessionId)
+    }
+
     fun saveAiMessage(msg: AiChatMessage) {
         dbHelper.saveAiMessage(msg)
     }
 
-    fun loadAiMessages(limit: Int = 100): List<AiChatMessage> {
-        return dbHelper.loadAiMessages(limit)
+    fun loadAiMessages(sessionId: String = "default", limit: Int = 100): List<AiChatMessage> {
+        return dbHelper.loadAiMessages(sessionId, limit)
     }
 
-    fun clearAiMessages() {
-        dbHelper.clearAiMessages()
+    fun clearAiMessages(sessionId: String? = null) {
+        dbHelper.clearAiMessages(sessionId)
     }
 
     fun loadAiConfig(): AiAgentConfig {

@@ -128,6 +128,8 @@ dependencies {
   // implementation(libs.play.services.location)
   implementation(libs.retrofit)
   implementation(libs.paho.mqtt)
+  implementation("org.commonmark:commonmark:0.21.0")
+  implementation("org.commonmark:commonmark-ext-gfm-tables:0.21.0")
   testImplementation(libs.androidx.compose.ui.test.junit4)
   testImplementation(libs.androidx.core)
   testImplementation(libs.androidx.junit)

@@ -32,11 +32,13 @@ class AiAgentClient(
         val DEFAULT_SYSTEM_PROMPT = """
             你是一个内嵌在移动端「MQTT 助手」中的专业系统集成与数据分析智能体 (SI Data Analysis Agent)。
             
-            【核心行为模式 (ReAct)】
-            你遵循严谨的「思考(Thought) -> 行动(Action) -> 观测(Observation) -> 终答(Final Answer)」循环：
-            1. 当用户提出数据统计、网关分析、体征筛查或报文解析时，请先思考需要调用的工具；
-            2. 发起对应的工具调用；拿到工具返回的数据后，仔细观察分析，若数据不足可继续发起下一步工具调用；
-            3. 数据齐全后，给出专业、亲切、结构化 (Markdown 样式) 的分析报告与健康/业务建议。
+            【意图准则与行为模式】
+            1. 【日常会话与通用交流】：
+               当用户打招呼（如“你好”、“在吗”）、礼貌闲聊、或询问通用常识/协议原理时，直接以亲切自然的口吻回答。
+               ⚠️ 严禁无端调用 execute_sqlite_query 或其它工具！
+            2. 【专业数据分析 (ReAct 循环)】：
+               仅当用户明确要求“统计报文”、“查询 SQLite 数据库”、“排查异常体征”、“读取 Excel 归档”或需要检索私有协议时，才按需发起工具调用：
+               Thought(分析需求) -> Action(调用工具) -> Observation(观察数据) -> Final Answer(给出结构化报告)。
             
             【可用工具箱】
             - execute_sqlite_query: 执行只读 SQL 语句查询当前 SQLite 数据库 (tbl_mqtt_packets)，分析实时/离线报文；
@@ -46,6 +48,7 @@ class AiAgentClient(
             
             【分析准则】
             - 切勿凭空捏造数据，必须基于真实的工具查询结果进行归纳；
+            - 数据报告请采用标准的 Markdown 标题与表格呈现；
             - 若发现异常体征指标 (例如收缩压 ≥ 140mmHg、舒张压 ≥ 90mmHg、心率过速)，请在结论中显著以 ⚠️ 标出。
         """.trimIndent()
     }
@@ -193,11 +196,11 @@ class AiAgentClient(
                                             val name = if (func != null && !func.isNull("name")) func.optString("name", "") else ""
                                             val argsPart = if (func != null && !func.isNull("arguments")) func.optString("arguments", "") else ""
 
-                                            val triple = toolCallMap.getOrPut(idx) {
+                                             val triple = toolCallMap.getOrPut(idx) {
                                                 Triple(StringBuilder(), StringBuilder(), StringBuilder())
                                             }
-                                            if (id.isNotEmpty() && id != "null") triple.first.append(id)
-                                            if (name.isNotEmpty() && name != "null") triple.second.append(name)
+                                            if (id.isNotEmpty() && id != "null" && triple.first.isEmpty()) triple.first.append(id)
+                                            if (name.isNotEmpty() && name != "null" && triple.second.isEmpty()) triple.second.append(name)
                                             if (argsPart.isNotEmpty()) triple.third.append(argsPart)
                                         }
                                     }
@@ -245,21 +248,29 @@ class AiAgentClient(
                 // 模型无需再采取 Action，当前输出即为最终报告解答！
                 finalAnswerContent = currentStepContent
                 onToolAction("") // 清除工具 Action 提示
-                onComplete(finalAnswerContent.toString(), fullAccumulatedReasoning.toString())
+                val rawAnswer = finalAnswerContent.toString().trim()
+                val safeAnswer = if (rawAnswer.isNotEmpty() && rawAnswer != "null") {
+                    rawAnswer
+                } else if (step > 1) {
+                    "已完成数据检索与统计分析。如需进一步排查特定网关或体征明细，请直接告诉我。"
+                } else {
+                    "您好！我是 SI 数据分析专家。请告诉我您想查询的网关报文、体征数据或私有协议。"
+                }
+                onComplete(safeAnswer, fullAccumulatedReasoning.toString())
                 return@withContext
             }
 
             // ==========================================
             // 4. 执行 Action 并获取 Observation
             // ==========================================
-            // 关键：在 OpenAI / Gemini 规范中，发起 tool_calls 的 assistant 消息，如果无文本 content 必须为 JSONObject.NULL
+            // 规范：向兼容层回传时，若无正文则传空字符串 "" 以获得各大中转代理的最广泛兼容
             val assistantMsg = JSONObject().apply {
                 put("role", "assistant")
                 val cleanContent = currentStepContent.toString().trim()
                 if (cleanContent.isNotEmpty() && cleanContent != "null") {
                     put("content", cleanContent)
                 } else {
-                    put("content", JSONObject.NULL)
+                    put("content", "")
                 }
                 val callsArray = JSONArray()
                 for (t in toolCallsDetected) callsArray.put(t)
