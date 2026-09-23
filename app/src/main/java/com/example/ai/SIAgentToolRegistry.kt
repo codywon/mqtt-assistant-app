@@ -28,7 +28,7 @@ class SIAgentToolRegistry(private val storage: MqttStorageRepository) {
                             put("name", "execute_sqlite_query")
                             put(
                                 "description",
-                                "执行只读 SQLite SQL 查询以分析 MQTT 实时数据。表 tbl_mqtt_packets 字段包含: topic(主题), qos, packetSeq, timestamp(HH:mm:ss.SSS), payload(报文内容/Hex串/JSON), devInfo, sizeText, category, dotColorHex, created_at(毫秒时间戳)。注意：只允许单条只读 SELECT 语句，禁止任何变更操作。"
+                                "执行只读 SQLite SQL 查询以分析 MQTT 实时数据。表 tbl_mqtt_packets 真实可用列仅为: topic(主题/网关路径), qos, packetSeq, timestamp(HH:mm:ss.SSS), payload(报文内容/Hex串/JSON), devInfo(设备信息), sizeText, category, created_at(毫秒时间戳)。⚠️重要提醒：绝对没有名为 gateway、gateway_id、device_id 的列！网关名称通常位于 topic 中，如查询各网关报文请写: SELECT topic, count(*) as count FROM tbl_mqtt_packets GROUP BY topic ORDER BY count DESC。"
                             )
                             put(
                                 "parameters",
@@ -67,7 +67,7 @@ class SIAgentToolRegistry(private val storage: MqttStorageRepository) {
                             put("name", "get_protocol_clarification")
                             put(
                                 "description",
-                                "查询用户预先录入的私有硬件设备协议澄清说明。当遇到 Hex (16进制) 或自定义二进制报文（如血压计、体征网关）无法理解内部字节含义时，调用此工具获取对应的协议说明与字段偏移量。"
+                                "按需查询硬件私有协议的详细解码规范与字节偏移定义。当遇到 Hex 16进制报文需要解析内部指标（如血压计、心率仪）时调用此工具按需加载规则。"
                             )
                             put(
                                 "parameters",
@@ -77,10 +77,10 @@ class SIAgentToolRegistry(private val storage: MqttStorageRepository) {
                                         "properties",
                                         JSONObject().apply {
                                             put(
-                                                "topic",
+                                                "query",
                                                 JSONObject().apply {
                                                     put("type", "string")
-                                                    put("description", "报文所属的 MQTT Topic 或关键词，用于检索匹配的协议说明")
+                                                    put("description", "协议名称、ID或匹配的主题关键词，例如: '血压计' 或 'gateway/vital'")
                                                 }
                                             )
                                         }
@@ -182,36 +182,45 @@ class SIAgentToolRegistry(private val storage: MqttStorageRepository) {
                     if (sql.isBlank()) sql = args.optString("query", "").trim()
                     if (sql.isBlank()) sql = args.optString("statement", "").trim()
                     if (sql.isBlank()) return "错误: SQL 语句不能为空"
-                    val rows = storage.executeReadOnlyQuery(sql)
-                    val array = JSONArray()
-                    for (row in rows) {
-                        array.put(JSONObject(row))
+                    try {
+                        val rows = storage.executeReadOnlyQuery(sql)
+                        val array = JSONArray()
+                        for (row in rows) {
+                            array.put(JSONObject(row))
+                        }
+                        val resultObj = JSONObject().apply {
+                            put("rowCount", rows.size)
+                            put("rows", array)
+                        }
+                        resultObj.toString()
+                    } catch (e: Exception) {
+                        "SQL 执行失败: ${e.message}。特别提醒: 表 tbl_mqtt_packets 真实可用列名仅有 (id, topic, qos, packetSeq, timestamp, payload, devInfo, sizeText, category, created_at)。绝不存在名为 gateway 或 gateway_id 的列！查询各网关吞吐或设备，请以 topic 字段进行分组聚合，例如: SELECT topic, count(*) as count FROM tbl_mqtt_packets GROUP BY topic ORDER BY count DESC。请修正 SQL 后重新执行。"
                     }
-                    val resultObj = JSONObject().apply {
-                        put("rowCount", rows.size)
-                        put("rows", array)
-                    }
-                    resultObj.toString()
                 }
 
                 "get_protocol_clarification" -> {
-                    val topic = args.optString("topic", "").trim()
+                    var query = args.optString("query", "").trim()
+                    if (query.isBlank()) query = args.optString("topic", "").trim()
+                    if (query.isBlank()) query = args.optString("name", "").trim()
                     val allProtocols = storage.loadAllProtocolKnowledge()
                     if (allProtocols.isEmpty()) {
-                        return "暂未录入任何私有协议澄清规则。用户可在「AI 设置 - 协议澄清」中添加该网关主题的 Hex 字节定义。"
+                        return "暂未录入任何私有协议澄清规则。用户可在「AI 设置 - 协议澄清」中直接粘贴录入。"
                     }
-                    val matched = if (topic.isNotBlank()) {
+                    val matched = if (query.isNotBlank()) {
                         allProtocols.filter {
-                            topic.contains(it.topicFilter, ignoreCase = true) ||
-                                it.topicFilter.contains(topic, ignoreCase = true) ||
-                                it.name.contains(topic, ignoreCase = true)
+                            it.name.contains(query, ignoreCase = true) ||
+                                it.topicFilter.contains(query, ignoreCase = true) ||
+                                it.description.contains(query, ignoreCase = true)
                         }
                     } else {
                         allProtocols
                     }
-                    val targetList = if (matched.isNotEmpty()) matched else allProtocols
+                    if (matched.isEmpty()) {
+                        val available = allProtocols.joinToString(", ") { it.name }
+                        return "未找到匹配 '$query' 的硬件协议规则。当前已录入的协议有: $available"
+                    }
                     val array = JSONArray()
-                    for (p in targetList) {
+                    for (p in matched) {
                         array.put(
                             JSONObject().apply {
                                 put("name", p.name)

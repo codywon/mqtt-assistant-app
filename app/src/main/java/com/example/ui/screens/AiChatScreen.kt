@@ -44,6 +44,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Edit
@@ -51,11 +52,13 @@ import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Psychology
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -132,7 +135,10 @@ fun AiChatScreen(
     var showMoreMenu by remember { mutableStateOf(false) }
     var showRenameDialog by remember { mutableStateOf(false) }
     var renameSessionTitle by remember { mutableStateOf("") }
+    var sessionToDelete by remember { mutableStateOf<com.example.model.AiChatSession?>(null) }
+    var showClearConfirmDialog by remember { mutableStateOf(false) }
 
+    val pendingQueue by viewModel.pendingAiPromptQueue.collectAsState()
     val listState = rememberLazyListState()
 
     // 消息更新或流式吐字时自动滚动到底部
@@ -149,7 +155,83 @@ fun AiChatScreen(
             onDismiss = { showSettingsDialog = false },
             onSaveConfig = { viewModel.updateAiConfig(it) },
             onSaveProtocol = { viewModel.saveProtocolKnowledge(it) },
-            onDeleteProtocol = { viewModel.deleteProtocolKnowledge(it) }
+            onDeleteProtocol = { viewModel.deleteProtocolKnowledge(it) },
+            onBatchImportProtocols = { viewModel.importBatchProtocols(it) }
+        )
+    }
+
+    // 删除会话二次确认弹窗
+    if (sessionToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { sessionToDelete = null },
+            title = {
+                Text(
+                    text = "删除对话确认",
+                    style = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Bold, color = PrimaryBlack)
+                )
+            },
+            text = {
+                Text(
+                    text = "确认删除对话「${sessionToDelete?.title}」？\n删除后该对话的所有历史记录与分析数据将永久删除，不可恢复。",
+                    style = TextStyle(fontSize = 13.5.sp, color = OnSurfaceDark, lineHeight = 19.sp)
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val toDeleteId = sessionToDelete?.id
+                        sessionToDelete = null
+                        if (toDeleteId != null) {
+                            viewModel.deleteAiSession(toDeleteId)
+                        }
+                    }
+                ) {
+                    Text("确认删除", color = Color(0xFFDC2626), fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { sessionToDelete = null }) {
+                    Text("取消", color = OnSurfaceVariantGray)
+                }
+            },
+            containerColor = SurfaceContainerLowest,
+            shape = RoundedCornerShape(16.dp)
+        )
+    }
+
+    // 清空当前消息二次确认弹窗
+    if (showClearConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showClearConfirmDialog = false },
+            title = {
+                Text(
+                    text = "清空对话记录",
+                    style = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Bold, color = PrimaryBlack)
+                )
+            },
+            text = {
+                Text(
+                    text = "确认清空当前对话的所有消息吗？此操作无法撤销。",
+                    style = TextStyle(fontSize = 13.5.sp, color = OnSurfaceDark)
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showClearConfirmDialog = false
+                        viewModel.clearAiMessages()
+                    }
+                ) {
+                    Text("清空", color = Color(0xFFDC2626), fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearConfirmDialog = false }) {
+                    Text("取消", color = OnSurfaceVariantGray)
+                }
+            },
+            containerColor = SurfaceContainerLowest,
+            shape = RoundedCornerShape(16.dp)
         )
     }
 
@@ -299,7 +381,7 @@ fun AiChatScreen(
                                             if (sessions.size > 1) {
                                                 IconButton(
                                                     onClick = {
-                                                        viewModel.deleteAiSession(session.id)
+                                                        sessionToDelete = session
                                                     },
                                                     modifier = Modifier.size(24.dp)
                                                 ) {
@@ -396,7 +478,7 @@ fun AiChatScreen(
                                     },
                                     onClick = {
                                         showMoreMenu = false
-                                        viewModel.clearAiMessages()
+                                        showClearConfirmDialog = true
                                     }
                                 )
                                 if (sessions.size > 1) {
@@ -407,7 +489,7 @@ fun AiChatScreen(
                                         },
                                         onClick = {
                                             showMoreMenu = false
-                                            viewModel.deleteAiSession(currentSessionId)
+                                            sessionToDelete = currentSession
                                         }
                                     )
                                 }
@@ -460,7 +542,9 @@ fun AiChatScreen(
                             message = msg,
                             isLastMessage = (msg.id == messages.lastOrNull()?.id),
                             actionStatus = if (msg.id == messages.lastOrNull()?.id && msg.role == "assistant") actionStatus else "",
-                            thinkingContent = if (msg.id == messages.lastOrNull()?.id && msg.role == "assistant" && msg.isThinking) thinkingText else msg.reasoningContent
+                            thinkingContent = if (msg.id == messages.lastOrNull()?.id && msg.role == "assistant" && msg.isThinking) thinkingText else msg.reasoningContent,
+                            onCopy = { text, label -> viewModel.copyToClipboard(text, label) },
+                            onRetry = { errorId -> viewModel.retryAiMessage(errorId) }
                         )
                     }
                     item {
@@ -485,6 +569,38 @@ fun AiChatScreen(
                     .fillMaxWidth()
                     .padding(horizontal = 14.dp, vertical = 8.dp)
             ) {
+                // 追问等待队列状态条
+                if (pendingQueue.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 6.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(SurfaceContainerLow)
+                            .padding(horizontal = 10.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                            CircularProgressIndicator(modifier = Modifier.size(11.dp), strokeWidth = 1.5.dp, color = PrimaryBlack)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "已排队 ${pendingQueue.size} 条追问，待当前任务完成后顺延执行...",
+                                style = TextStyle(fontSize = 11.5.sp, color = OnSurfaceDark),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        Text(
+                            text = "清空",
+                            style = TextStyle(fontSize = 11.sp, color = Color(0xFFDC2626), fontWeight = FontWeight.SemiBold),
+                            modifier = Modifier
+                                .clickable { viewModel.clearPendingAiQueue() }
+                                .padding(start = 6.dp, top = 2.dp, bottom = 2.dp)
+                        )
+                    }
+                }
+
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -508,7 +624,7 @@ fun AiChatScreen(
                         decorationBox = { innerTextField ->
                             if (inputText.isEmpty()) {
                                 Text(
-                                    text = "询问网关报文、体征异常、Excel趋势...",
+                                    text = if (isResponding) "当前回复中，输入可排队追问..." else "询问网关报文、体征异常、Excel趋势...",
                                     style = TextStyle(fontSize = 13.5.sp, color = OutlineGray)
                                 )
                             }
@@ -518,8 +634,30 @@ fun AiChatScreen(
 
                     Spacer(modifier = Modifier.width(8.dp))
 
-                    if (isResponding) {
-                        // Stop Generating Button
+                    val canSend = inputText.isNotBlank()
+                    if (canSend) {
+                        // 有输入内容时，无论是否正在生成均支持发送（生成中自动进入追问队列）
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .background(PrimaryBlack)
+                                .clickable {
+                                    val toSend = inputText
+                                    inputText = ""
+                                    viewModel.sendAiMessage(toSend)
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.Send,
+                                contentDescription = "发送",
+                                tint = OnPrimaryWhite,
+                                modifier = Modifier.size(15.dp)
+                            )
+                        }
+                    } else if (isResponding) {
+                        // 输入框无内容且正在生成时，显示停止按钮
                         Box(
                             modifier = Modifier
                                 .size(32.dp)
@@ -536,24 +674,18 @@ fun AiChatScreen(
                             )
                         }
                     } else {
-                        // Send Button
-                        val canSend = inputText.isNotBlank()
+                        // 禁用发送态
                         Box(
                             modifier = Modifier
                                 .size(32.dp)
                                 .clip(CircleShape)
-                                .background(if (canSend) PrimaryBlack else SurfaceContainerDefault)
-                                .clickable(enabled = canSend) {
-                                    val toSend = inputText
-                                    inputText = ""
-                                    viewModel.sendAiMessage(toSend)
-                                },
+                                .background(SurfaceContainerDefault),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.Send,
                                 contentDescription = "发送",
-                                tint = if (canSend) OnPrimaryWhite else OutlineGray,
+                                tint = OutlineGray,
                                 modifier = Modifier.size(15.dp)
                             )
                         }
@@ -766,10 +898,11 @@ private fun AiMessageBubble(
     message: AiChatMessage,
     isLastMessage: Boolean,
     actionStatus: String,
-    thinkingContent: String
+    thinkingContent: String,
+    onCopy: (String, String) -> Unit,
+    onRetry: (String) -> Unit
 ) {
     val isUser = message.role == "user"
-
     var isThinkingExpanded by remember { mutableStateOf(false) }
 
     Row(
@@ -796,18 +929,28 @@ private fun AiMessageBubble(
         }
 
         Column(
-            modifier = Modifier.widthIn(max = 310.dp),
+            modifier = Modifier.widthIn(max = 315.dp),
             horizontalAlignment = if (isUser) Alignment.End else Alignment.Start
         ) {
-            // Tool Calling Action Chip (如果正在调用工具，展示 Claude 轨迹公转 + 状态文字)
-            if (!isUser && actionStatus.isNotBlank()) {
+            val hasContent = message.content.isNotBlank()
+
+            // 1. Tool Calling 或 理解意图状态卡片 (仅当正在执行动作，或正文尚未产生且非报错时展示)
+            val effectiveStatus = if (actionStatus.isNotBlank()) {
+                actionStatus
+            } else if (!hasContent && !isUser && !message.isError) {
+                "🤖 正在理解意图..."
+            } else {
+                ""
+            }
+
+            if (!isUser && effectiveStatus.isNotBlank() && (!hasContent || actionStatus.isNotBlank())) {
                 AiActionOrbitStatusCard(
-                    statusText = actionStatus,
+                    statusText = effectiveStatus,
                     modifier = Modifier.padding(bottom = 6.dp)
                 )
             }
 
-            // Reasoning Thinking Block (DeepSeek-R1 / Qwen 等思考链)
+            // 2. Reasoning Thinking Block (DeepSeek-R1 / Qwen 等思考链)
             if (!isUser && thinkingContent.isNotBlank()) {
                 Card(
                     shape = RoundedCornerShape(8.dp),
@@ -865,12 +1008,8 @@ private fun AiMessageBubble(
                 }
             }
 
-            // Main Message Bubble
-            val hasContent = message.content.isNotBlank()
-            val isThinkingOnly = message.content.isBlank() && message.isThinking
-            val isActionExecuting = message.content.isBlank() && actionStatus.isNotBlank()
-
-            if (hasContent || isThinkingOnly || isActionExecuting || isUser) {
+            // 3. 消息主体气泡 (彻底消除双气泡！正文未到达前绝不渲染下方空气泡)
+            if (isUser || hasContent) {
                 Card(
                     shape = RoundedCornerShape(
                         topStart = 16.dp,
@@ -879,33 +1018,111 @@ private fun AiMessageBubble(
                         bottomEnd = if (isUser) 4.dp else 16.dp
                     ),
                     colors = CardDefaults.cardColors(
-                        containerColor = if (isUser) PrimaryBlack else SurfaceContainerLowest
+                        containerColor = if (isUser) PrimaryBlack else if (message.isError) Color(0xFFFEF2F2) else SurfaceContainerLowest
                     ),
-                    border = if (isUser) null else BorderStroke(0.8.dp, OutlineVariantLight),
+                    border = if (isUser) null else BorderStroke(0.8.dp, if (message.isError) Color(0xFFFCA5A5) else OutlineVariantLight),
                     elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
                 ) {
                     Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
-                        if (message.content.isBlank() && (message.isThinking || actionStatus.isNotBlank())) {
-                            // 动态灵动波浪与公转轨迹指示器，彻底替换静态的 ● ● ●
-                            AiTypingIndicatorBubble()
+                        if (isUser) {
+                            Text(
+                                text = message.content,
+                                style = TextStyle(
+                                    fontSize = 13.5.sp,
+                                    color = OnPrimaryWhite,
+                                    lineHeight = 19.sp
+                                )
+                            )
                         } else {
-                            if (isUser) {
-                                Text(
-                                    text = message.content,
-                                    style = TextStyle(
-                                        fontSize = 13.5.sp,
-                                        color = OnPrimaryWhite,
-                                        lineHeight = 19.sp
-                                    )
-                                )
-                            } else {
-                                MarkdownRenderer(
-                                    content = message.content,
-                                    isUser = false
-                                )
+                            MarkdownRenderer(
+                                content = message.content,
+                                isUser = false
+                            )
+
+                            // AI 回复卡片底部操作栏 (复制全文)
+                            if (!message.isError && message.content.isNotBlank()) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.End,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .clickable { onCopy(message.content, "AI回复") }
+                                            .padding(horizontal = 5.dp, vertical = 2.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.ContentCopy,
+                                            contentDescription = "复制",
+                                            tint = OnSurfaceVariantGray,
+                                            modifier = Modifier.size(11.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(3.dp))
+                                        Text(
+                                            text = "复制",
+                                            style = TextStyle(fontSize = 10.sp, color = OnSurfaceVariantGray)
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
+                }
+
+                // 用户提问消息下方的复制小按钮
+                if (isUser) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Row(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .clickable { onCopy(message.content, "我的提问") }
+                            .padding(horizontal = 4.dp, vertical = 1.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ContentCopy,
+                            contentDescription = "复制",
+                            tint = OutlineGray,
+                            modifier = Modifier.size(11.dp)
+                        )
+                        Spacer(modifier = Modifier.width(2.dp))
+                        Text(
+                            text = "复制",
+                            style = TextStyle(fontSize = 9.5.sp, color = OutlineGray)
+                        )
+                    }
+                }
+            }
+
+            // 4. 网络中断 / 异常重试胶囊按钮 (用户可随时一键重试)
+            if (!isUser && message.isError) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(PrimaryBlack)
+                        .clickable { onRetry(message.id) }
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = "重试",
+                        tint = OnPrimaryWhite,
+                        modifier = Modifier.size(13.dp)
+                    )
+                    Spacer(modifier = Modifier.width(5.dp))
+                    Text(
+                        text = "网络异常 · 点击重试",
+                        style = TextStyle(
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = OnPrimaryWhite
+                        )
+                    )
                 }
             }
         }

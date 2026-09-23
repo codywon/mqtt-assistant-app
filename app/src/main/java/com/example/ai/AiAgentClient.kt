@@ -40,9 +40,22 @@ class AiAgentClient(
                仅当用户明确要求“统计报文”、“查询 SQLite 数据库”、“排查异常体征”、“读取 Excel 归档”或需要检索私有协议时，才按需发起工具调用：
                Thought(分析需求) -> Action(调用工具) -> Observation(观察数据) -> Final Answer(给出结构化报告)。
             
+            【SQLite 报文表结构规则】
+            数据库表名: tbl_mqtt_packets
+            真实可用列名如下:
+            - topic (TEXT): 消息主题（网关 ID、设备类型均位于 topic 路径中，如 'gateway/gw_01/telemetry' 或 'sensor/vital'）
+            - payload (TEXT): 原始报文内容（可能是 Hex 16进制字符串，也可能是 JSON 数据）
+            - devInfo (TEXT): 预解析设备信息
+            - qos (INTEGER), packetSeq (TEXT), timestamp (TEXT), category (TEXT), created_at (INTEGER 毫秒时间戳)
+            ⚠️ 关键铁律：表中绝不存在名为 gateway、gateway_id、device_id 的列！查询各网关吞吐或频次时，必须基于 topic 字段进行 GROUP BY 聚合，示范:
+            SELECT topic, count(*) as count FROM tbl_mqtt_packets GROUP BY topic ORDER BY count DESC
+            
+            【硬件协议知识库 (渐进式按需加载)】
+            如需解码硬件私有报文（如 Hex 字符串），请调用工具 get_protocol_clarification(query="协议名或Topic") 按需拉取对应规则。
+            
             【可用工具箱】
             - execute_sqlite_query: 执行只读 SQL 语句查询当前 SQLite 数据库 (tbl_mqtt_packets)，分析实时/离线报文；
-            - get_protocol_clarification: 查询用户录入的硬件私有协议 (如血压计、体征网关的 Hex 各字节含义)；
+            - get_protocol_clarification: 按需查询硬件私有协议解码规范与字段偏移；
             - list_archived_excels: 扫描检索已转储到系统 Download 目录的 Excel 历史分卷列表；
             - query_excel_data: 穿透读取指定归档 Excel 内部的历史明细行。
             
@@ -69,11 +82,20 @@ class AiAgentClient(
             return@withContext
         }
 
-        val systemContent = if (config.customPrompt.isNotBlank()) {
+        // 渐进式按需协议索引（仅注入协议名称索引目录，仅消耗 ~20 Tokens，按需由工具加载完整规则）
+        val protocols = toolRegistry.storage.loadAllProtocolKnowledge()
+        val protocolSummary = if (protocols.isNotEmpty()) {
+            val names = protocols.joinToString(", ") { it.name }
+            "\n\n【当前已挂载私有协议索引】: $names。如需具体规则，请调用 get_protocol_clarification 工具获取。"
+        } else {
+            ""
+        }
+
+        val systemContent = (if (config.customPrompt.isNotBlank()) {
             "${config.customPrompt}\n\n$DEFAULT_SYSTEM_PROMPT"
         } else {
             DEFAULT_SYSTEM_PROMPT
-        }
+        }) + protocolSummary
 
         // ==========================================
         // 1. 初始化上下文（结合 70% 水位动态自适应压缩）
@@ -114,35 +136,44 @@ class AiAgentClient(
             val toolCallsDetected = mutableListOf<JSONObject>()
             val currentStepContent = StringBuilder()
             val currentStepReasoning = StringBuilder()
+            var requestSucceeded = false
+            var lastException: Exception? = null
 
-            try {
-                val baseUrl = config.baseUrl.trim().trimEnd('/')
-                val endpoint = if (baseUrl.endsWith("/v1")) "$baseUrl/chat/completions" else "$baseUrl/v1/chat/completions"
-                val url = URL(endpoint)
+            for (attempt in 1..3) {
+                try {
+                    val baseUrl = config.baseUrl.trim().trimEnd('/')
+                    val endpoint = if (baseUrl.endsWith("/v1")) "$baseUrl/chat/completions" else "$baseUrl/v1/chat/completions"
+                    val url = URL(endpoint)
 
-                conn = (url.openConnection() as HttpURLConnection).apply {
-                    requestMethod = "POST"
-                    connectTimeout = 15_000
-                    readTimeout = 60_000
-                    doOutput = true
-                    doInput = true
-                    setRequestProperty("Authorization", "Bearer ${config.apiKey.trim()}")
-                    setRequestProperty("Content-Type", "application/json; charset=UTF-8")
-                    setRequestProperty("Accept", "text/event-stream")
-                }
+                    conn = (url.openConnection() as HttpURLConnection).apply {
+                        requestMethod = "POST"
+                        connectTimeout = 15_000
+                        readTimeout = 60_000
+                        doOutput = true
+                        doInput = true
+                        setRequestProperty("Authorization", "Bearer ${config.apiKey.trim()}")
+                        setRequestProperty("Content-Type", "application/json; charset=UTF-8")
+                        setRequestProperty("Accept", "text/event-stream")
+                    }
 
-                conn.outputStream.use { os ->
-                    os.write(requestBody.toString().toByteArray(Charsets.UTF_8))
-                    os.flush()
-                }
+                    conn.outputStream.use { os ->
+                        os.write(requestBody.toString().toByteArray(Charsets.UTF_8))
+                        os.flush()
+                    }
 
-                val responseCode = conn.responseCode
-                if (responseCode !in 200..299) {
-                    val errorBody = conn.errorStream?.bufferedReader()?.use { it.readText() } ?: "HTTP $responseCode"
-                    Log.e(TAG, "API 请求返回错误 ($responseCode): $errorBody")
-                    onError("大模型服务返回异常 ($responseCode): $errorBody")
-                    return@withContext
-                }
+                    val responseCode = conn.responseCode
+                    if (responseCode !in 200..299) {
+                        val errorBody = conn.errorStream?.bufferedReader()?.use { it.readText() } ?: "HTTP $responseCode"
+                        Log.e(TAG, "API 请求返回错误 ($responseCode): $errorBody")
+                        if (responseCode in listOf(502, 503, 504) && attempt < 3) {
+                            onToolAction("服务端波动 ($responseCode)，正在进行第 $attempt 次自动重试...")
+                            kotlinx.coroutines.delay(attempt * 800L)
+                            conn.disconnect()
+                            continue
+                        }
+                        onError("大模型服务返回异常 ($responseCode): $errorBody")
+                        return@withContext
+                    }
 
                 val reader = BufferedReader(InputStreamReader(conn.inputStream, Charsets.UTF_8))
                 var line: String? = reader.readLine()
@@ -233,13 +264,27 @@ class AiAgentClient(
                     }
                 }
 
+                requestSucceeded = true
+                break
             } catch (e: Exception) {
-                Log.e(TAG, "ReAct 会话通信异常", e)
-                onError("网络通信失败: ${e.message}")
-                return@withContext
+                lastException = e
+                conn?.disconnect()
+                if (attempt < 3 && currentStepContent.isEmpty()) {
+                    onToolAction("网络连接微弱，正在进行第 $attempt 次自动重试...")
+                    kotlinx.coroutines.delay(attempt * 800L)
+                } else {
+                    break
+                }
             } finally {
                 conn?.disconnect()
             }
+        }
+
+        if (!requestSucceeded) {
+            Log.e(TAG, "ReAct 会话通信异常", lastException)
+            onError("网络通信失败 (已自动重试 3 次): ${lastException?.message}")
+            return@withContext
+        }
 
             // ==========================================
             // 3. 终答判定 (Final Answer)

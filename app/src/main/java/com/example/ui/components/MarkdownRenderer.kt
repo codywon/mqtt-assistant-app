@@ -353,8 +353,69 @@ private fun extractPlainNodeText(node: Node): String {
  * CommonMark GFM 表格卡片：
  * 深度解析单元格内的富文本，支持在窄屏上自由横向滑动
  */
+/**
+ * CommonMark GFM 表格卡片：
+ * 预计算每一列的最大内容宽度，确保表头与各数据行垂线严格对齐，支持手机横向平滑滑动
+ */
 @Composable
 private fun AstTableCard(tableNode: TableBlock, isUser: Boolean) {
+    // 1. 遍历 AST 提取表头与各数据行
+    val headerCells = mutableListOf<AnnotatedString>()
+    val bodyRows = mutableListOf<List<AnnotatedString>>()
+
+    var tablePart = tableNode.firstChild
+    while (tablePart != null) {
+        when (tablePart) {
+            is TableHead -> {
+                var rowNode = tablePart.firstChild
+                while (rowNode != null) {
+                    if (rowNode is TableRow) {
+                        var cellNode = rowNode.firstChild
+                        while (cellNode != null) {
+                            if (cellNode is TableCell) {
+                                headerCells.add(buildInlineAnnotatedString(cellNode, isUser = false))
+                            }
+                            cellNode = cellNode.next
+                        }
+                    }
+                    rowNode = rowNode.next
+                }
+            }
+
+            is TableBody -> {
+                var rowNode = tablePart.firstChild
+                while (rowNode != null) {
+                    if (rowNode is TableRow) {
+                        val rowCells = mutableListOf<AnnotatedString>()
+                        var cellNode = rowNode.firstChild
+                        while (cellNode != null) {
+                            if (cellNode is TableCell) {
+                                rowCells.add(buildInlineAnnotatedString(cellNode, isUser = false))
+                            }
+                            cellNode = cellNode.next
+                        }
+                        bodyRows.add(rowCells)
+                    }
+                    rowNode = rowNode.next
+                }
+            }
+        }
+        tablePart = tablePart.next
+    }
+
+    // 2. 统计各列最大字符数，计算整张表每一列的统一固定宽度
+    val totalCols = kotlin.math.max(headerCells.size, bodyRows.maxOfOrNull { it.size } ?: 0)
+    if (totalCols == 0) return
+
+    val colWidths = (0 until totalCols).map { colIdx ->
+        val headerLen = headerCells.getOrNull(colIdx)?.text?.length ?: 0
+        val maxBodyLen = bodyRows.maxOfOrNull { it.getOrNull(colIdx)?.text?.length ?: 0 } ?: 0
+        val maxLen = kotlin.math.max(headerLen, maxBodyLen)
+        // 估算列宽：中英文混合每字约 10dp，加上 24dp 边距，限制在 90dp ~ 220dp
+        ((maxLen * 10f) + 24f).coerceIn(90f, 230f).dp
+    }
+
+    // 3. 渲染结构化严格对齐表格卡片
     Card(
         shape = RoundedCornerShape(8.dp),
         colors = CardDefaults.cardColors(containerColor = SurfaceContainerLowest),
@@ -365,83 +426,70 @@ private fun AstTableCard(tableNode: TableBlock, isUser: Boolean) {
             .horizontalScroll(rememberScrollState())
     ) {
         Column(modifier = Modifier.padding(6.dp)) {
-            var tablePart = tableNode.firstChild
-            while (tablePart != null) {
-                when (tablePart) {
-                    is TableHead -> {
-                        var rowNode = tablePart.firstChild
-                        while (rowNode != null) {
-                            if (rowNode is TableRow) {
-                                Row(
-                                    modifier = Modifier
-                                        .background(SurfaceContainerLow, RoundedCornerShape(4.dp))
-                                        .padding(vertical = 6.dp)
-                                ) {
-                                    var cellNode = rowNode.firstChild
-                                    while (cellNode != null) {
-                                        if (cellNode is TableCell) {
-                                            val cellAnnotated = buildInlineAnnotatedString(cellNode, isUser = false)
-                                            Text(
-                                                text = cellAnnotated,
-                                                style = TextStyle(
-                                                    fontSize = 11.5.sp,
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = PrimaryBlack
-                                                ),
-                                                modifier = Modifier
-                                                    .widthIn(min = 90.dp, max = 220.dp)
-                                                    .padding(horizontal = 8.dp)
-                                            )
-                                        }
-                                        cellNode = cellNode.next
-                                    }
-                                }
-                                HorizontalDivider(
-                                    color = SurfaceContainerDefault,
-                                    thickness = 0.6.dp,
-                                    modifier = Modifier.padding(vertical = 2.dp)
+            // 表头行 (严格按计算列宽对齐)
+            if (headerCells.isNotEmpty()) {
+                Row(
+                    modifier = Modifier
+                        .background(SurfaceContainerLow, RoundedCornerShape(4.dp))
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    for (c in 0 until totalCols) {
+                        val cellText = headerCells.getOrNull(c) ?: AnnotatedString("")
+                        val colW = colWidths[c]
+                        Box(
+                            modifier = Modifier
+                                .width(colW)
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                            contentAlignment = Alignment.CenterStart
+                        ) {
+                            Text(
+                                text = cellText,
+                                style = TextStyle(
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = PrimaryBlack
                                 )
-                            }
-                            rowNode = rowNode.next
-                        }
-                    }
-
-                    is TableBody -> {
-                        var rowIdx = 0
-                        var rowNode = tablePart.firstChild
-                        while (rowNode != null) {
-                            if (rowNode is TableRow) {
-                                val bg = if (rowIdx % 2 == 1) SurfaceContainerLow.copy(alpha = 0.35f) else Color.Transparent
-                                Row(
-                                    modifier = Modifier
-                                        .background(bg, RoundedCornerShape(3.dp))
-                                        .padding(vertical = 5.dp)
-                                ) {
-                                    var cellNode = rowNode.firstChild
-                                    while (cellNode != null) {
-                                        if (cellNode is TableCell) {
-                                            val cellAnnotated = buildInlineAnnotatedString(cellNode, isUser = false)
-                                            Text(
-                                                text = cellAnnotated,
-                                                style = TextStyle(
-                                                    fontSize = 11.sp,
-                                                    color = OnSurfaceDark
-                                                ),
-                                                modifier = Modifier
-                                                    .widthIn(min = 90.dp, max = 220.dp)
-                                                    .padding(horizontal = 8.dp)
-                                            )
-                                        }
-                                        cellNode = cellNode.next
-                                    }
-                                }
-                                rowIdx++
-                            }
-                            rowNode = rowNode.next
+                            )
                         }
                     }
                 }
-                tablePart = tablePart.next
+                HorizontalDivider(
+                    color = SurfaceContainerDefault,
+                    thickness = 0.8.dp,
+                    modifier = Modifier.padding(vertical = 2.dp)
+                )
+            }
+
+            // 表身数据行 (严格按计算列宽对齐，偶数行浅灰底斑马纹)
+            bodyRows.forEachIndexed { rowIdx, rowCells ->
+                val bg = if (rowIdx % 2 == 1) SurfaceContainerLow.copy(alpha = 0.4f) else Color.Transparent
+                Row(
+                    modifier = Modifier
+                        .background(bg, RoundedCornerShape(3.dp))
+                        .padding(vertical = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    for (c in 0 until totalCols) {
+                        val cellText = rowCells.getOrNull(c) ?: AnnotatedString("")
+                        val colW = colWidths[c]
+                        Box(
+                            modifier = Modifier
+                                .width(colW)
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                            contentAlignment = Alignment.CenterStart
+                        ) {
+                            Text(
+                                text = cellText,
+                                style = TextStyle(
+                                    fontSize = 11.sp,
+                                    color = OnSurfaceDark,
+                                    lineHeight = 15.sp
+                                )
+                            )
+                        }
+                    }
+                }
             }
         }
     }

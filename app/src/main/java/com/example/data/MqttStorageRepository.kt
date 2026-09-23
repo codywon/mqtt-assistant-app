@@ -400,6 +400,10 @@ class MqttStorageRepository(context: Context) {
         dbHelper.clearAiMessages(sessionId)
     }
 
+    fun deleteAiMessage(id: String) {
+        dbHelper.deleteAiMessage(id)
+    }
+
     fun loadAiConfig(): AiAgentConfig {
         val apiKey = dbHelper.loadSetting("ai_api_key", "")
         val baseUrl = dbHelper.loadSetting("ai_base_url", "https://api.deepseek.com")

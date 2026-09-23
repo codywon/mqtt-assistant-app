@@ -119,8 +119,10 @@ class MqttDatabaseHelper(context: Context) : SQLiteOpenHelper(
             )
             """.trimIndent()
         )
-        // Index for fast sorting by arrival time
+        // Index for fast sorting by arrival time and fast group-by/filtering
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_packet_created ON $TABLE_PACKETS(created_at DESC)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_packet_topic ON $TABLE_PACKETS(topic)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_packet_category ON $TABLE_PACKETS(category)")
 
         // 5. App settings key-value table
         db.execSQL(
@@ -192,6 +194,10 @@ class MqttDatabaseHelper(context: Context) : SQLiteOpenHelper(
                 db.execSQL("ALTER TABLE $TABLE_AI_MESSAGES ADD COLUMN sessionId TEXT DEFAULT 'default'")
             } catch (_: Exception) {}
         }
+        try {
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_packet_topic ON $TABLE_PACKETS(topic)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_packet_category ON $TABLE_PACKETS(category)")
+        } catch (_: Exception) {}
         onCreate(db)
     }
 
@@ -853,6 +859,11 @@ class MqttDatabaseHelper(context: Context) : SQLiteOpenHelper(
             }
         }
         return list
+    }
+
+    fun deleteAiMessage(id: String) {
+        val db = writableDatabase
+        db.delete(TABLE_AI_MESSAGES, "id = ?", arrayOf(id))
     }
 
     fun clearAiMessages(sessionId: String? = null) {

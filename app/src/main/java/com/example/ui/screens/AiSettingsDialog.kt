@@ -106,7 +106,8 @@ fun AiSettingsDialog(
     onDismiss: () -> Unit,
     onSaveConfig: (AiAgentConfig) -> Unit,
     onSaveProtocol: (ProtocolKnowledge) -> Unit,
-    onDeleteProtocol: (String) -> Unit
+    onDeleteProtocol: (String) -> Unit,
+    onBatchImportProtocols: (String) -> Unit = {}
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
 
@@ -126,6 +127,76 @@ fun AiSettingsDialog(
     // Tab 2 state
     var editingProtocol by remember { mutableStateOf<ProtocolKnowledge?>(null) }
     var isCreatingProtocol by remember { mutableStateOf(false) }
+    var showBatchImportDialog by remember { mutableStateOf(false) }
+    var batchImportText by remember { mutableStateOf("") }
+
+    if (showBatchImportDialog) {
+        AlertDialog(
+            onDismissRequest = { showBatchImportDialog = false },
+            title = {
+                Text(
+                    text = "批量直接粘贴协议规则",
+                    style = TextStyle(fontSize = 15.5.sp, fontWeight = FontWeight.Bold, color = PrimaryBlack)
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "直接把微信或文档中已整理好的协议描述粘贴到下方。系统会自动按协议提取标题与规则，供 Agent 渐进式按需查询（多条协议间可用 --- 分割）：",
+                        style = TextStyle(fontSize = 11.5.sp, color = OnSurfaceVariantGray, lineHeight = 16.sp)
+                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(180.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(SurfaceContainerLow)
+                            .padding(8.dp)
+                    ) {
+                        BasicTextField(
+                            value = batchImportText,
+                            onValueChange = { batchImportText = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            textStyle = TextStyle(fontSize = 12.sp, color = PrimaryBlack, lineHeight = 16.sp),
+                            cursorBrush = SolidColor(PrimaryBlack),
+                            decorationBox = { inner ->
+                                if (batchImportText.isEmpty()) {
+                                    Text(
+                                        text = "例如粘贴:\n【体征网关血压计】topic: vital/gateway/data\n说明: 第5字节收缩压高压，第6字节舒张压低压，第7字节心率。\n---\n【温湿度传感器】topic: sensor/temp/data\n说明: 第3-4字节摄氏度温度，第5字节湿度百分比。",
+                                        style = TextStyle(fontSize = 11.sp, color = OutlineGray, lineHeight = 15.sp)
+                                    )
+                                }
+                                inner()
+                            }
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (batchImportText.isNotBlank()) {
+                            onBatchImportProtocols(batchImportText)
+                            batchImportText = ""
+                            showBatchImportDialog = false
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlack, contentColor = OnPrimaryWhite),
+                    shape = RoundedCornerShape(8.dp),
+                    enabled = batchImportText.isNotBlank()
+                ) {
+                    Text("一键解析并导入", fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBatchImportDialog = false }) {
+                    Text("取消", color = OnSurfaceVariantGray)
+                }
+            },
+            containerColor = SurfaceContainerLowest,
+            shape = RoundedCornerShape(16.dp)
+        )
+    }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -584,6 +655,7 @@ fun AiSettingsDialog(
                             ProtocolListView(
                                 protocols = protocols,
                                 onAddNew = { isCreatingProtocol = true },
+                                onBatchImport = { showBatchImportDialog = true },
                                 onEdit = { editingProtocol = it },
                                 onDelete = onDeleteProtocol
                             )
@@ -665,6 +737,7 @@ private fun SettingInputField(
 private fun ProtocolListView(
     protocols: List<ProtocolKnowledge>,
     onAddNew: () -> Unit,
+    onBatchImport: () -> Unit,
     onEdit: (ProtocolKnowledge) -> Unit,
     onDelete: (String) -> Unit
 ) {
@@ -683,19 +756,30 @@ private fun ProtocolListView(
                 text = "已配置的私有设备协议澄清",
                 style = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = OnSurfaceDark)
             )
-            Button(
-                onClick = onAddNew,
-                shape = RoundedCornerShape(6.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = PrimaryBlack,
-                    contentColor = OnPrimaryWhite
-                ),
-                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                modifier = Modifier.height(28.dp)
-            ) {
-                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(13.dp))
-                Spacer(modifier = Modifier.width(3.dp))
-                Text("新增协议", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                OutlinedButton(
+                    onClick = onBatchImport,
+                    shape = RoundedCornerShape(6.dp),
+                    border = BorderStroke(0.8.dp, PrimaryBlack),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                    modifier = Modifier.height(28.dp)
+                ) {
+                    Text("直接粘贴导入", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = PrimaryBlack)
+                }
+                Button(
+                    onClick = onAddNew,
+                    shape = RoundedCornerShape(6.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = PrimaryBlack,
+                        contentColor = OnPrimaryWhite
+                    ),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                    modifier = Modifier.height(28.dp)
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(13.dp))
+                    Spacer(modifier = Modifier.width(2.dp))
+                    Text("新增", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
             }
         }
 
@@ -715,8 +799,8 @@ private fun ProtocolListView(
                     )
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = "暂无协议澄清规则\n点击上方「新增协议」为人话描述网关 Hex 字段",
-                        style = TextStyle(fontSize = 12.sp, color = OutlineGray, lineHeight = 16.sp),
+                        text = "暂无协议澄清规则\n可直接点击上方「直接粘贴导入」一键贴入整段协议规则\nAgent 会自动生成精简目录，渐进式按需读取",
+                        style = TextStyle(fontSize = 11.5.sp, color = OutlineGray, lineHeight = 16.sp),
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center
                     )
                 }
@@ -856,18 +940,23 @@ private fun ProtocolEditView(
 
             Button(
                 onClick = {
-                    if (name.isNotBlank() && topicFilter.isNotBlank() && description.isNotBlank()) {
+                    if (description.isNotBlank()) {
+                        val computedName = name.trim().ifBlank {
+                            val firstLine = description.lines().firstOrNull { it.isNotBlank() }?.removePrefix("#")?.removePrefix("【")?.removeSuffix("】")?.trim() ?: "设备协议"
+                            firstLine.take(15)
+                        }
+                        val computedTopic = topicFilter.trim().ifBlank { "vital/gateway/#" }
                         onSave(
                             initial.copy(
-                                name = name.trim(),
-                                topicFilter = topicFilter.trim(),
+                                name = computedName,
+                                topicFilter = computedTopic,
                                 description = description.trim(),
                                 sampleHex = sampleHex.trim()
                             )
                         )
                     }
                 },
-                enabled = name.isNotBlank() && topicFilter.isNotBlank() && description.isNotBlank(),
+                enabled = description.isNotBlank(),
                 modifier = Modifier
                     .weight(1f)
                     .height(38.dp),

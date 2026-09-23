@@ -1,6 +1,8 @@
 package com.example.viewmodel
 
 import android.app.Application
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
@@ -219,6 +221,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
     val isAiResponding = MutableStateFlow(false)
     val currentAiThinkingText = MutableStateFlow("")
     val currentAiActionStatus = MutableStateFlow("")
+    val pendingAiPromptQueue = MutableStateFlow<List<String>>(emptyList())
     private var aiJob: Job? = null
 
     init {
@@ -1975,24 +1978,61 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
 
     fun sendAiMessage(promptText: String) {
         val trimmed = promptText.trim()
-        if (trimmed.isBlank() || isAiResponding.value) return
+        if (trimmed.isBlank()) return
 
-        val activeSessionId = currentSessionId.value
-        val userMsg = AiChatMessage(
-            sessionId = activeSessionId,
-            role = "user",
-            content = trimmed
-        )
-        aiMessages.update { it + userMsg }
-        viewModelScope.launch(Dispatchers.IO) {
-            storage.saveAiMessage(userMsg)
+        if (isAiResponding.value) {
+            pendingAiPromptQueue.update { it + trimmed }
+            showToast("追问已加入排队，将在当前回答完成后自动执行")
+            return
         }
 
-        // 若当前会话是默认名称且首条消息，自动根据首问提炼会话标题
-        val currentSession = aiSessions.value.find { it.id == activeSessionId }
-        if (currentSession != null && (currentSession.title == "新会话" || currentSession.title.isBlank())) {
-            val newTitle = trimmed.take(12)
-            renameAiSession(activeSessionId, newTitle)
+        executeAiMessage(trimmed, isRetry = false)
+    }
+
+    fun clearPendingAiQueue() {
+        pendingAiPromptQueue.value = emptyList()
+        showToast("已清空追问队列")
+    }
+
+    fun retryAiMessage(errorMessageId: String) {
+        if (isAiResponding.value) {
+            showToast("请等待当前任务完成")
+            return
+        }
+        val msgs = aiMessages.value
+        val errorIndex = msgs.indexOfFirst { it.id == errorMessageId }
+        if (errorIndex < 0) return
+        val userMsg = msgs.subList(0, errorIndex).lastOrNull { it.role == "user" }
+        if (userMsg == null) {
+            showToast("未找到可重试的问题")
+            return
+        }
+        aiMessages.update { list -> list.filter { it.id != errorMessageId } }
+        viewModelScope.launch(Dispatchers.IO) {
+            storage.deleteAiMessage(errorMessageId)
+        }
+        executeAiMessage(userMsg.content, isRetry = true)
+    }
+
+    private fun executeAiMessage(promptText: String, isRetry: Boolean = false) {
+        val activeSessionId = currentSessionId.value
+        if (!isRetry) {
+            val userMsg = AiChatMessage(
+                sessionId = activeSessionId,
+                role = "user",
+                content = promptText
+            )
+            aiMessages.update { it + userMsg }
+            viewModelScope.launch(Dispatchers.IO) {
+                storage.saveAiMessage(userMsg)
+            }
+
+            // 若当前会话是默认名称且首条消息，自动根据首问提炼会话标题
+            val currentSession = aiSessions.value.find { it.id == activeSessionId }
+            if (currentSession != null && (currentSession.title == "新会话" || currentSession.title.isBlank())) {
+                val newTitle = promptText.take(12)
+                renameAiSession(activeSessionId, newTitle)
+            }
         }
 
         val assistantMsgId = java.util.UUID.randomUUID().toString()
@@ -2047,6 +2087,8 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                     storage.saveAiMessage(errorMsg)
                     isAiResponding.value = false
                     currentAiActionStatus.value = ""
+                    currentAiThinkingText.value = ""
+                    checkAndTriggerNextPendingAiMessage()
                 },
                 onComplete = { fullContent, reasoningContent ->
                     val finalMsg = AiChatMessage(
@@ -2065,8 +2107,21 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                     isAiResponding.value = false
                     currentAiActionStatus.value = ""
                     currentAiThinkingText.value = ""
+                    checkAndTriggerNextPendingAiMessage()
                 }
             )
+        }
+    }
+
+    private fun checkAndTriggerNextPendingAiMessage() {
+        val queue = pendingAiPromptQueue.value
+        if (queue.isNotEmpty()) {
+            val nextPrompt = queue.first()
+            pendingAiPromptQueue.update { it.drop(1) }
+            viewModelScope.launch(Dispatchers.Main) {
+                delay(300)
+                executeAiMessage(nextPrompt, isRetry = false)
+            }
         }
     }
 
@@ -2075,6 +2130,22 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
         isAiResponding.value = false
         currentAiActionStatus.value = ""
         currentAiThinkingText.value = ""
+        if (pendingAiPromptQueue.value.isNotEmpty()) {
+            pendingAiPromptQueue.value = emptyList()
+            showToast("已停止响应并清空排队追问")
+        }
+    }
+
+    fun copyToClipboard(text: String, label: String = "文本") {
+        if (text.isBlank()) return
+        try {
+            val cm = getApplication<Application>().getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+            val clip = ClipData.newPlainText(label, text)
+            cm?.setPrimaryClip(clip)
+            showToast("已复制到剪贴板")
+        } catch (e: Exception) {
+            showToast("复制失败: ${e.localizedMessage}")
+        }
     }
 
     fun clearAiMessages() {
@@ -2082,6 +2153,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
         isAiResponding.value = false
         currentAiActionStatus.value = ""
         currentAiThinkingText.value = ""
+        pendingAiPromptQueue.value = emptyList()
         aiMessages.value = emptyList()
         val activeSessionId = currentSessionId.value
         viewModelScope.launch(Dispatchers.IO) {
@@ -2112,6 +2184,49 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
             storage.saveProtocolKnowledge(updated)
         }
         showToast("协议澄清已保存并注入 Agent 知识库")
+    }
+
+    fun importBatchProtocols(rawText: String) {
+        if (rawText.isBlank()) return
+        val blocks = rawText.split(Regex("(?:\\r?\\n){2,}(?:[-=]{3,}|---|===)(?:\\r?\\n)*|(?:\\r?\\n){3,}"))
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+
+        val newProtocols = mutableListOf<ProtocolKnowledge>()
+        val currentTime = System.currentTimeMillis()
+        blocks.forEachIndexed { index, block ->
+            val lines = block.lines().map { it.trim() }.filter { it.isNotBlank() }
+            if (lines.isNotEmpty()) {
+                val firstLine = lines.first().removePrefix("#").removePrefix("【").removeSuffix("】").trim()
+                val topicLine = lines.find { it.contains("topic:", ignoreCase = true) || it.contains("主题:", ignoreCase = true) }
+                val topic = topicLine?.substringAfter(":")?.trim()?.ifBlank { "vital/gateway/#" } ?: "vital/gateway/#"
+                val proto = ProtocolKnowledge(
+                    id = java.util.UUID.randomUUID().toString(),
+                    name = if (firstLine.length in 1..25) firstLine else "导入协议 ${index + 1}",
+                    topicFilter = topic,
+                    description = block,
+                    createdAt = currentTime + index
+                )
+                newProtocols.add(proto)
+            }
+        }
+
+        if (newProtocols.isEmpty()) {
+            val single = ProtocolKnowledge(
+                name = "设备协议规则",
+                topicFilter = "vital/#",
+                description = rawText.trim(),
+                createdAt = currentTime
+            )
+            newProtocols.add(single)
+        }
+
+        val updatedList = newProtocols + protocolKnowledgeList.value
+        protocolKnowledgeList.value = updatedList
+        viewModelScope.launch(Dispatchers.IO) {
+            newProtocols.forEach { storage.saveProtocolKnowledge(it) }
+        }
+        showToast("已成功导入 ${newProtocols.size} 条硬件协议澄清规则")
     }
 
     fun deleteProtocolKnowledge(id: String) {
