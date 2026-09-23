@@ -96,7 +96,11 @@ import com.example.ui.theme.SurfaceCanvas
 import com.example.ui.theme.SurfaceContainerDefault
 import com.example.ui.theme.SurfaceContainerLow
 import com.example.ui.theme.SurfaceContainerLowest
+import com.example.ui.components.AiActionOrbitStatusCard
+import com.example.ui.components.AiTypingIndicatorBubble
+import com.example.ui.components.ClaudeOrbitLoading
 import com.example.ui.components.MarkdownRenderer
+import com.example.ui.components.OpenAiWaveDotsLoading
 import com.example.viewmodel.MqttAssistantViewModel
 
 /**
@@ -795,20 +799,12 @@ private fun AiMessageBubble(
             modifier = Modifier.widthIn(max = 310.dp),
             horizontalAlignment = if (isUser) Alignment.End else Alignment.Start
         ) {
-            // Tool Calling Action Chip (如果正在调用工具)
+            // Tool Calling Action Chip (如果正在调用工具，展示 Claude 轨迹公转 + 状态文字)
             if (!isUser && actionStatus.isNotBlank()) {
-                Box(
-                    modifier = Modifier
-                        .padding(bottom = 6.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(SurfaceContainerLow)
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                ) {
-                    Text(
-                        text = actionStatus,
-                        style = TextStyle(fontSize = 11.5.sp, color = PrimaryBlack, fontWeight = FontWeight.Medium)
-                    )
-                }
+                AiActionOrbitStatusCard(
+                    statusText = actionStatus,
+                    modifier = Modifier.padding(bottom = 6.dp)
+                )
             }
 
             // Reasoning Thinking Block (DeepSeek-R1 / Qwen 等思考链)
@@ -872,9 +868,9 @@ private fun AiMessageBubble(
             // Main Message Bubble
             val hasContent = message.content.isNotBlank()
             val isThinkingOnly = message.content.isBlank() && message.isThinking
-            val isActionExecutingOnly = message.content.isBlank() && actionStatus.isNotBlank()
+            val isActionExecuting = message.content.isBlank() && actionStatus.isNotBlank()
 
-            if (hasContent || isThinkingOnly || (isUser && !isActionExecutingOnly)) {
+            if (hasContent || isThinkingOnly || isActionExecuting || isUser) {
                 Card(
                     shape = RoundedCornerShape(
                         topStart = 16.dp,
@@ -889,11 +885,9 @@ private fun AiMessageBubble(
                     elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
                 ) {
                     Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
-                        if (isThinkingOnly) {
-                            Text(
-                                text = "● ● ●",
-                                style = TextStyle(fontSize = 12.sp, color = OutlineGray, letterSpacing = 2.sp)
-                            )
+                        if (message.content.isBlank() && (message.isThinking || actionStatus.isNotBlank())) {
+                            // 动态灵动波浪与公转轨迹指示器，彻底替换静态的 ● ● ●
+                            AiTypingIndicatorBubble()
                         } else {
                             if (isUser) {
                                 Text(
