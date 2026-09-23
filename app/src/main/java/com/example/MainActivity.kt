@@ -59,6 +59,7 @@ import com.example.ui.theme.SurfaceCanvas
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.material3.ScaffoldDefaults
 import com.example.ui.screens.AiChatScreen
+import com.example.viewmodel.MqttAssistantViewModel
 import androidx.activity.viewModels
 import kotlinx.coroutines.flow.collectLatest
 
