@@ -132,6 +132,7 @@ fun AiChatScreen(
 
     var inputText by remember { mutableStateOf("") }
     var showSettingsDialog by remember { mutableStateOf(false) }
+    var showProtocolDialog by remember { mutableStateOf(false) }
     var showSessionMenu by remember { mutableStateOf(false) }
     var showMoreMenu by remember { mutableStateOf(false) }
     var showRenameDialog by remember { mutableStateOf(false) }
@@ -149,6 +150,21 @@ fun AiChatScreen(
         }
     }
 
+    // 专门的硬件协议澄清规则库弹窗 (右上角入口)
+    if (showProtocolDialog) {
+        AiSettingsDialog(
+            initialConfig = aiConfig,
+            protocols = protocols,
+            onDismiss = { showProtocolDialog = false },
+            onSaveConfig = { viewModel.updateAiConfig(it) },
+            onSaveProtocol = { viewModel.saveProtocolKnowledge(it) },
+            onDeleteProtocol = { viewModel.deleteProtocolKnowledge(it) },
+            onBatchImportProtocols = { viewModel.importBatchProtocols(it) },
+            onlyProtocol = true
+        )
+    }
+
+    // 未配置 API Key 应急配置弹窗
     if (showSettingsDialog) {
         AiSettingsDialog(
             initialConfig = aiConfig,
@@ -157,7 +173,8 @@ fun AiChatScreen(
             onSaveConfig = { viewModel.updateAiConfig(it) },
             onSaveProtocol = { viewModel.saveProtocolKnowledge(it) },
             onDeleteProtocol = { viewModel.deleteProtocolKnowledge(it) },
-            onBatchImportProtocols = { viewModel.importBatchProtocols(it) }
+            onBatchImportProtocols = { viewModel.importBatchProtocols(it) },
+            onlyProtocol = false
         )
     }
 
@@ -496,13 +513,13 @@ fun AiChatScreen(
                                 }
                                 HorizontalDivider(color = SurfaceContainerDefault, thickness = 0.5.dp)
                                 DropdownMenuItem(
-                                    text = { Text("AI 设置与协议澄清", fontSize = 13.5.sp, color = PrimaryBlack) },
+                                    text = { Text("协议澄清规则库", fontSize = 13.5.sp, color = PrimaryBlack) },
                                     leadingIcon = {
-                                        Icon(Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(18.dp), tint = PrimaryBlack)
+                                        Icon(Icons.Default.Psychology, contentDescription = null, modifier = Modifier.size(18.dp), tint = PrimaryBlack)
                                     },
                                     onClick = {
                                         showMoreMenu = false
-                                        showSettingsDialog = true
+                                        showProtocolDialog = true
                                     }
                                 )
                             }
@@ -691,19 +708,6 @@ fun AiChatScreen(
                             )
                         }
                     }
-                }
-
-                // Disclaimer caption
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 4.dp),
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    Text(
-                        text = "SI Agent 具备只读检索本地 SQLite 与历史归档 Excel 能力",
-                        style = TextStyle(fontSize = 10.5.sp, color = OnSurfaceVariantGray)
-                    )
                 }
             }
         }

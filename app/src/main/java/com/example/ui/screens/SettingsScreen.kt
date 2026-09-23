@@ -1020,7 +1020,7 @@ fun SettingsScreen(
                             else -> "${aiConfig.contextWindow / 1024}K"
                         }
                         Text(
-                            text = "$windowLabel (${aiConfig.contextWindow} tokens)",
+                            text = windowLabel,
                             style = TextStyle(
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 13.sp,

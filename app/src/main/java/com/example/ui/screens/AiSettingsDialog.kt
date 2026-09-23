@@ -108,9 +108,10 @@ fun AiSettingsDialog(
     onSaveConfig: (AiAgentConfig) -> Unit,
     onSaveProtocol: (ProtocolKnowledge) -> Unit,
     onDeleteProtocol: (String) -> Unit,
-    onBatchImportProtocols: (String) -> Unit = {}
+    onBatchImportProtocols: (String) -> Unit = {},
+    onlyProtocol: Boolean = false
 ) {
-    var selectedTab by remember { mutableIntStateOf(0) }
+    var selectedTab by remember { mutableIntStateOf(if (onlyProtocol) 1 else 0) }
 
     // Tab 1 state
     val coroutineScope = rememberCoroutineScope()
@@ -224,7 +225,7 @@ fun AiSettingsDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "AI 助手与协议澄清工作台",
+                        text = if (onlyProtocol) "硬件私有协议澄清库" else "AI 助手与协议澄清工作台",
                         style = TextStyle(
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Bold,
@@ -245,53 +246,55 @@ fun AiSettingsDialog(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // Tab Switcher
-                TabRow(
-                    selectedTabIndex = selectedTab,
-                    containerColor = SurfaceContainerLowest,
-                    contentColor = PrimaryBlack,
-                    indicator = { tabPositions ->
-                        TabRowDefaults.SecondaryIndicator(
-                            modifier = Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
-                            color = PrimaryBlack,
-                            height = 2.5.dp
+                // Tab Switcher (仅在非纯协议模式下展示)
+                if (!onlyProtocol) {
+                    TabRow(
+                        selectedTabIndex = selectedTab,
+                        containerColor = SurfaceContainerLowest,
+                        contentColor = PrimaryBlack,
+                        indicator = { tabPositions ->
+                            TabRowDefaults.SecondaryIndicator(
+                                modifier = Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
+                                color = PrimaryBlack,
+                                height = 2.5.dp
+                            )
+                        },
+                        divider = {
+                            HorizontalDivider(color = SurfaceContainerDefault, thickness = 0.8.dp)
+                        }
+                    ) {
+                        Tab(
+                            selected = selectedTab == 0,
+                            onClick = { selectedTab = 0 },
+                            text = {
+                                Text(
+                                    text = "模型服务配置",
+                                    style = TextStyle(
+                                        fontSize = 13.5.sp,
+                                        fontWeight = if (selectedTab == 0) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (selectedTab == 0) PrimaryBlack else OnSurfaceVariantGray
+                                    )
+                                )
+                            }
                         )
-                    },
-                    divider = {
-                        HorizontalDivider(color = SurfaceContainerDefault, thickness = 0.8.dp)
+                        Tab(
+                            selected = selectedTab == 1,
+                            onClick = { selectedTab = 1 },
+                            text = {
+                                Text(
+                                    text = "协议澄清知识库 (${protocols.size})",
+                                    style = TextStyle(
+                                        fontSize = 13.5.sp,
+                                        fontWeight = if (selectedTab == 1) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (selectedTab == 1) PrimaryBlack else OnSurfaceVariantGray
+                                    )
+                                )
+                            }
+                        )
                     }
-                ) {
-                    Tab(
-                        selected = selectedTab == 0,
-                        onClick = { selectedTab = 0 },
-                        text = {
-                            Text(
-                                text = "模型服务配置",
-                                style = TextStyle(
-                                    fontSize = 13.5.sp,
-                                    fontWeight = if (selectedTab == 0) FontWeight.Bold else FontWeight.Normal,
-                                    color = if (selectedTab == 0) PrimaryBlack else OnSurfaceVariantGray
-                                )
-                            )
-                        }
-                    )
-                    Tab(
-                        selected = selectedTab == 1,
-                        onClick = { selectedTab = 1 },
-                        text = {
-                            Text(
-                                text = "协议澄清知识库 (${protocols.size})",
-                                style = TextStyle(
-                                    fontSize = 13.5.sp,
-                                    fontWeight = if (selectedTab == 1) FontWeight.Bold else FontWeight.Normal,
-                                    color = if (selectedTab == 1) PrimaryBlack else OnSurfaceVariantGray
-                                )
-                            )
-                        }
-                    )
-                }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
 
                 // Content Area
                 Box(

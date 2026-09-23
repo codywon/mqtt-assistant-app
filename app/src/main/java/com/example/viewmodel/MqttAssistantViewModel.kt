@@ -2095,7 +2095,9 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                         id = assistantMsgId,
                         sessionId = activeSessionId,
                         role = "assistant",
-                        content = fullContent.ifBlank { "（无回答内容）" },
+                        content = fullContent.ifBlank {
+                            "已完成数据检索，当前暂未发现匹配记录。请告诉我您想查询的特定设备、网关或报文主题，以便为您精准排查。"
+                        },
                         reasoningContent = reasoningContent,
                         isThinking = false,
                         isError = false

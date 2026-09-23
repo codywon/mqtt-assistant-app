@@ -168,11 +168,11 @@ data class AiChatMessage(
 data class AiAgentConfig(
     val apiKey: String = "",
     val baseUrl: String = "https://api.deepseek.com",
-    val modelName: String = "deepseek-chat",
+    val modelName: String = "deepseek-v4-flash",
     val customPrompt: String = "",
     val temperature: Double = 0.3,
     val maxTokens: Int = 2048,
-    val contextWindow: Int = 32768,
+    val contextWindow: Int = 1048576, // 1M
     val compactionThreshold: Double = 0.7
 )
 

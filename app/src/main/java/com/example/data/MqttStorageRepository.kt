@@ -407,20 +407,27 @@ class MqttStorageRepository(context: Context) {
     fun loadAiConfig(): AiAgentConfig {
         val apiKey = dbHelper.loadSetting("ai_api_key", "")
         val baseUrl = dbHelper.loadSetting("ai_base_url", "https://api.deepseek.com")
-        val modelName = dbHelper.loadSetting("ai_model_name", "deepseek-chat")
+        var modelName = dbHelper.loadSetting("ai_model_name", "deepseek-v4-flash")
+        if (modelName.isBlank() || modelName == "deepseek-chat") {
+            modelName = "deepseek-v4-flash"
+        }
         val customPrompt = dbHelper.loadSetting("ai_custom_prompt", "")
         val tempStr = dbHelper.loadSetting("ai_temperature", "0.3")
         val maxTokensStr = dbHelper.loadSetting("ai_max_tokens", "2048")
-        val contextWindowStr = dbHelper.loadSetting("ai_context_window", "32768")
+        val contextWindowStr = dbHelper.loadSetting("ai_context_window", "1048576")
+        var contextWindowVal = contextWindowStr.toIntOrNull() ?: 1048576
+        if (contextWindowVal <= 32768) {
+            contextWindowVal = 1048576
+        }
         val thresholdStr = dbHelper.loadSetting("ai_compaction_threshold", "0.7")
         return AiAgentConfig(
             apiKey = apiKey,
             baseUrl = baseUrl.ifBlank { "https://api.deepseek.com" },
-            modelName = modelName.ifBlank { "deepseek-chat" },
+            modelName = modelName,
             customPrompt = customPrompt,
             temperature = tempStr.toDoubleOrNull() ?: 0.3,
             maxTokens = maxTokensStr.toIntOrNull() ?: 2048,
-            contextWindow = contextWindowStr.toIntOrNull() ?: 32768,
+            contextWindow = contextWindowVal,
             compactionThreshold = thresholdStr.toDoubleOrNull() ?: 0.7
         )
     }

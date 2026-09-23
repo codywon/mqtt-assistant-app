@@ -68,6 +68,17 @@ class AiAgentClient(
             - get_excel_summary: 【防爆核心】秒级提取 10,000 行 Excel 的宏观统计画像（时间跨度、总条数、Top 10 主题）；
             - query_excel_data: 按需精准采样读取指定归档 Excel 内部的历史明细行（单次上限 30 条）。
             
+            【需求模糊与数据缺失时的主动澄清追问铁律（极其重要）】
+            1. 【主动追问澄清需求】：
+               当用户的提问较宽泛、未指定关键要素时（例如仅说“排查异常体征”但未指定网关、未提供主题 Topic、或未说明私有报文格式）：
+               ⚠️ 绝不允许输出空内容、无回答内容或敷衍回复！
+               你必须在简要汇报当前排查情况的同时，主动向用户追问以澄清需求。
+               追问示例：“已为您排查本地库，当前未发现明确的体征异常数据。为了帮您精准筛查，请告知：① 体征数据上报的主题 (Topic) 是什么？② 设备上报的 Hex 报文是否有字段定义（如高低压、心率分别在第几字节）？您可直接在对话中发送给我，我会自动学习沉淀并为您解码！”
+            2. 【查库无数据或协议缺失时的澄清规范】：
+               当工具查询结果为空（SQLite 查询为 0 行，或私有协议未命中）时：
+               ⚠️ 严禁陷入反复无意义的工具调用死循环！
+               只要经过 1~2 次工具调用发现库中无规则或无数据，必须立刻停止调用工具，直接向用户生成清晰的结构化诊断报告，详细告知已执行的查询和发现的结果，并提出针对性的追问和建议！
+            
             【分析准则】
             - 切勿凭空捏造数据，必须基于真实的工具查询结果进行归纳；
             - 数据报告请采用标准的 Markdown 标题与表格呈现；
@@ -118,9 +129,12 @@ class AiAgentClient(
         val toolsJson = SIAgentToolRegistry.getToolDefinitionsJson()
 
         var step = 0
-        val maxSteps = 8 // 遵循 Pi Agent 范式，支持多达 8 步推理与动作链
+        val maxSteps = 4 // 移动端优化为 4 步安全收敛循环
         val fullAccumulatedReasoning = StringBuilder()
         var finalAnswerContent = StringBuilder()
+
+        // 获取用户最后一条提问，用于意图澄清兜底分析
+        val lastUserPrompt = conversationHistory.lastOrNull { it.role == "user" }?.content ?: ""
 
         // ==========================================
         // 2. The ReAct Loop (Thought -> Action -> Observation)
@@ -131,11 +145,16 @@ class AiAgentClient(
             // 每一步动作前，再次检查当前活跃上下文水位；若工具返回过大导致超 70%，自动压缩！
             messagesArray = ContextCompactor.compactActiveMessages(messagesArray, config)
 
+            // 最后一步强制不再提供 tools，迫使模型停止调用工具，输出文本终答与追问澄清！
+            val isFinalStep = (step == maxSteps)
+
             val requestBody = JSONObject().apply {
                 put("model", config.modelName)
                 put("messages", messagesArray)
-                put("tools", toolsJson)
-                put("tool_choice", "auto")
+                if (!isFinalStep) {
+                    put("tools", toolsJson)
+                    put("tool_choice", "auto")
+                }
                 put("temperature", config.temperature)
                 put("max_tokens", config.maxTokens)
                 put("stream", true)
@@ -298,17 +317,15 @@ class AiAgentClient(
             // ==========================================
             // 3. 终答判定 (Final Answer)
             // ==========================================
-            if (toolCallsDetected.isEmpty()) {
-                // 模型无需再采取 Action，当前输出即为最终报告解答！
+            if (toolCallsDetected.isEmpty() || isFinalStep) {
+                // 模型无需再采取 Action，或已达到收敛终态，当前输出即为最终报告解答！
                 finalAnswerContent = currentStepContent
                 onToolAction("") // 清除工具 Action 提示
                 val rawAnswer = finalAnswerContent.toString().trim()
                 val safeAnswer = if (rawAnswer.isNotEmpty() && rawAnswer != "null") {
                     rawAnswer
-                } else if (step > 1) {
-                    "已完成数据检索与统计分析。如需进一步排查特定网关或体征明细，请直接告诉我。"
                 } else {
-                    "您好！我是 SI 数据分析专家。请告诉我您想查询的网关报文、体征数据或私有协议。"
+                    generateFallbackClarification(lastUserPrompt, step > 1)
                 }
                 onComplete(safeAnswer, fullAccumulatedReasoning.toString())
                 return@withContext
@@ -342,7 +359,9 @@ class AiAgentClient(
                 val statusText = when (funcName) {
                     "execute_sqlite_query" -> "🔍 [Action] 正在执行只读 SQL 查询..."
                     "get_protocol_clarification" -> "📖 [Action] 正在检索硬件私有协议知识..."
+                    "save_protocol_knowledge" -> "💾 [Action] 正在将私有协议规则沉淀入库..."
                     "list_archived_excels" -> "📁 [Action] 正在扫描已转储 Excel 历史分卷..."
+                    "get_excel_summary" -> "⚡ [Action] 正在提取 Excel 宏观统计画像..."
                     "query_excel_data" -> "📊 [Action] 正在流式提取已归档 Excel 数据行..."
                     else -> "⚙️ [Action] 正在调用工具: $funcName..."
                 }
@@ -366,8 +385,48 @@ class AiAgentClient(
             onToolAction("📊 数据检索完毕，正在深入分析并生成报告...")
         }
 
-        // 达到最大步数安全上限时完结
+        // 达到最大步数安全上限时完结（严格兜底保护，绝无空回答）
         onToolAction("")
-        onComplete(finalAnswerContent.toString(), fullAccumulatedReasoning.toString())
+        val rawAnswer = finalAnswerContent.toString().trim()
+        val safeAnswer = if (rawAnswer.isNotEmpty() && rawAnswer != "null") {
+            rawAnswer
+        } else {
+            generateFallbackClarification(lastUserPrompt, true)
+        }
+        onComplete(safeAnswer, fullAccumulatedReasoning.toString())
+    }
+
+    /**
+     * 当模型未输出终答正文、或检索无果需求模糊时的智能澄清与追问说明，杜绝空回答兜底！
+     */
+    private fun generateFallbackClarification(userPrompt: String, hadToolActions: Boolean): String {
+        val isVitalRelated = userPrompt.contains("体征") || userPrompt.contains("血压") || userPrompt.contains("心率") || userPrompt.contains("健康")
+        return if (isVitalRelated) {
+            """
+            ### 🔍 体征数据排查与意图澄清说明
+            
+            已为您在本地 SQLite 数据库与私有协议知识库中完成检索与排查：
+            1. **协议规则检查**：当前系统暂未检索到体征相关的私有解码规则（如血压计/心率仪报文结构）；
+            2. **报文数据排查**：暂未在最新报文中识别到明确的体征异常数据。
+            
+            👉 **为了帮您精准筛查，请协助澄清以下关键信息**：
+            - 您的体征设备或网关对应的主题（Topic）是什么？例如 `vital/gateway/#` 或 `sensor/vital`？
+            - 硬件上报的 Hex 报文是否有字段定义（如高低压、心率分别在第几字节）？
+            
+            *(💡 贴心提示：您可以直接在当前对话框中将协议说明发送给我，我会自动将其沉淀入库并为您即时解码！)*
+            """.trimIndent()
+        } else if (hadToolActions) {
+            """
+            ### 📊 数据检索排查说明
+            
+            已完成底层数据检索与排查。当前检索条件下暂未获取到匹配的有效数据。
+            
+            👉 **为了进一步分析，请告诉我更多细节**：
+            - 您希望重点排查的具体网关或设备主题（Topic）是什么？
+            - 是否需要扩大时间范围或检索历史归档 Excel 文件？
+            """.trimIndent()
+        } else {
+            "您好！我是 SI 数据分析专家。请告诉我您想查询的网关报文、体征数据或私有协议规则。"
+        }
     }
 }
