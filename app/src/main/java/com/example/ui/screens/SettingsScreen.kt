@@ -1154,7 +1154,11 @@ fun SettingsScreen(
             onDismiss = { showAiSettingsDialog = false },
             onSaveConfig = { viewModel.updateAiConfig(it) },
             onSaveProtocol = { viewModel.saveProtocolKnowledge(it) },
-            onDeleteProtocol = { viewModel.deleteProtocolKnowledge(it) }
+            onDeleteProtocol = { viewModel.deleteProtocolKnowledge(it) },
+            onBatchImportProtocols = { viewModel.importBatchProtocols(it) },
+            onExportProtocols = { viewModel.exportProtocolsToJson(context) },
+            onCopyProtocolsToken = { viewModel.copyProtocolsToken(context) },
+            onImportProtocolsFromClipboard = { viewModel.importProtocolsFromClipboard(context) }
         )
     }
 }

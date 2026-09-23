@@ -3,8 +3,10 @@ package com.example.util
 import android.content.Context
 import android.content.Intent
 import androidx.core.content.FileProvider
+import com.example.model.AiAgentConfig
 import com.example.model.BrokerProfile
 import com.example.model.MqttServerConfig
+import com.example.model.ProtocolKnowledge
 import com.example.model.PublishPreset
 import com.example.model.SubscriptionItem
 import org.json.JSONArray
@@ -33,7 +35,9 @@ data class BackupData(
     val autoStartEnabled: Boolean = false,
     val processGuardEnabled: Boolean = true,
     val includeFilters: List<String>,
-    val excludeFilters: List<String>
+    val excludeFilters: List<String>,
+    val aiConfig: AiAgentConfig? = null,
+    val protocolKnowledgeList: List<ProtocolKnowledge> = emptyList()
 )
 
 object ConfigBackupHelper {
@@ -47,10 +51,12 @@ object ConfigBackupHelper {
         subs: List<SubscriptionItem>,
         serverConfig: MqttServerConfig,
         includeFilters: List<String>,
-        excludeFilters: List<String>
+        excludeFilters: List<String>,
+        aiConfig: AiAgentConfig? = null,
+        protocols: List<ProtocolKnowledge> = emptyList()
     ): JSONObject {
         val root = JSONObject()
-        root.put("version", 1)
+        root.put("version", 2)
         root.put("app", "MQTT-Assistant")
         root.put("exportedAt", SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date()))
         root.put("activeBrokerId", activeId)
@@ -127,6 +133,39 @@ object ConfigBackupHelper {
         }
         root.put("subscriptions", subArray)
 
+        // 5. AI Agent & LLM Configuration
+        if (aiConfig != null) {
+            val aiObj = JSONObject().apply {
+                put("apiKey", aiConfig.apiKey)
+                put("baseUrl", aiConfig.baseUrl)
+                put("modelName", aiConfig.modelName)
+                put("customPrompt", aiConfig.customPrompt)
+                put("temperature", aiConfig.temperature)
+                put("maxTokens", aiConfig.maxTokens)
+                put("contextWindow", aiConfig.contextWindow)
+                put("compactionThreshold", aiConfig.compactionThreshold)
+            }
+            root.put("aiConfig", aiObj)
+        }
+
+        // 6. Protocol Knowledge Clarification Workbench
+        if (protocols.isNotEmpty()) {
+            val protoArr = JSONArray()
+            protocols.forEach { p ->
+                protoArr.put(
+                    JSONObject().apply {
+                        put("id", p.id)
+                        put("name", p.name)
+                        put("topicFilter", p.topicFilter)
+                        put("description", p.description)
+                        put("sampleHex", p.sampleHex)
+                        put("createdAt", p.createdAt)
+                    }
+                )
+            }
+            root.put("protocolKnowledgeList", protoArr)
+        }
+
         return root
     }
 
@@ -138,10 +177,12 @@ object ConfigBackupHelper {
         subs: List<SubscriptionItem>,
         serverConfig: MqttServerConfig,
         includeFilters: List<String>,
-        excludeFilters: List<String>
+        excludeFilters: List<String>,
+        aiConfig: AiAgentConfig? = null,
+        protocols: List<ProtocolKnowledge> = emptyList()
     ): File {
         val root = buildBackupJsonObject(
-            profiles, activeId, presets, subs, serverConfig, includeFilters, excludeFilters
+            profiles, activeId, presets, subs, serverConfig, includeFilters, excludeFilters, aiConfig, protocols
         )
         // Write to cache exports directory
         val exportDir = File(context.cacheDir, "exports").apply { if (!exists()) mkdirs() }
@@ -161,10 +202,12 @@ object ConfigBackupHelper {
         subs: List<SubscriptionItem>,
         serverConfig: MqttServerConfig,
         includeFilters: List<String>,
-        excludeFilters: List<String>
+        excludeFilters: List<String>,
+        aiConfig: AiAgentConfig? = null,
+        protocols: List<ProtocolKnowledge> = emptyList()
     ): String {
         val root = buildBackupJsonObject(
-            profiles, activeId, presets, subs, serverConfig, includeFilters, excludeFilters
+            profiles, activeId, presets, subs, serverConfig, includeFilters, excludeFilters, aiConfig, protocols
         )
         val jsonStr = root.toString()
         val byteStream = java.io.ByteArrayOutputStream()
@@ -321,6 +364,41 @@ object ConfigBackupHelper {
             }
         }
 
+        // 5. AI Agent & LLM Configuration
+        var aiConfig: AiAgentConfig? = null
+        if (root.has("aiConfig")) {
+            val a = root.getJSONObject("aiConfig")
+            aiConfig = AiAgentConfig(
+                apiKey = a.optString("apiKey", ""),
+                baseUrl = a.optString("baseUrl", "https://api.deepseek.com"),
+                modelName = a.optString("modelName", "deepseek-v4-flash"),
+                customPrompt = a.optString("customPrompt", ""),
+                temperature = a.optDouble("temperature", 0.3),
+                maxTokens = a.optInt("maxTokens", 2048),
+                contextWindow = a.optInt("contextWindow", 1048576),
+                compactionThreshold = a.optDouble("compactionThreshold", 0.7)
+            )
+        }
+
+        // 6. Protocol Knowledge Clarification Workbench
+        val protocolList = mutableListOf<ProtocolKnowledge>()
+        if (root.has("protocolKnowledgeList")) {
+            val arr = root.getJSONArray("protocolKnowledgeList")
+            for (i in 0 until arr.length()) {
+                val obj = arr.getJSONObject(i)
+                protocolList.add(
+                    ProtocolKnowledge(
+                        id = obj.optString("id", UUID.randomUUID().toString()),
+                        name = obj.optString("name", "未命名协议"),
+                        topicFilter = obj.optString("topicFilter", ""),
+                        description = obj.optString("description", ""),
+                        sampleHex = obj.optString("sampleHex", ""),
+                        createdAt = obj.optLong("createdAt", System.currentTimeMillis())
+                    )
+                )
+            }
+        }
+
         return BackupData(
             version = version,
             exportedAt = exportedAt,
@@ -339,7 +417,116 @@ object ConfigBackupHelper {
             autoStartEnabled = if (root.has("globalSettings")) root.getJSONObject("globalSettings").optBoolean("autoStartEnabled", false) else false,
             processGuardEnabled = if (root.has("globalSettings")) root.getJSONObject("globalSettings").optBoolean("processGuardEnabled", true) else true,
             includeFilters = includeFilters,
-            excludeFilters = excludeFilters
+            excludeFilters = excludeFilters,
+            aiConfig = aiConfig,
+            protocolKnowledgeList = protocolList
         )
+    }
+
+    // ==============================================================
+    // 硬件私有协议澄清库专属导入导出 (支持独立 JSON 与紧凑口令)
+    // ==============================================================
+    const val PROTOCOL_TOKEN_PREFIX = "#MQTT-PROTO#:"
+
+    /**
+     * 将协议库导出为独立格式化 JSON 文件
+     */
+    fun exportProtocolsToJson(context: Context, protocols: List<ProtocolKnowledge>): File {
+        val root = JSONObject().apply {
+            put("type", "MQTT_PROTOCOL_KNOWLEDGE")
+            put("version", 1)
+            put("exportedAt", SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date()))
+            val arr = JSONArray()
+            protocols.forEach { p ->
+                arr.put(
+                    JSONObject().apply {
+                        put("id", p.id)
+                        put("name", p.name)
+                        put("topicFilter", p.topicFilter)
+                        put("description", p.description)
+                        put("sampleHex", p.sampleHex)
+                        put("createdAt", p.createdAt)
+                    }
+                )
+            }
+            put("protocols", arr)
+        }
+        val exportDir = File(context.cacheDir, "exports").apply { if (!exists()) mkdirs() }
+        val timeTag = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+        val file = File(exportDir, "mqtt_protocols_backup_$timeTag.json")
+        file.writeText(root.toString(2), Charsets.UTF_8)
+        return file
+    }
+
+    /**
+     * 将协议库导出为 GZIP+Base64 极速分享口令
+     */
+    fun exportProtocolsToToken(protocols: List<ProtocolKnowledge>): String {
+        val root = JSONObject().apply {
+            put("type", "MQTT_PROTOCOL_KNOWLEDGE")
+            val arr = JSONArray()
+            protocols.forEach { p ->
+                arr.put(
+                    JSONObject().apply {
+                        put("name", p.name)
+                        put("topicFilter", p.topicFilter)
+                        put("description", p.description)
+                        put("sampleHex", p.sampleHex)
+                    }
+                )
+            }
+            put("protocols", arr)
+        }
+        val byteStream = java.io.ByteArrayOutputStream()
+        java.util.zip.GZIPOutputStream(byteStream).use { gzip ->
+            gzip.write(root.toString().toByteArray(Charsets.UTF_8))
+        }
+        val base64 = android.util.Base64.encodeToString(byteStream.toByteArray(), android.util.Base64.NO_WRAP)
+        return "$PROTOCOL_TOKEN_PREFIX$base64"
+    }
+
+    /**
+     * 从独立 JSON 字符串或协议口令解析出协议规则列表
+     */
+    fun parseProtocolsFromJsonOrToken(text: String): List<ProtocolKnowledge> {
+        val trimmed = text.trim()
+        val jsonStr = if (trimmed.startsWith(PROTOCOL_TOKEN_PREFIX)) {
+            val base64Part = trimmed.removePrefix(PROTOCOL_TOKEN_PREFIX).trim()
+            val compressedBytes = android.util.Base64.decode(base64Part, android.util.Base64.DEFAULT)
+            val byteIn = java.io.ByteArrayInputStream(compressedBytes)
+            java.util.zip.GZIPInputStream(byteIn).bufferedReader(Charsets.UTF_8).use { it.readText() }
+        } else {
+            trimmed
+        }
+
+        val list = mutableListOf<ProtocolKnowledge>()
+        val root = JSONObject(jsonStr)
+        val arr = if (root.has("protocols")) {
+            root.getJSONArray("protocols")
+        } else if (root.has("protocolKnowledgeList")) {
+            root.getJSONArray("protocolKnowledgeList")
+        } else {
+            null
+        }
+
+        if (arr != null) {
+            for (i in 0 until arr.length()) {
+                val obj = arr.getJSONObject(i)
+                val desc = obj.optString("description", "").trim()
+                if (desc.isNotBlank()) {
+                    list.add(
+                        ProtocolKnowledge(
+                            id = obj.optString("id", UUID.randomUUID().toString()),
+                            name = obj.optString("name", "未命名协议").trim().ifBlank { "未命名协议" },
+                            topicFilter = obj.optString("topicFilter", "").trim(),
+                            description = desc,
+                            sampleHex = obj.optString("sampleHex", "").trim(),
+                            createdAt = obj.optLong("createdAt", System.currentTimeMillis())
+                        )
+                    )
+                }
+            }
+        }
+        return list
     }
 }

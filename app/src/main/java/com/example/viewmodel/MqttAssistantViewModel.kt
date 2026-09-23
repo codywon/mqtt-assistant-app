@@ -1741,11 +1741,13 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                     subs = subscriptions.value,
                     serverConfig = serverConfig.value,
                     includeFilters = includeTopicFilters.value,
-                    excludeFilters = excludeTopicFilters.value
+                    excludeFilters = excludeTopicFilters.value,
+                    aiConfig = aiConfig.value,
+                    protocols = protocolKnowledgeList.value
                 )
                 withContext(Dispatchers.Main) {
                     isExportingConfig.value = false
-                    showToast("配置已成功导出为 JSON 文件")
+                    showToast("配置已成功导出为 JSON 文件 (含 AI 与协议规则)")
                     ConfigBackupHelper.shareBackupFile(context, file)
                 }
             } catch (e: Exception) {
@@ -1759,7 +1761,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
     }
 
     /**
-     * 生成配置口令并复制到系统剪贴板 (免找 JSON 文件，适合即时分享/换机克隆)
+     * 生成配置口令并复制到系统剪贴板 (免找 JSON 文件，适合即时分享/换机克隆，含 AI 配置与协议库)
      */
     fun copyConfigToken(context: Context) {
         try {
@@ -1770,11 +1772,13 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 subs = subscriptions.value,
                 serverConfig = serverConfig.value,
                 includeFilters = includeTopicFilters.value,
-                excludeFilters = excludeTopicFilters.value
+                excludeFilters = excludeTopicFilters.value,
+                aiConfig = aiConfig.value,
+                protocols = protocolKnowledgeList.value
             )
             val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
             cm.setPrimaryClip(android.content.ClipData.newPlainText("MQTT-Config-Token", token))
-            showToast("已复制配置口令！可直接在微信发送或在另一台手机一键导入")
+            showToast("已复制全量配置口令！(含 AI 模型与协议知识库)")
         } catch (e: Exception) {
             showToast("生成口令失败: ${e.localizedMessage}")
         }
@@ -1904,13 +1908,142 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
             )
         }
 
+        // 恢复 AI 智能体与大模型配置
+        if (backup.aiConfig != null) {
+            storage.saveAiConfig(backup.aiConfig)
+            aiConfig.value = backup.aiConfig
+        }
+
+        // 恢复硬件私有协议知识库
+        if (backup.protocolKnowledgeList.isNotEmpty()) {
+            backup.protocolKnowledgeList.forEach { p ->
+                storage.saveProtocolKnowledge(p)
+            }
+            protocolKnowledgeList.value = storage.loadAllProtocolKnowledge()
+        }
+
         refreshStorageStats()
 
         withContext(Dispatchers.Main) {
             isImportingConfig.value = false
-            showToast("配置恢复成功：恢复 ${backup.brokerProfiles.size} 个节点、${backup.publishPresets.size} 条预设、${backup.subscriptions.size} 条订阅")
+            val extraInfo = buildString {
+                if (backup.aiConfig != null) append("、AI大模型配置")
+                if (backup.protocolKnowledgeList.isNotEmpty()) append("、${backup.protocolKnowledgeList.size} 条硬件协议")
+            }
+            showToast("配置恢复成功：已恢复 ${backup.brokerProfiles.size} 个节点、${backup.publishPresets.size} 条预设、${backup.subscriptions.size} 条订阅$extraInfo")
             if (serverConfig.value.autoReconnect || serverConfig.value.isConnected) {
                 connectToBroker()
+            }
+        }
+    }
+
+    // ==========================================
+    // 硬件私有协议知识澄清库专属导入导出操作
+    // ==========================================
+
+    /**
+     * 导出协议澄清库为独立 JSON 文件并弹出系统分享
+     */
+    fun exportProtocolsToJson(context: Context) {
+        val protocols = protocolKnowledgeList.value
+        if (protocols.isEmpty()) {
+            showToast("当前协议库为空，暂无规则可导出")
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val file = ConfigBackupHelper.exportProtocolsToJson(context, protocols)
+                withContext(Dispatchers.Main) {
+                    showToast("协议知识库已导出为 JSON 文件")
+                    ConfigBackupHelper.shareBackupFile(context, file, "分享/保存硬件私有协议库")
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    showToast("导出协议库失败: ${e.localizedMessage}")
+                }
+            }
+        }
+    }
+
+    /**
+     * 复制协议澄清库口令到系统剪贴板 (极速跨手机微信互传)
+     */
+    fun copyProtocolsToken(context: Context) {
+        val protocols = protocolKnowledgeList.value
+        if (protocols.isEmpty()) {
+            showToast("当前协议库为空，暂无可生成的口令")
+            return
+        }
+        try {
+            val token = ConfigBackupHelper.exportProtocolsToToken(protocols)
+            val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            cm.setPrimaryClip(android.content.ClipData.newPlainText("MQTT-Protocols-Token", token))
+            showToast("已复制协议库口令！可直接在微信发送并在另一台手机一键导入")
+        } catch (e: Exception) {
+            showToast("生成协议口令失败: ${e.localizedMessage}")
+        }
+    }
+
+    /**
+     * 从剪贴板口令导入协议规则
+     */
+    fun importProtocolsFromClipboard(context: Context) {
+        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+        val clipText = cm.primaryClip?.getItemAt(0)?.text?.toString()?.trim() ?: ""
+        if (clipText.isBlank()) {
+            showToast("剪贴板中无内容，请先复制协议口令或JSON")
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val list = ConfigBackupHelper.parseProtocolsFromJsonOrToken(clipText)
+                if (list.isEmpty()) {
+                    withContext(Dispatchers.Main) {
+                        showToast("未在剪贴板中识别到有效协议规则")
+                    }
+                    return@launch
+                }
+                list.forEach { storage.saveProtocolKnowledge(it) }
+                val updated = storage.loadAllProtocolKnowledge()
+                protocolKnowledgeList.value = updated
+                withContext(Dispatchers.Main) {
+                    showToast("成功导入 ${list.size} 条硬件协议规则！")
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    showToast("口令导入失败: 剪贴板内容不是有效协议规则")
+                }
+            }
+        }
+    }
+
+    /**
+     * 从外部文件 Uri 导入协议规则
+     */
+    fun importProtocolsFromUri(context: Context, uri: Uri) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val jsonString = context.contentResolver.openInputStream(uri)?.use { stream ->
+                    stream.bufferedReader(Charsets.UTF_8).readText()
+                } ?: throw IllegalArgumentException("无法读取文件内容")
+
+                val list = ConfigBackupHelper.parseProtocolsFromJsonOrToken(jsonString)
+                if (list.isEmpty()) {
+                    withContext(Dispatchers.Main) {
+                        showToast("文件中未解析到有效协议规则")
+                    }
+                    return@launch
+                }
+                list.forEach { storage.saveProtocolKnowledge(it) }
+                val updated = storage.loadAllProtocolKnowledge()
+                protocolKnowledgeList.value = updated
+                withContext(Dispatchers.Main) {
+                    showToast("成功从文件恢复 ${list.size} 条硬件协议！")
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    showToast("导入失败: ${e.localizedMessage ?: "文件解析异常"}")
+                }
             }
         }
     }

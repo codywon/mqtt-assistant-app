@@ -82,6 +82,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -150,6 +151,8 @@ fun AiChatScreen(
         }
     }
 
+    val context = LocalContext.current
+
     // 专门的硬件协议澄清规则库弹窗 (右上角入口)
     if (showProtocolDialog) {
         AiSettingsDialog(
@@ -160,6 +163,9 @@ fun AiChatScreen(
             onSaveProtocol = { viewModel.saveProtocolKnowledge(it) },
             onDeleteProtocol = { viewModel.deleteProtocolKnowledge(it) },
             onBatchImportProtocols = { viewModel.importBatchProtocols(it) },
+            onExportProtocols = { viewModel.exportProtocolsToJson(context) },
+            onCopyProtocolsToken = { viewModel.copyProtocolsToken(context) },
+            onImportProtocolsFromClipboard = { viewModel.importProtocolsFromClipboard(context) },
             onlyProtocol = true
         )
     }
@@ -174,6 +180,9 @@ fun AiChatScreen(
             onSaveProtocol = { viewModel.saveProtocolKnowledge(it) },
             onDeleteProtocol = { viewModel.deleteProtocolKnowledge(it) },
             onBatchImportProtocols = { viewModel.importBatchProtocols(it) },
+            onExportProtocols = { viewModel.exportProtocolsToJson(context) },
+            onCopyProtocolsToken = { viewModel.copyProtocolsToken(context) },
+            onImportProtocolsFromClipboard = { viewModel.importProtocolsFromClipboard(context) },
             onlyProtocol = false
         )
     }

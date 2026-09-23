@@ -24,11 +24,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
@@ -109,6 +112,9 @@ fun AiSettingsDialog(
     onSaveProtocol: (ProtocolKnowledge) -> Unit,
     onDeleteProtocol: (String) -> Unit,
     onBatchImportProtocols: (String) -> Unit = {},
+    onExportProtocols: (() -> Unit)? = null,
+    onCopyProtocolsToken: (() -> Unit)? = null,
+    onImportProtocolsFromClipboard: (() -> Unit)? = null,
     onlyProtocol: Boolean = false
 ) {
     var selectedTab by remember { mutableIntStateOf(if (onlyProtocol) 1 else 0) }
@@ -660,6 +666,9 @@ fun AiSettingsDialog(
                                 protocols = protocols,
                                 onAddNew = { isCreatingProtocol = true },
                                 onBatchImport = { showBatchImportDialog = true },
+                                onExportProtocols = onExportProtocols,
+                                onCopyProtocolsToken = onCopyProtocolsToken,
+                                onImportProtocolsFromClipboard = onImportProtocolsFromClipboard,
                                 onEdit = { editingProtocol = it },
                                 onDelete = onDeleteProtocol
                             )
@@ -742,6 +751,9 @@ private fun ProtocolListView(
     protocols: List<ProtocolKnowledge>,
     onAddNew: () -> Unit,
     onBatchImport: () -> Unit,
+    onExportProtocols: (() -> Unit)? = null,
+    onCopyProtocolsToken: (() -> Unit)? = null,
+    onImportProtocolsFromClipboard: (() -> Unit)? = null,
     onEdit: (ProtocolKnowledge) -> Unit,
     onDelete: (String) -> Unit
 ) {
@@ -757,7 +769,7 @@ private fun ProtocolListView(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "已配置的私有设备协议澄清",
+                text = "已配置协议规则 (${protocols.size})",
                 style = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = OnSurfaceDark)
             )
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -783,6 +795,71 @@ private fun ProtocolListView(
                     Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(13.dp))
                     Spacer(modifier = Modifier.width(2.dp))
                     Text("新增", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+
+        // 协议专属导入导出工具条
+        if (onCopyProtocolsToken != null || onImportProtocolsFromClipboard != null || onExportProtocols != null) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(SurfaceContainerLow)
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "知识库共享",
+                    style = TextStyle(fontSize = 10.5.sp, fontWeight = FontWeight.Medium, color = OnSurfaceVariantGray)
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (onCopyProtocolsToken != null) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(SurfaceContainerLowest)
+                                .clickable(onClick = onCopyProtocolsToken)
+                                .padding(horizontal = 7.dp, vertical = 4.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.ContentCopy, contentDescription = null, tint = PrimaryBlack, modifier = Modifier.size(11.dp))
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text("复制口令", fontSize = 10.5.sp, fontWeight = FontWeight.Medium, color = PrimaryBlack)
+                            }
+                        }
+                    }
+                    if (onImportProtocolsFromClipboard != null) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(SurfaceContainerLowest)
+                                .clickable(onClick = onImportProtocolsFromClipboard)
+                                .padding(horizontal = 7.dp, vertical = 4.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.ContentPaste, contentDescription = null, tint = PrimaryBlack, modifier = Modifier.size(11.dp))
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text("口令导入", fontSize = 10.5.sp, fontWeight = FontWeight.Medium, color = PrimaryBlack)
+                            }
+                        }
+                    }
+                    if (onExportProtocols != null) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(SurfaceContainerLowest)
+                                .clickable(onClick = onExportProtocols)
+                                .padding(horizontal = 7.dp, vertical = 4.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Share, contentDescription = null, tint = PrimaryBlack, modifier = Modifier.size(11.dp))
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text("导出文件", fontSize = 10.5.sp, fontWeight = FontWeight.Medium, color = PrimaryBlack)
+                            }
+                        }
+                    }
                 }
             }
         }
