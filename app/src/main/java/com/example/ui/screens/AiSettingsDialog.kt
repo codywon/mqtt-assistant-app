@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -110,12 +111,17 @@ fun AiSettingsDialog(
     var selectedTab by remember { mutableIntStateOf(0) }
 
     // Tab 1 state
+    val coroutineScope = rememberCoroutineScope()
     var apiKey by remember { mutableStateOf(initialConfig.apiKey) }
     var baseUrl by remember { mutableStateOf(initialConfig.baseUrl) }
     var modelName by remember { mutableStateOf(initialConfig.modelName) }
     var contextWindow by remember { mutableIntStateOf(initialConfig.contextWindow) }
     var customContextWindowText by remember { mutableStateOf(initialConfig.contextWindow.toString()) }
     var isApiKeyVisible by remember { mutableStateOf(false) }
+    var isFetchingModels by remember { mutableStateOf(false) }
+    var fetchedModels by remember { mutableStateOf<List<String>>(emptyList()) }
+    var showModelDropdown by remember { mutableStateOf(false) }
+    var modelFetchMessage by remember { mutableStateOf("") }
 
     // Tab 2 state
     var editingProtocol by remember { mutableStateOf<ProtocolKnowledge?>(null) }
@@ -390,7 +396,7 @@ fun AiSettingsDialog(
                                             onDismissRequest = { showModelDropdown = false },
                                             modifier = Modifier.widthIn(min = 200.dp, max = 280.dp).background(SurfaceContainerLowest)
                                         ) {
-                                            fetchedModels.forEach { m ->
+                                            for (m in fetchedModels) {
                                                 DropdownMenuItem(
                                                     text = {
                                                         Text(
