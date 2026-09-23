@@ -2616,6 +2616,43 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
         sendAiMessage(prompt)
     }
 
+    // --- 场景 5: 外部 Excel 日志免权限导入与权限自愈 ---
+
+    fun hasAllFilesAccess(context: Context): Boolean = ArchivedExcelReader.hasAllFilesAccess(context)
+
+    fun openAllFilesAccessSettings(context: Context) = ArchivedExcelReader.openAllFilesAccessSettings(context)
+
+    fun importExternalExcel(context: Context, uri: Uri) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = ArchivedExcelReader.importExcelFromUri(context, uri)
+            result.onSuccess { file ->
+                val summary = ArchivedExcelReader.analyzeExcelSummary(context, file.name)
+                val rows = summary?.totalRows ?: 0
+                val hint = if (rows > 0) {
+                    "📂 已成功导入外部归档日志「${file.name}」（经原生流式引擎预检共包含 $rows 条报文，时间跨度: ${summary?.startTime ?: "-"} ~ ${summary?.endTime ?: "-"}）。我已为您建立分析就绪态，请告诉我您想了解什么？（例如：分析异常体征、统计热门主题、排查网关掉线等）"
+                } else {
+                    "📂 已成功导入外部 Excel 日志「${file.name}」，已存入应用内部安全目录。您可以直接向我提问分析该文件！"
+                }
+                withContext(Dispatchers.Main) {
+                    showToast("成功导入: ${file.name}")
+                    val session = currentSessionId.value
+                    val welcomeMsg = AiChatMessage(
+                        id = UUID.randomUUID().toString(),
+                        role = "assistant",
+                        content = hint,
+                        timestamp = System.currentTimeMillis()
+                    )
+                    aiMessages.update { it + welcomeMsg }
+                    storage.saveAiMessage(session, welcomeMsg)
+                }
+            }.onFailure { err ->
+                withContext(Dispatchers.Main) {
+                    showToast("导入失败: ${err.message}")
+                }
+            }
+        }
+    }
+
     override fun onCleared() {
         super.onCleared()
         try {

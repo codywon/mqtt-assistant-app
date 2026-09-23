@@ -2,10 +2,13 @@ package com.example.util
 
 import android.content.ContentUris
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import android.provider.OpenableColumns
+import android.provider.Settings
 import android.util.Log
 import java.io.File
 import java.io.InputStream
@@ -25,6 +28,74 @@ import org.xmlpull.v1.XmlPullParserFactory
 object ArchivedExcelReader {
 
     private const val TAG = "ArchivedExcelReader"
+
+    /**
+     * 判断是否拥有 Android 11+ 的所有文件管理权限 (MANAGE_EXTERNAL_STORAGE)
+     */
+    fun hasAllFilesAccess(context: Context): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Environment.isExternalStorageManager()
+        } else {
+            true
+        }
+    }
+
+    /**
+     * 跳转至系统设置页，引导用户开启所有文件管理权限
+     */
+    fun openAllFilesAccessSettings(context: Context) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            try {
+                val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                    data = Uri.parse("package:${context.packageName}")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(intent)
+            } catch (_: Exception) {
+                try {
+                    val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(intent)
+                } catch (_: Exception) {}
+            }
+        }
+    }
+
+    /**
+     * 100% 免权限方案：通过系统原生 SAF (Storage Access Framework) 选择的 Uri 导入外部 Excel 到私有缓存目录
+     */
+    fun importExcelFromUri(context: Context, uri: Uri): Result<File> {
+        return runCatching {
+            var displayName = "mqtt_packets_imported_${System.currentTimeMillis()}.xlsx"
+            try {
+                context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                    val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    if (nameIndex >= 0 && cursor.moveToFirst()) {
+                        val name = cursor.getString(nameIndex)
+                        if (!name.isNullOrBlank()) {
+                            displayName = name
+                        }
+                    }
+                }
+            } catch (_: Exception) {}
+
+            if (!displayName.endsWith(".xlsx", ignoreCase = true)) {
+                displayName = "$displayName.xlsx"
+            }
+
+            val targetDir = File(context.cacheDir, "exports").apply { if (!exists()) mkdirs() }
+            val targetFile = File(targetDir, displayName)
+
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                targetFile.outputStream().use { output ->
+                    input.copyTo(output)
+                }
+            } ?: throw IllegalStateException("无法从指定 URI 读取数据流")
+
+            targetFile
+        }
+    }
 
     data class ArchivedFileInfo(
         val fileName: String,

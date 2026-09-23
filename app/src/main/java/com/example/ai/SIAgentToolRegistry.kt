@@ -502,9 +502,21 @@ class SIAgentToolRegistry(
                 }
 
                 "list_archived_excels" -> {
+                    val hasFullAccess = if (context != null) ArchivedExcelReader.hasAllFilesAccess(context) else true
                     val files = ArchivedExcelReader.listArchivedExcels(context)
                     if (files.isEmpty()) {
-                        return "【检索结果】未在设备中发现归档 Excel 文件（已深度检索系统 Download 目录、微信/QQ下载目录、应用私有导出目录及系统媒体库）。\n建议：\n1. 若您刚刚导出了报文，可使用 execute_sqlite_query 工具直接查询 SQLite 数据库 (tbl_mqtt_packets) 中的实时报文；\n2. 若您刚收到或移动了 Excel 文件，可确认文件后缀是否为 .xlsx。"
+                        val permissionHint = if (!hasFullAccess) {
+                            "【⚠️ Android 分区存储沙盒限制排查】\n" +
+                            "当前设备运行在 Android 11+ 系统，因尚未获得系统「管理所有文件权限 (MANAGE_EXTERNAL_STORAGE)」，Android 底层安全沙盒会静默隐藏由微信、QQ、电脑 USB 传输或第三方下载的公共 Excel 文件！\n" +
+                            "【即刻解决指引（请明确告知用户）】：\n" +
+                            "1. 【推荐·免权限即选即用】：请引导用户点击 AI 聊天界面右上角「更多(···)」菜单中的「📂 导入外部 Excel 日志」，在弹出的系统文件管理器中点选该 Excel 文件，系统即会瞬间免权限授权并导入应用内部，随后即可 100% 毫秒级分析；\n" +
+                            "2. 【一劳永逸全盘扫描】：请引导用户点击右上角「更多(···)」->「🛡️ 授予所有文件管理权限」，开启开关后即可全盘自动穿透扫描公共 Download 目录；\n" +
+                            "3. 若用户需要分析当前实时接收的报文，请提示使用 execute_sqlite_query 或 get_live_packets 查询。"
+                        } else {
+                            "【检索结果】已全方位检索公共 Download 目录、微信/QQ下载目录与应用内部目录，暂未发现 .xlsx 归档文件。\n" +
+                            "建议引导用户确认文件是否为 .xlsx 格式，或通过右上角「更多(···)」->「📂 导入外部 Excel 日志」手动点选。"
+                        }
+                        return permissionHint
                     }
                     val array = JSONArray()
                     for (f in files) {
@@ -520,7 +532,15 @@ class SIAgentToolRegistry(
                             }
                         )
                     }
-                    array.toString()
+                    val obj = JSONObject().apply {
+                        put("fileCount", files.size)
+                        put("hasFullFilesAccess", hasFullAccess)
+                        put("files", array)
+                        if (!hasFullAccess) {
+                            put("notice", "注意：当前未开启全盘文件权限，若有通过微信/电脑拷贝的外部 Excel 未列出，请使用右上角「导入外部 Excel 日志」导入。")
+                        }
+                    }
+                    obj.toString()
                 }
 
                 "get_excel_summary" -> {
@@ -528,7 +548,7 @@ class SIAgentToolRegistry(
                     if (fileName.isBlank()) return "错误: fileName 不能为空"
                     val summary = ArchivedExcelReader.analyzeExcelSummary(context, fileName)
                     if (summary == null) {
-                        "无法分析文件 '$fileName'，请检查文件是否存在且格式有效。"
+                        "无法分析文件 '$fileName'。若该文件由外部微信或电脑拷贝传入，请在右上角菜单点击「📂 导入外部 Excel 日志」导入后再分析，或确认文件名是否准确。"
                     } else {
                         val obj = JSONObject().apply {
                             put("fileName", summary.fileName)

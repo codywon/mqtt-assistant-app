@@ -1,5 +1,8 @@
 package com.example.ui.screens
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -7,6 +10,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -52,9 +56,11 @@ import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.AlertDialog
@@ -154,7 +160,29 @@ fun AiChatScreen(
 
     val context = LocalContext.current
 
-    // 专门的硬件协议澄清规则库弹窗 (右上角入口)
+    val excelPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            viewModel.importExternalExcel(context, uri)
+        }
+    }
+
+    val launchExcelPicker = remember {
+        {
+            try {
+                excelPickerLauncher.launch(
+                    arrayOf(
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        "application/vnd.ms-excel",
+                        "*/*"
+                    )
+                )
+            } catch (_: Exception) {
+                viewModel.showToast("未能调起系统文件选择器")
+            }
+        }
+    }
     if (showProtocolDialog) {
         AiSettingsDialog(
             initialConfig = aiConfig,
@@ -521,6 +549,44 @@ fun AiChatScreen(
                                         }
                                     )
                                 }
+                                 HorizontalDivider(color = SurfaceContainerDefault, thickness = 0.5.dp)
+                                DropdownMenuItem(
+                                    text = { Text("📂 导入外部 Excel 日志", fontSize = 13.5.sp, color = PrimaryBlack) },
+                                    leadingIcon = {
+                                        Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(18.dp), tint = PrimaryBlack)
+                                    },
+                                    onClick = {
+                                        showMoreMenu = false
+                                        launchExcelPicker()
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = {
+                                        val hasAccess = viewModel.hasAllFilesAccess(context)
+                                        Text(
+                                            if (hasAccess) "🛡️ 所有文件权限已开启" else "🛡️ 授予所有文件管理权限",
+                                            fontSize = 13.5.sp,
+                                            color = if (hasAccess) Color(0xFF10B981) else PrimaryBlack
+                                        )
+                                    },
+                                    leadingIcon = {
+                                        val hasAccess = viewModel.hasAllFilesAccess(context)
+                                        Icon(
+                                            Icons.Default.Security,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(18.dp),
+                                            tint = if (hasAccess) Color(0xFF10B981) else PrimaryBlack
+                                        )
+                                    },
+                                    onClick = {
+                                        showMoreMenu = false
+                                        if (viewModel.hasAllFilesAccess(context)) {
+                                            viewModel.showToast("已拥有所有文件访问权限，Agent 可自动扫描所有公共下载目录")
+                                        } else {
+                                            viewModel.openAllFilesAccessSettings(context)
+                                        }
+                                    }
+                                )
                                 HorizontalDivider(color = SurfaceContainerDefault, thickness = 0.5.dp)
                                 DropdownMenuItem(
                                     text = { Text("生成现场验收报告", fontSize = 13.5.sp, color = PrimaryBlack) },
@@ -565,6 +631,7 @@ fun AiChatScreen(
                         viewModel.sendAiMessage(suggestion)
                     },
                     onOpenSettings = { showSettingsDialog = true },
+                    onImportExcel = launchExcelPicker,
                     isConfigured = aiConfig.apiKey.isNotBlank()
                 )
             } else {
@@ -741,6 +808,7 @@ fun AiChatScreen(
 private fun AiEmptyWelcomeView(
     onPillClick: (String) -> Unit,
     onOpenSettings: () -> Unit,
+    onImportExcel: () -> Unit,
     isConfigured: Boolean
 ) {
     Column(
@@ -849,12 +917,32 @@ private fun AiEmptyWelcomeView(
                 SuggestionCard(
                     tag = "离线归档",
                     title = "Excel 穿透分析",
-                    desc = "读取 Download 归档画像",
-                    prompt = "查看系统 Download 目录下已转储的 Excel 历史报文并汇总趋势画像",
+                    desc = "读取已归档或导入日志",
+                    prompt = "查看已转储或导入的 Excel 历史报文，流式分析总行数与热门主题宏观画像",
                     modifier = Modifier.weight(1f),
                     onClick = onPillClick
                 )
             }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // 外部微信/电脑 Excel 文件一键免权限导入快捷条
+        Row(
+            modifier = Modifier
+                .clip(RoundedCornerShape(8.dp))
+                .clickable(onClick = onImportExcel)
+                .background(SurfaceContainerLow)
+                .border(0.6.dp, OutlineVariantLight, RoundedCornerShape(8.dp))
+                .padding(horizontal = 14.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(15.dp), tint = PrimaryBlack)
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = "外部微信/电脑 Excel 文件找不到？点此免权限导入",
+                style = TextStyle(fontSize = 12.sp, color = PrimaryBlack, fontWeight = FontWeight.Medium)
+            )
         }
     }
 }
