@@ -210,7 +210,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
     private val incomingPacketChannel = Channel<MqttLogPacket>(capacity = Channel.UNLIMITED)
 
     // --- AI SI Agent & Protocol Clarification State ---
-    private val toolRegistry = SIAgentToolRegistry(storage)
+    private val toolRegistry = SIAgentToolRegistry(storage, application)
     private val aiAgentClient = AiAgentClient(toolRegistry)
 
     val aiConfig = MutableStateFlow<AiAgentConfig>(storage.loadAiConfig())
@@ -1633,6 +1633,9 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                     }
                     return@launch
                 }
+
+                // 同步备份一份至系统公共 Download 目录，确保媒体库与文件管理器立即可见
+                ExcelExportHelper.saveExportFileToPublicDownloads(context, file)
 
                 withContext(Dispatchers.Main) {
                     isExporting.value = false

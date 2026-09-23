@@ -7,6 +7,7 @@ import android.media.MediaScannerConnection
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import android.util.Log
 import androidx.core.content.FileProvider
 import org.json.JSONObject
 import java.io.BufferedOutputStream
@@ -248,6 +249,38 @@ object ExcelExportHelper {
             writeZipToOutputStream(os, streamProducer)
         }
         return outputFile
+    }
+
+    /**
+     * 将已生成的 Excel 文件同步归档到系统公共 Download 目录 (确保系统文件管理器与外部应用随时可见)
+     */
+    fun saveExportFileToPublicDownloads(context: Context, sourceFile: File) {
+        try {
+            val fileName = sourceFile.name
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val contentValues = ContentValues().apply {
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+                    put(MediaStore.MediaColumns.MIME_TYPE, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                }
+                val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
+                if (uri != null) {
+                    context.contentResolver.openOutputStream(uri)?.use { os ->
+                        sourceFile.inputStream().use { it.copyTo(os) }
+                    }
+                    return
+                }
+            }
+            val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            if (!downloadsDir.exists()) downloadsDir.mkdirs()
+            val destFile = File(downloadsDir, fileName)
+            sourceFile.copyTo(destFile, overwrite = true)
+            try {
+                MediaScannerConnection.scanFile(context, arrayOf(destFile.absolutePath), null, null)
+            } catch (_: Exception) {}
+        } catch (e: Exception) {
+            Log.w("ExcelExportHelper", "同步到公共 Download 失败: ${e.message}")
+        }
     }
 
     /**

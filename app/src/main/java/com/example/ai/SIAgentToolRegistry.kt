@@ -1,5 +1,6 @@
 package com.example.ai
 
+import android.content.Context
 import com.example.data.MqttStorageRepository
 import com.example.model.ProtocolKnowledge
 import com.example.util.ArchivedExcelReader
@@ -10,7 +11,7 @@ import org.json.JSONObject
  * SI 智能数据分析 Agent 工具注册中心与执行引擎：
  * 遵循 OpenAI Tool Calling (Function Calling) 规范，为大模型提供操作底层 SQLite 与历史 Excel 文件的工具箱。
  */
-class SIAgentToolRegistry(val storage: MqttStorageRepository) {
+class SIAgentToolRegistry(val storage: MqttStorageRepository, val context: Context? = null) {
 
     companion object {
         /**
@@ -338,9 +339,9 @@ class SIAgentToolRegistry(val storage: MqttStorageRepository) {
                 }
 
                 "list_archived_excels" -> {
-                    val files = ArchivedExcelReader.listArchivedExcels()
+                    val files = ArchivedExcelReader.listArchivedExcels(context)
                     if (files.isEmpty()) {
-                        return "本地 Download 目录下暂无 MQTT 归档 Excel 文件。"
+                        return "【检索结果】未在设备中发现归档 Excel 文件（已深度检索系统 Download 目录、微信/QQ下载目录、应用私有导出目录及系统媒体库）。\n建议：\n1. 若您刚刚导出了报文，可使用 execute_sqlite_query 工具直接查询 SQLite 数据库 (tbl_mqtt_packets) 中的实时报文；\n2. 若您刚收到或移动了 Excel 文件，可确认文件后缀是否为 .xlsx。"
                     }
                     val array = JSONArray()
                     for (f in files) {
@@ -351,6 +352,7 @@ class SIAgentToolRegistry(val storage: MqttStorageRepository) {
                             JSONObject().apply {
                                 put("fileName", f.fileName)
                                 put("size", sizeKb)
+                                put("location", f.locationDesc)
                                 put("modifiedAt", timeStr)
                             }
                         )
@@ -361,7 +363,7 @@ class SIAgentToolRegistry(val storage: MqttStorageRepository) {
                 "get_excel_summary" -> {
                     val fileName = args.optString("fileName", "").trim()
                     if (fileName.isBlank()) return "错误: fileName 不能为空"
-                    val summary = ArchivedExcelReader.analyzeExcelSummary(fileName)
+                    val summary = ArchivedExcelReader.analyzeExcelSummary(context, fileName)
                     if (summary == null) {
                         "无法分析文件 '$fileName'，请检查文件是否存在且格式有效。"
                     } else {
@@ -383,7 +385,7 @@ class SIAgentToolRegistry(val storage: MqttStorageRepository) {
                     val keyword = args.optString("keyword", "").trim()
                     val limit = args.optInt("limit", 20).coerceIn(1, 30)
                     val offset = args.optInt("offset", 0).coerceAtLeast(0)
-                    val rows = ArchivedExcelReader.readExcelRows(fileName, keyword, limit, offset)
+                    val rows = ArchivedExcelReader.readExcelRows(context, fileName, keyword, limit, offset)
                     val array = JSONArray()
                     for (r in rows) {
                         array.put(

@@ -52,9 +52,10 @@ class AiAgentClient(
             
             【历史 Excel 归档分析铁律与上下文防爆策略 (极其重要)】
             每个归档 Excel 文件通常包含高达 10,000 条报文，严禁盲目读取大量原始明细导致上下文溢出或崩溃！必须遵循三步分析法：
-            1. 发现归档：调用 list_archived_excels 获取归档列表（文件名形如 mqtt_packets_YYYYMMDD_HHmmss.xlsx）；
+            1. 发现归档：调用 list_archived_excels 获取归档列表（已全方位穿透检索系统 Download、微信/QQ接收、应用导出目录与系统媒体库）；
             2. 宏观画像优先：必须首先调用 get_excel_summary(fileName) 工具！它仅耗费 ~150 Tokens 即可秒级提炼出这 10,000 条报文的总数、起止时间、Top 10 热门主题及涉及设备；
             3. 精准按需采样：仅当用户需要分析具体异常报文或抽样查看明细时，使用 query_excel_data(fileName, keyword, limit=20) 配合过滤关键词精准读取 10~20 条。绝对禁止全量翻页拉取！
+            4. 库内数据兜底：若暂未发现外部 Excel 归档，或用户询问的是在线最新数据，优先调用 execute_sqlite_query 检索当前 SQLite 数据库 (tbl_mqtt_packets)。
             
             【硬件私有协议管理与对话即沉淀 (In-Conversation Learning)】
             1. 解码 Hex 报文时，调用 get_protocol_clarification(query="协议名或Topic") 按需拉取对应规则；
@@ -64,7 +65,7 @@ class AiAgentClient(
             - execute_sqlite_query: 执行只读 SQL 语句查询当前 SQLite 数据库 (tbl_mqtt_packets)，分析实时/离线报文；
             - get_protocol_clarification: 按需查询硬件私有协议解码规范与字段偏移；
             - save_protocol_knowledge: 对话即沉淀，将用户描述的私有协议持久化入库；
-            - list_archived_excels: 扫描检索已转储到系统 Download 目录的 Excel 历史分卷列表；
+            - list_archived_excels: 全渠道穿透检索已导出的 Excel 历史分卷列表（覆盖系统公共 Download、微信/QQ目录及应用私有导出目录）；
             - get_excel_summary: 【防爆核心】秒级提取 10,000 行 Excel 的宏观统计画像（时间跨度、总条数、Top 10 主题）；
             - query_excel_data: 按需精准采样读取指定归档 Excel 内部的历史明细行（单次上限 30 条）。
             
