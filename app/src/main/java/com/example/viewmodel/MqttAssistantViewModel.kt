@@ -14,12 +14,17 @@ import com.example.util.BackupData
 import com.example.util.ConfigBackupHelper
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.ai.AiAgentClient
+import com.example.ai.SIAgentToolRegistry
 import com.example.data.MqttStorageRepository
+import com.example.model.AiAgentConfig
+import com.example.model.AiChatMessage
 import com.example.model.AppScreen
 import com.example.model.BrokerProfile
 import com.example.model.MqttConnectionState
 import com.example.model.MqttLogPacket
 import com.example.model.MqttServerConfig
+import com.example.model.ProtocolKnowledge
 import com.example.model.PublishHistoryItem
 import com.example.model.PublishPreset
 import com.example.model.SubscriptionItem
@@ -201,12 +206,28 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
     private var isManualDisconnecting = false
     private val incomingPacketChannel = Channel<MqttLogPacket>(capacity = Channel.UNLIMITED)
 
+    // --- AI SI Agent & Protocol Clarification State ---
+    private val toolRegistry = SIAgentToolRegistry(storage)
+    private val aiAgentClient = AiAgentClient(toolRegistry)
+
+    val aiConfig = MutableStateFlow<AiAgentConfig>(storage.loadAiConfig())
+    val aiMessages = MutableStateFlow<List<AiChatMessage>>(emptyList())
+    val protocolKnowledgeList = MutableStateFlow<List<ProtocolKnowledge>>(emptyList())
+    val isAiResponding = MutableStateFlow(false)
+    val currentAiThinkingText = MutableStateFlow("")
+    val currentAiActionStatus = MutableStateFlow("")
+    private var aiJob: Job? = null
+
     init {
         // 异步从 SQLite 加载历史最近报文，消除类构造期间主线程磁盘 I/O 阻塞
         viewModelScope.launch(Dispatchers.IO) {
             val cached = storage.loadRecentPackets(300).reversed()
+            val savedAiMsgs = storage.loadAiMessages(100)
+            val savedProtocols = storage.loadAllProtocolKnowledge()
             withContext(Dispatchers.Main) {
                 livePackets.value = cached
+                aiMessages.value = savedAiMsgs
+                protocolKnowledgeList.value = savedProtocols
             }
         }
         startPacketBatchCollector()
@@ -1877,6 +1898,146 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 connectToBroker()
             }
         }
+    }
+
+    // ==========================================
+    // AI SI Agent & Protocol Clarification Actions
+    // ==========================================
+
+    fun sendAiMessage(promptText: String) {
+        val trimmed = promptText.trim()
+        if (trimmed.isBlank() || isAiResponding.value) return
+
+        val userMsg = AiChatMessage(
+            role = "user",
+            content = trimmed
+        )
+        aiMessages.update { it + userMsg }
+        viewModelScope.launch(Dispatchers.IO) {
+            storage.saveAiMessage(userMsg)
+        }
+
+        val assistantMsgId = java.util.UUID.randomUUID().toString()
+        val initialAssistantMsg = AiChatMessage(
+            id = assistantMsgId,
+            role = "assistant",
+            content = "",
+            isThinking = true
+        )
+        aiMessages.update { it + initialAssistantMsg }
+        isAiResponding.value = true
+        currentAiThinkingText.value = ""
+        currentAiActionStatus.value = "🤖 正在理解意图..."
+
+        aiJob?.cancel()
+        aiJob = viewModelScope.launch(Dispatchers.IO) {
+            val contentAccumulator = StringBuilder()
+            val reasoningAccumulator = StringBuilder()
+
+            aiAgentClient.chatStream(
+                config = aiConfig.value,
+                conversationHistory = aiMessages.value.dropLast(1),
+                onChunk = { delta, isThinking ->
+                    if (isThinking) {
+                        reasoningAccumulator.append(delta)
+                        currentAiThinkingText.value = reasoningAccumulator.toString()
+                    } else {
+                        contentAccumulator.append(delta)
+                        val currText = contentAccumulator.toString()
+                        aiMessages.update { list ->
+                            list.map { if (it.id == assistantMsgId) it.copy(content = currText, isThinking = false) else it }
+                        }
+                    }
+                },
+                onToolAction = { actionText ->
+                    currentAiActionStatus.value = actionText
+                },
+                onError = { errorText ->
+                    val finalError = if (contentAccumulator.isNotEmpty()) "${contentAccumulator}\n\n⚠️ $errorText" else "⚠️ $errorText"
+                    val errorMsg = AiChatMessage(
+                        id = assistantMsgId,
+                        role = "assistant",
+                        content = finalError,
+                        isError = true,
+                        isThinking = false
+                    )
+                    aiMessages.update { list ->
+                        list.map { if (it.id == assistantMsgId) errorMsg else it }
+                    }
+                    storage.saveAiMessage(errorMsg)
+                    isAiResponding.value = false
+                    currentAiActionStatus.value = ""
+                },
+                onComplete = { fullContent, reasoningContent ->
+                    val finalMsg = AiChatMessage(
+                        id = assistantMsgId,
+                        role = "assistant",
+                        content = fullContent.ifBlank { "（无回答内容）" },
+                        reasoningContent = reasoningContent,
+                        isThinking = false,
+                        isError = false
+                    )
+                    aiMessages.update { list ->
+                        list.map { if (it.id == assistantMsgId) finalMsg else it }
+                    }
+                    storage.saveAiMessage(finalMsg)
+                    isAiResponding.value = false
+                    currentAiActionStatus.value = ""
+                    currentAiThinkingText.value = ""
+                }
+            )
+        }
+    }
+
+    fun stopAiResponse() {
+        aiJob?.cancel()
+        isAiResponding.value = false
+        currentAiActionStatus.value = ""
+        currentAiThinkingText.value = ""
+    }
+
+    fun clearAiMessages() {
+        aiJob?.cancel()
+        isAiResponding.value = false
+        currentAiActionStatus.value = ""
+        currentAiThinkingText.value = ""
+        aiMessages.value = emptyList()
+        viewModelScope.launch(Dispatchers.IO) {
+            storage.clearAiMessages()
+        }
+        showToast("已清空 AI 对话记录")
+    }
+
+    fun updateAiConfig(config: AiAgentConfig) {
+        aiConfig.value = config
+        viewModelScope.launch(Dispatchers.IO) {
+            storage.saveAiConfig(config)
+        }
+        showToast("AI 模型配置已保存")
+    }
+
+    fun saveProtocolKnowledge(item: ProtocolKnowledge) {
+        val updated = item.copy(createdAt = System.currentTimeMillis())
+        val currentList = protocolKnowledgeList.value.toMutableList()
+        val index = currentList.indexOfFirst { it.id == item.id }
+        if (index >= 0) {
+            currentList[index] = updated
+        } else {
+            currentList.add(0, updated)
+        }
+        protocolKnowledgeList.value = currentList
+        viewModelScope.launch(Dispatchers.IO) {
+            storage.saveProtocolKnowledge(updated)
+        }
+        showToast("协议澄清已保存并注入 Agent 知识库")
+    }
+
+    fun deleteProtocolKnowledge(id: String) {
+        protocolKnowledgeList.update { list -> list.filter { it.id != id } }
+        viewModelScope.launch(Dispatchers.IO) {
+            storage.deleteProtocolKnowledge(id)
+        }
+        showToast("已删除该协议澄清")
     }
 
     override fun onCleared() {

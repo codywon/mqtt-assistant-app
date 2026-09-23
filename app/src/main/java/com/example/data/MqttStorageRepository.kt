@@ -3,8 +3,11 @@ package com.example.data
 import android.content.Context
 import android.content.SharedPreferences
 import com.example.data.db.MqttDatabaseHelper
+import com.example.model.AiAgentConfig
+import com.example.model.AiChatMessage
 import com.example.model.BrokerProfile
 import com.example.model.MqttLogPacket
+import com.example.model.ProtocolKnowledge
 import com.example.model.PublishPreset
 import com.example.model.SubscriptionItem
 import org.json.JSONArray
@@ -346,5 +349,63 @@ class MqttStorageRepository(context: Context) {
 
     fun getDatabaseSizeBytes(context: Context): Long {
         return dbHelper.getDatabaseSizeBytes(context)
+    }
+
+    // ==========================================
+    // 7. AI Agent & Protocol Knowledge
+    // ==========================================
+
+    fun executeReadOnlyQuery(sql: String): List<Map<String, String>> {
+        return dbHelper.executeReadOnlyQuery(sql)
+    }
+
+    fun saveProtocolKnowledge(item: ProtocolKnowledge) {
+        dbHelper.saveProtocolKnowledge(item)
+    }
+
+    fun loadAllProtocolKnowledge(): List<ProtocolKnowledge> {
+        return dbHelper.loadAllProtocolKnowledge()
+    }
+
+    fun deleteProtocolKnowledge(id: String) {
+        dbHelper.deleteProtocolKnowledge(id)
+    }
+
+    fun saveAiMessage(msg: AiChatMessage) {
+        dbHelper.saveAiMessage(msg)
+    }
+
+    fun loadAiMessages(limit: Int = 100): List<AiChatMessage> {
+        return dbHelper.loadAiMessages(limit)
+    }
+
+    fun clearAiMessages() {
+        dbHelper.clearAiMessages()
+    }
+
+    fun loadAiConfig(): AiAgentConfig {
+        val apiKey = dbHelper.loadSetting("ai_api_key", "")
+        val baseUrl = dbHelper.loadSetting("ai_base_url", "https://api.deepseek.com")
+        val modelName = dbHelper.loadSetting("ai_model_name", "deepseek-chat")
+        val customPrompt = dbHelper.loadSetting("ai_custom_prompt", "")
+        val tempStr = dbHelper.loadSetting("ai_temperature", "0.3")
+        val maxTokensStr = dbHelper.loadSetting("ai_max_tokens", "2048")
+        return AiAgentConfig(
+            apiKey = apiKey,
+            baseUrl = baseUrl.ifBlank { "https://api.deepseek.com" },
+            modelName = modelName.ifBlank { "deepseek-chat" },
+            customPrompt = customPrompt,
+            temperature = tempStr.toDoubleOrNull() ?: 0.3,
+            maxTokens = maxTokensStr.toIntOrNull() ?: 2048
+        )
+    }
+
+    fun saveAiConfig(config: AiAgentConfig) {
+        dbHelper.saveSetting("ai_api_key", config.apiKey)
+        dbHelper.saveSetting("ai_base_url", config.baseUrl)
+        dbHelper.saveSetting("ai_model_name", config.modelName)
+        dbHelper.saveSetting("ai_custom_prompt", config.customPrompt)
+        dbHelper.saveSetting("ai_temperature", config.temperature.toString())
+        dbHelper.saveSetting("ai_max_tokens", config.maxTokens.toString())
     }
 }

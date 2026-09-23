@@ -5,8 +5,10 @@ import android.content.Context
 import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
+import com.example.model.AiChatMessage
 import com.example.model.BrokerProfile
 import com.example.model.MqttLogPacket
+import com.example.model.ProtocolKnowledge
 import com.example.model.PublishPreset
 import com.example.model.SubscriptionItem
 
@@ -27,7 +29,7 @@ class MqttDatabaseHelper(context: Context) : SQLiteOpenHelper(
 
     companion object {
         const val DATABASE_NAME = "mqtt_assistant.db"
-        const val DATABASE_VERSION = 1
+        const val DATABASE_VERSION = 2
 
         // Tables
         private const val TABLE_BROKERS = "tbl_broker_profiles"
@@ -35,6 +37,8 @@ class MqttDatabaseHelper(context: Context) : SQLiteOpenHelper(
         private const val TABLE_PRESETS = "tbl_publish_presets"
         private const val TABLE_PACKETS = "tbl_mqtt_packets"
         private const val TABLE_SETTINGS = "tbl_app_settings"
+        private const val TABLE_PROTOCOLS = "tbl_protocol_knowledge"
+        private const val TABLE_AI_MESSAGES = "tbl_ai_messages"
     }
 
     override fun onConfigure(db: SQLiteDatabase) {
@@ -125,10 +129,41 @@ class MqttDatabaseHelper(context: Context) : SQLiteOpenHelper(
             )
             """.trimIndent()
         )
+
+        // 6. Protocol Knowledge Clarification table
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS $TABLE_PROTOCOLS (
+                id TEXT PRIMARY KEY,
+                name TEXT,
+                topicFilter TEXT,
+                description TEXT,
+                sampleHex TEXT,
+                created_at INTEGER
+            )
+            """.trimIndent()
+        )
+
+        // 7. AI Chat Messages history table
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS $TABLE_AI_MESSAGES (
+                id TEXT PRIMARY KEY,
+                role TEXT,
+                content TEXT,
+                reasoningContent TEXT,
+                toolCallsJson TEXT,
+                toolCallId TEXT,
+                timestamp INTEGER,
+                isError INTEGER
+            )
+            """.trimIndent()
+        )
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        // Safe migration if version upgrades in the future
+        // Safe migration: ensuring newly added tables exist
+        onCreate(db)
     }
 
     // =========================================================================
@@ -565,5 +600,169 @@ class MqttDatabaseHelper(context: Context) : SQLiteOpenHelper(
 
     fun deleteSetting(key: String) {
         writableDatabase.delete(TABLE_SETTINGS, "key = ?", arrayOf(key))
+    }
+
+    // =========================================================================
+    // Safe Read-Only SQL Query Execution Engine for SI Agent
+    // =========================================================================
+
+    fun executeReadOnlyQuery(sql: String): List<Map<String, String>> {
+        val trimmed = sql.trim().trimEnd(';').trim()
+        val upper = trimmed.uppercase()
+
+        if (!upper.startsWith("SELECT")) {
+            throw IllegalArgumentException("安全拦截：AI Agent 只允许执行 SELECT 检索操作")
+        }
+        if (trimmed.contains(";")) {
+            throw IllegalArgumentException("安全拦截：禁止注入多条 SQL 语句")
+        }
+
+        val forbiddenKeywords = listOf(
+            "INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "CREATE",
+            "TRUNCATE", "ATTACH", "DETACH", "PRAGMA", "REPLACE", "EXEC"
+        )
+        for (kw in forbiddenKeywords) {
+            if (Regex("\\b$kw\\b", RegexOption.IGNORE_CASE).containsMatchIn(trimmed)) {
+                throw IllegalArgumentException("安全拦截：检测到敏感或变更指令 $kw")
+            }
+        }
+
+        // 内存熔断防护：若未写 LIMIT，自动加上 LIMIT 100；最大限制 200 条
+        val finalSql = if (!Regex("\\bLIMIT\\b", RegexOption.IGNORE_CASE).containsMatchIn(trimmed)) {
+            "$trimmed LIMIT 100"
+        } else {
+            trimmed
+        }
+
+        val db = readableDatabase
+        val result = mutableListOf<Map<String, String>>()
+        val cursor = db.rawQuery(finalSql, null)
+        cursor.use { c ->
+            val colNames = c.columnNames
+            var count = 0
+            while (c.moveToNext() && count < 200) {
+                val row = mutableMapOf<String, String>()
+                for (i in colNames.indices) {
+                    val colName = colNames[i]
+                    val value = when (c.getType(i)) {
+                        Cursor.FIELD_TYPE_NULL -> "NULL"
+                        Cursor.FIELD_TYPE_INTEGER -> c.getLong(i).toString()
+                        Cursor.FIELD_TYPE_FLOAT -> c.getDouble(i).toString()
+                        Cursor.FIELD_TYPE_STRING -> c.getString(i)
+                        Cursor.FIELD_TYPE_BLOB -> "[BLOB ${c.getBlob(i).size}B]"
+                        else -> c.getString(i) ?: ""
+                    }
+                    row[colName] = value
+                }
+                result.add(row)
+                count++
+            }
+        }
+        return result
+    }
+
+    // =========================================================================
+    // Protocol Knowledge Clarification CRUD
+    // =========================================================================
+
+    fun saveProtocolKnowledge(item: ProtocolKnowledge) {
+        val db = writableDatabase
+        val cv = ContentValues().apply {
+            put("id", item.id)
+            put("name", item.name)
+            put("topicFilter", item.topicFilter)
+            put("description", item.description)
+            put("sampleHex", item.sampleHex)
+            put("created_at", item.createdAt)
+        }
+        db.insertWithOnConflict(TABLE_PROTOCOLS, null, cv, SQLiteDatabase.CONFLICT_REPLACE)
+    }
+
+    fun loadAllProtocolKnowledge(): List<ProtocolKnowledge> {
+        val db = readableDatabase
+        val list = mutableListOf<ProtocolKnowledge>()
+        val cursor = db.query(
+            TABLE_PROTOCOLS,
+            null,
+            null,
+            null,
+            null,
+            null,
+            "created_at DESC"
+        )
+        cursor.use { c ->
+            while (c.moveToNext()) {
+                list.add(
+                    ProtocolKnowledge(
+                        id = c.getString(c.getColumnIndexOrThrow("id")),
+                        name = c.getString(c.getColumnIndexOrThrow("name")),
+                        topicFilter = c.getString(c.getColumnIndexOrThrow("topicFilter")),
+                        description = c.getString(c.getColumnIndexOrThrow("description")),
+                        sampleHex = c.getString(c.getColumnIndexOrThrow("sampleHex")),
+                        createdAt = c.getLong(c.getColumnIndexOrThrow("created_at"))
+                    )
+                )
+            }
+        }
+        return list
+    }
+
+    fun deleteProtocolKnowledge(id: String) {
+        writableDatabase.delete(TABLE_PROTOCOLS, "id = ?", arrayOf(id))
+    }
+
+    // =========================================================================
+    // AI Chat History CRUD
+    // =========================================================================
+
+    fun saveAiMessage(msg: AiChatMessage) {
+        val db = writableDatabase
+        val cv = ContentValues().apply {
+            put("id", msg.id)
+            put("role", msg.role)
+            put("content", msg.content)
+            put("reasoningContent", msg.reasoningContent)
+            put("toolCallsJson", msg.toolCallsJson)
+            put("toolCallId", msg.toolCallId)
+            put("timestamp", msg.timestamp)
+            put("isError", if (msg.isError) 1 else 0)
+        }
+        db.insertWithOnConflict(TABLE_AI_MESSAGES, null, cv, SQLiteDatabase.CONFLICT_REPLACE)
+    }
+
+    fun loadAiMessages(limit: Int = 100): List<AiChatMessage> {
+        val db = readableDatabase
+        val list = mutableListOf<AiChatMessage>()
+        val cursor = db.query(
+            TABLE_AI_MESSAGES,
+            null,
+            null,
+            null,
+            null,
+            null,
+            "timestamp ASC",
+            limit.toString()
+        )
+        cursor.use { c ->
+            while (c.moveToNext()) {
+                list.add(
+                    AiChatMessage(
+                        id = c.getString(c.getColumnIndexOrThrow("id")),
+                        role = c.getString(c.getColumnIndexOrThrow("role")),
+                        content = c.getString(c.getColumnIndexOrThrow("content")),
+                        reasoningContent = c.getString(c.getColumnIndexOrThrow("reasoningContent")),
+                        toolCallsJson = c.getString(c.getColumnIndexOrThrow("toolCallsJson")),
+                        toolCallId = c.getString(c.getColumnIndexOrThrow("toolCallId")),
+                        timestamp = c.getLong(c.getColumnIndexOrThrow("timestamp")),
+                        isError = c.getInt(c.getColumnIndexOrThrow("isError")) == 1
+                    )
+                )
+            }
+        }
+        return list
+    }
+
+    fun clearAiMessages() {
+        writableDatabase.delete(TABLE_AI_MESSAGES, null, null)
     }
 }

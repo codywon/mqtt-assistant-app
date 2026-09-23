@@ -29,6 +29,12 @@ enum class AppScreen(
         title = "设置 - MQTT Assistant",
         navLabel = "设置",
         testTag = "settings"
+    ),
+    AiChat(
+        route = "ai-chat",
+        title = "AI 数据分析 - MQTT Assistant",
+        navLabel = "AI 分析",
+        testTag = "ai-chat"
     )
 }
 
@@ -129,3 +135,34 @@ data class MqttServerConfig(
     val packetCount: Int = 0,
     val isConnected: Boolean = false
 )
+
+data class ProtocolKnowledge(
+    val id: String = java.util.UUID.randomUUID().toString(),
+    val name: String,
+    val topicFilter: String,
+    val description: String,
+    val sampleHex: String = "",
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+data class AiChatMessage(
+    val id: String = java.util.UUID.randomUUID().toString(),
+    val role: String, // "user", "assistant", "system", "tool"
+    val content: String,
+    val reasoningContent: String = "",
+    val toolCallsJson: String = "",
+    val toolCallId: String = "",
+    val timestamp: Long = System.currentTimeMillis(),
+    val isThinking: Boolean = false,
+    val isError: Boolean = false
+)
+
+data class AiAgentConfig(
+    val apiKey: String = "",
+    val baseUrl: String = "https://api.deepseek.com",
+    val modelName: String = "deepseek-chat",
+    val customPrompt: String = "",
+    val temperature: Double = 0.3,
+    val maxTokens: Int = 2048
+)
+

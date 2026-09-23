@@ -56,7 +56,9 @@ import com.example.ui.screens.SettingsScreen
 import com.example.ui.screens.SubscribeScreen
 import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.theme.SurfaceCanvas
-import com.example.viewmodel.MqttAssistantViewModel
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.material3.ScaffoldDefaults
+import com.example.ui.screens.AiChatScreen
 import androidx.activity.viewModels
 import kotlinx.coroutines.flow.collectLatest
 
@@ -122,37 +124,47 @@ fun MqttAssistantApp(
         }
     }
 
+    val isAiChatRoute = currentRoute == AppScreen.AiChat.route
+
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         containerColor = SurfaceCanvas,
+        contentWindowInsets = if (isAiChatRoute) WindowInsets(0, 0, 0, 0) else ScaffoldDefaults.contentWindowInsets,
         topBar = {
-            AppTopBar(
-                isConnected = serverConfig.isConnected,
-                connectionState = connectionState,
-                brokerHost = "${serverConfig.host}:${serverConfig.port}",
-                reconnectCountdown = reconnectCountdown,
-                onBadgeClick = {
-                    viewModel.toggleConnection()
-                },
-                onSwitchBroker = {
-                    viewModel.switchToNextBroker()
-                }
-            )
+            if (!isAiChatRoute) {
+                AppTopBar(
+                    isConnected = serverConfig.isConnected,
+                    connectionState = connectionState,
+                    brokerHost = "${serverConfig.host}:${serverConfig.port}",
+                    reconnectCountdown = reconnectCountdown,
+                    onBadgeClick = {
+                        viewModel.toggleConnection()
+                    },
+                    onOpenAiChat = {
+                        navController.navigate(AppScreen.AiChat.route)
+                    },
+                    onSwitchBroker = {
+                        navController.navigate(AppScreen.AiChat.route)
+                    }
+                )
+            }
         },
         bottomBar = {
-            AppBottomNavBar(
-                currentScreen = currentScreen,
-                onNavigate = { screen ->
-                    viewModel.navigateTo(screen)
-                    navController.navigate(screen.route) {
-                        popUpTo(navController.graph.findStartDestination().id) {
-                            saveState = true
+            if (!isAiChatRoute) {
+                AppBottomNavBar(
+                    currentScreen = currentScreen,
+                    onNavigate = { screen ->
+                        viewModel.navigateTo(screen)
+                        navController.navigate(screen.route) {
+                            popUpTo(navController.graph.findStartDestination().id) {
+                                saveState = true
+                            }
+                            launchSingleTop = true
+                            restoreState = true
                         }
-                        launchSingleTop = true
-                        restoreState = true
                     }
-                }
-            )
+                )
+            }
         },
         snackbarHost = {
             SnackbarHost(
@@ -242,6 +254,41 @@ fun MqttAssistantApp(
 
             composable(route = AppScreen.Settings.route) {
                 SettingsScreen(viewModel = viewModel)
+            }
+
+            composable(
+                route = AppScreen.AiChat.route,
+                enterTransition = {
+                    slideIntoContainer(
+                        AnimatedContentTransitionScope.SlideDirection.Start,
+                        animationSpec = tween(300)
+                    )
+                },
+                exitTransition = {
+                    slideOutOfContainer(
+                        AnimatedContentTransitionScope.SlideDirection.End,
+                        animationSpec = tween(300)
+                    )
+                },
+                popEnterTransition = {
+                    slideIntoContainer(
+                        AnimatedContentTransitionScope.SlideDirection.Start,
+                        animationSpec = tween(300)
+                    )
+                },
+                popExitTransition = {
+                    slideOutOfContainer(
+                        AnimatedContentTransitionScope.SlideDirection.End,
+                        animationSpec = tween(300)
+                    )
+                }
+            ) {
+                AiChatScreen(
+                    viewModel = viewModel,
+                    onBack = {
+                        navController.popBackStack()
+                    }
+                )
             }
         }
     }

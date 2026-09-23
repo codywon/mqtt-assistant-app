@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Podcasts
@@ -69,7 +70,8 @@ fun AppTopBar(
     brokerHost: String,
     reconnectCountdown: Int = 0,
     onBadgeClick: () -> Unit = {},
-    onSwitchBroker: () -> Unit = {}
+    onOpenAiChat: () -> Unit = {},
+    onSwitchBroker: () -> Unit = onOpenAiChat
 ) {
     Surface(
         modifier = Modifier
@@ -149,19 +151,19 @@ fun AppTopBar(
                     }
                 }
 
-                // 右侧：纯净极简的“快速切换 Broker 节点”图标，无多余灰底
+                // 右侧：AI 智能数据分析入口图标 (AutoAwesome 星辉)
                 IconButton(
-                    onClick = onSwitchBroker,
+                    onClick = onOpenAiChat,
                     modifier = Modifier
                         .size(34.dp)
-                        .testTag("top_switch_broker_btn")
-                        .semantics { contentDescription = "切换 Broker 节点" }
+                        .testTag("top_ai_chat_btn")
+                        .semantics { contentDescription = "AI 智能数据分析" }
                 ) {
                     Icon(
-                        imageVector = Icons.Default.SwapHoriz,
-                        contentDescription = "切换节点",
+                        imageVector = Icons.Default.AutoAwesome,
+                        contentDescription = "AI 数据分析",
                         tint = PrimaryBlack,
-                        modifier = Modifier.size(19.dp)
+                        modifier = Modifier.size(20.dp)
                     )
                 }
             }
@@ -195,13 +197,20 @@ fun AppBottomNavBar(
                 horizontalArrangement = Arrangement.SpaceAround,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                AppScreen.values().forEach { screen ->
+                val navTabs = listOf(
+                    AppScreen.LiveLogs,
+                    AppScreen.Publish,
+                    AppScreen.Subscribe,
+                    AppScreen.Settings
+                )
+                navTabs.forEach { screen ->
                     val isSelected = currentScreen == screen
                     val iconVector = when (screen) {
                         AppScreen.LiveLogs -> Icons.Default.Inbox
                         AppScreen.Publish -> Icons.AutoMirrored.Filled.Send
                         AppScreen.Subscribe -> Icons.Default.Podcasts
                         AppScreen.Settings -> Icons.Default.Tune
+                        AppScreen.AiChat -> Icons.Default.AutoAwesome
                     }
 
                     NavBarItem(
