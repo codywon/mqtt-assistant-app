@@ -163,6 +163,8 @@ data class AiAgentConfig(
     val modelName: String = "deepseek-chat",
     val customPrompt: String = "",
     val temperature: Double = 0.3,
-    val maxTokens: Int = 2048
+    val maxTokens: Int = 2048,
+    val contextWindow: Int = 32768,
+    val compactionThreshold: Double = 0.7
 )
 

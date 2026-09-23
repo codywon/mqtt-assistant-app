@@ -390,13 +390,17 @@ class MqttStorageRepository(context: Context) {
         val customPrompt = dbHelper.loadSetting("ai_custom_prompt", "")
         val tempStr = dbHelper.loadSetting("ai_temperature", "0.3")
         val maxTokensStr = dbHelper.loadSetting("ai_max_tokens", "2048")
+        val contextWindowStr = dbHelper.loadSetting("ai_context_window", "32768")
+        val thresholdStr = dbHelper.loadSetting("ai_compaction_threshold", "0.7")
         return AiAgentConfig(
             apiKey = apiKey,
             baseUrl = baseUrl.ifBlank { "https://api.deepseek.com" },
             modelName = modelName.ifBlank { "deepseek-chat" },
             customPrompt = customPrompt,
             temperature = tempStr.toDoubleOrNull() ?: 0.3,
-            maxTokens = maxTokensStr.toIntOrNull() ?: 2048
+            maxTokens = maxTokensStr.toIntOrNull() ?: 2048,
+            contextWindow = contextWindowStr.toIntOrNull() ?: 32768,
+            compactionThreshold = thresholdStr.toDoubleOrNull() ?: 0.7
         )
     }
 
@@ -407,5 +411,7 @@ class MqttStorageRepository(context: Context) {
         dbHelper.saveSetting("ai_custom_prompt", config.customPrompt)
         dbHelper.saveSetting("ai_temperature", config.temperature.toString())
         dbHelper.saveSetting("ai_max_tokens", config.maxTokens.toString())
+        dbHelper.saveSetting("ai_context_window", config.contextWindow.toString())
+        dbHelper.saveSetting("ai_compaction_threshold", config.compactionThreshold.toString())
     }
 }

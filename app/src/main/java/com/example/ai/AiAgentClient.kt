@@ -13,10 +13,13 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 /**
- * 生产级轻量原生 OpenAI 兼容流式大模型客户端 & ReAct Agent 执行引擎：
- * 1. 纯原生 HttpURLConnection 实现，零第三方库依赖，APK 增加 0KB；
- * 2. 完美适配 DeepSeek-V3 / DeepSeek-R1 (包含思考链 reasoning_content) / 通义千问 / OpenAI / 本地 Ollama；
- * 3. 完整支持 Tool Calling 循环调用 (ReAct)，使 Agent 能自主调用数据库与 Excel 分析工具并闭环输出。
+ * 生产级极简 ReAct Agent 执行引擎 & OpenAI 兼容流式客户端：
+ * 设计哲学与架构深度参考著名的「Pi Agent」400 行极简核心范式：
+ * 
+ * 1. 【纯粹 ReAct 循环】：Thought(推理思考) -> Action(工具调用) -> Observation(环境观测) -> Thought -> Final Answer；
+ * 2. 【70% 上下文自动压缩】：动态感知 Token 水位，超过 70% 阈值时自动触发无损记忆提炼，实现无上限安全会话；
+ * 3. 【四大原子工具集成】：查库(SQL)、读文件(Excel)、查协议(Protocol)、搜归档(Find)；
+ * 4. 【零外部库纯原生实现】：纯 HttpURLConnection + SSE 流式解析，完美兼容 DeepSeek-R1 思考链、通义千问、OpenAI、Ollama。
  */
 class AiAgentClient(
     private val toolRegistry: SIAgentToolRegistry
@@ -28,20 +31,26 @@ class AiAgentClient(
         val DEFAULT_SYSTEM_PROMPT = """
             你是一个内嵌在移动端「MQTT 助手」中的专业系统集成与数据分析智能体 (SI Data Analysis Agent)。
             
-            【核心能力与工具】
-            1. 你可以随时调用 execute_sqlite_query 工具，针对当前 SQLite 本地数据库 (mqtt_assistant.db) 自由编写只读 SELECT SQL 语句，查询实时收到的报文表 tbl_mqtt_packets (字段包含 topic, qos, payload, timestamp, created_at 等)；
-            2. 你可以调用 get_protocol_clarification 工具，获取用户录入的私有硬件设备协议说明。对于 16 进制 Hex 报文 (如体征网关、血压计、心电仪)，依据协议规则解码具体字段 (如高压、低压、心率、温度)；
-            3. 当数据库报文满额分卷转储为 Excel 后，你可以调用 list_archived_excels 查看已归档文件，并调用 query_excel_data 读取 Excel 内的历史数据进行跨卷趋势对比；
+            【核心行为模式 (ReAct)】
+            你遵循严谨的「思考(Thought) -> 行动(Action) -> 观测(Observation) -> 终答(Final Answer)」循环：
+            1. 当用户提出数据统计、网关分析、体征筛查或报文解析时，请先思考需要调用的工具；
+            2. 发起对应的工具调用；拿到工具返回的数据后，仔细观察分析，若数据不足可继续发起下一步工具调用；
+            3. 数据齐全后，给出专业、亲切、结构化 (Markdown 样式) 的分析报告与健康/业务建议。
             
-            【行为准则】
-            - 风格专业、精准、亲切，输出格式采用结构优雅的 Markdown (支持表格、粗体、列表、高亮卡片)；
-            - 当用户问及具体网关或设备数据时，必须先调用工具查阅真实数据，切勿凭空编造；
-            - 若发现体征数据异常 (如高血压、心动过速、丢包严重)，请在结论中显著以 ⚠️ 标注并附上温馨的健康/排查建议。
+            【可用工具箱】
+            - execute_sqlite_query: 执行只读 SQL 语句查询当前 SQLite 数据库 (tbl_mqtt_packets)，分析实时/离线报文；
+            - get_protocol_clarification: 查询用户录入的硬件私有协议 (如血压计、体征网关的 Hex 各字节含义)；
+            - list_archived_excels: 扫描检索已转储到系统 Download 目录的 Excel 历史分卷列表；
+            - query_excel_data: 穿透读取指定归档 Excel 内部的历史明细行。
+            
+            【分析准则】
+            - 切勿凭空捏造数据，必须基于真实的工具查询结果进行归纳；
+            - 若发现异常体征指标 (例如收缩压 ≥ 140mmHg、舒张压 ≥ 90mmHg、心率过速)，请在结论中显著以 ⚠️ 标出。
         """.trimIndent()
     }
 
     /**
-     * 发起 Agent 会话循环（支持流式输出与 Tool Calling 闭环）
+     * 发起 ReAct Agent 智能体心跳循环
      */
     suspend fun chatStream(
         config: AiAgentConfig,
@@ -56,43 +65,37 @@ class AiAgentClient(
             return@withContext
         }
 
-        val messagesArray = JSONArray()
-
-        // 1. System Prompt
         val systemContent = if (config.customPrompt.isNotBlank()) {
             "${config.customPrompt}\n\n$DEFAULT_SYSTEM_PROMPT"
         } else {
             DEFAULT_SYSTEM_PROMPT
         }
-        messagesArray.put(
-            JSONObject().apply {
-                put("role", "system")
-                put("content", systemContent)
-            }
-        )
 
-        // 2. 注入历史会话 (取最近 15 轮避免超过上限)
-        val recentHistory = conversationHistory.takeLast(15)
-        for (msg in recentHistory) {
-            if (msg.role == "user" || msg.role == "assistant") {
-                messagesArray.put(
-                    JSONObject().apply {
-                        put("role", msg.role)
-                        put("content", msg.content)
-                    }
-                )
-            }
-        }
+        // ==========================================
+        // 1. 初始化上下文（结合 70% 水位动态自适应压缩）
+        // ==========================================
+        var messagesArray = ContextCompactor.buildCompactedMessagesJson(
+            systemContent = systemContent,
+            historyList = conversationHistory,
+            config = config
+        )
 
         val toolsJson = SIAgentToolRegistry.getToolDefinitionsJson()
 
-        var loopCount = 0
-        val maxLoops = 5 // 最多允许 5 轮工具链式调用，防止死循环
+        var step = 0
+        val maxSteps = 8 // 遵循 Pi Agent 范式，支持多达 8 步推理与动作链
         val fullAccumulatedContent = StringBuilder()
         val fullAccumulatedReasoning = StringBuilder()
 
-        while (loopCount < maxLoops) {
-            loopCount++
+        // ==========================================
+        // 2. The ReAct Loop (Thought -> Action -> Observation)
+        // ==========================================
+        while (step < maxSteps) {
+            step++
+
+            // 每一步动作前，再次检查当前活跃上下文水位；若工具返回过大导致超 70%，自动压缩！
+            messagesArray = ContextCompactor.compactActiveMessages(messagesArray, config)
+
             val requestBody = JSONObject().apply {
                 put("model", config.modelName)
                 put("messages", messagesArray)
@@ -104,9 +107,9 @@ class AiAgentClient(
             }
 
             var conn: HttpURLConnection? = null
-            var toolCallsDetected = mutableListOf<JSONObject>()
-            var currentIterationContent = StringBuilder()
-            var currentIterationReasoning = StringBuilder()
+            val toolCallsDetected = mutableListOf<JSONObject>()
+            val currentStepContent = StringBuilder()
+            val currentStepReasoning = StringBuilder()
 
             try {
                 val baseUrl = config.baseUrl.trim().trimEnd('/')
@@ -132,15 +135,15 @@ class AiAgentClient(
                 val responseCode = conn.responseCode
                 if (responseCode !in 200..299) {
                     val errorBody = conn.errorStream?.bufferedReader()?.use { it.readText() } ?: "HTTP $responseCode"
-                    Log.e(TAG, "API 请求失败: $errorBody")
-                    onError("大模型 API 返回异常 ($responseCode): $errorBody")
+                    Log.e(TAG, "API 请求返回错误 ($responseCode): $errorBody")
+                    onError("大模型服务返回异常 ($responseCode): $errorBody")
                     return@withContext
                 }
 
                 val reader = BufferedReader(InputStreamReader(conn.inputStream, Charsets.UTF_8))
                 var line: String? = reader.readLine()
 
-                // 解析聚合 tool_calls 的 Map: index -> (id, name, argsBuilder)
+                // 解析聚合 SSE 中流式返回的 tool_calls
                 val toolCallMap = mutableMapOf<Int, Triple<StringBuilder, StringBuilder, StringBuilder>>()
 
                 while (line != null) {
@@ -157,23 +160,23 @@ class AiAgentClient(
                                 val choice = choices.getJSONObject(0)
                                 val delta = choice.optJSONObject("delta")
                                 if (delta != null) {
-                                    // 思考链 delta (DeepSeek-R1 / Qwen 等)
+                                    // 1. Thought / 思考链 (DeepSeek-R1 / QwQ 等)
                                     val reasoningDelta = delta.optString("reasoning_content", "")
                                     if (reasoningDelta.isNotEmpty()) {
-                                        currentIterationReasoning.append(reasoningDelta)
+                                        currentStepReasoning.append(reasoningDelta)
                                         fullAccumulatedReasoning.append(reasoningDelta)
                                         onChunk(reasoningDelta, true)
                                     }
 
-                                    // 普通文本 delta
+                                    // 2. 正文打字机增量
                                     val contentDelta = delta.optString("content", "")
                                     if (contentDelta.isNotEmpty()) {
-                                        currentIterationContent.append(contentDelta)
+                                        currentStepContent.append(contentDelta)
                                         fullAccumulatedContent.append(contentDelta)
                                         onChunk(contentDelta, false)
                                     }
 
-                                    // 工具调用 delta
+                                    // 3. Action 动作增量 (tool_calls)
                                     val deltaTools = delta.optJSONArray("tool_calls")
                                     if (deltaTools != null) {
                                         for (i in 0 until deltaTools.length()) {
@@ -199,7 +202,7 @@ class AiAgentClient(
                     line = reader.readLine()
                 }
 
-                // 收集当前轮次模型发起的 tool_calls
+                // 汇总当前步生成的 Action
                 for ((_, triple) in toolCallMap) {
                     val id = triple.first.toString()
                     val name = triple.second.toString()
@@ -222,24 +225,29 @@ class AiAgentClient(
                 }
 
             } catch (e: Exception) {
-                Log.e(TAG, "Agent 会话发生网络异常", e)
+                Log.e(TAG, "ReAct 会话通信异常", e)
                 onError("网络通信失败: ${e.message}")
                 return@withContext
             } finally {
                 conn?.disconnect()
             }
 
-            // 如果本轮次大模型没有调用工具，说明已产生最终解答，结束 ReAct 循环！
+            // ==========================================
+            // 3. 终答判定 (Final Answer)
+            // ==========================================
             if (toolCallsDetected.isEmpty()) {
+                // 模型无需再采取 Action，已得出最终结论
                 onComplete(fullAccumulatedContent.toString(), fullAccumulatedReasoning.toString())
                 return@withContext
             }
 
-            // 否则：大模型发起了工具调用，将大模型的调用意图与本地工具执行结果压入 messagesArray，进入下一轮
-            val assistantMsgWithTools = JSONObject().apply {
+            // ==========================================
+            // 4. 执行 Action 并获取 Observation
+            // ==========================================
+            val assistantMsg = JSONObject().apply {
                 put("role", "assistant")
-                if (currentIterationContent.isNotEmpty()) {
-                    put("content", currentIterationContent.toString())
+                if (currentStepContent.isNotEmpty()) {
+                    put("content", currentStepContent.toString())
                 } else {
                     put("content", JSONObject.NULL)
                 }
@@ -247,39 +255,40 @@ class AiAgentClient(
                 for (t in toolCallsDetected) callsArray.put(t)
                 put("tool_calls", callsArray)
             }
-            messagesArray.put(assistantMsgWithTools)
+            messagesArray.put(assistantMsg)
 
-            // 本地依次执行工具
+            // 依次执行每个 Action 工具
             for (toolObj in toolCallsDetected) {
                 val callId = toolObj.getString("id")
                 val funcObj = toolObj.getJSONObject("function")
                 val funcName = funcObj.getString("name")
                 val funcArgs = funcObj.getString("arguments")
 
-                val friendlyAction = when (funcName) {
-                    "execute_sqlite_query" -> "🔍 正在执行 SQLite 数据检索..."
-                    "get_protocol_clarification" -> "📖 正在获取私有协议澄清说明..."
-                    "list_archived_excels" -> "📁 正在检索已转储的 Excel 历史分卷..."
-                    "query_excel_data" -> "📊 正在流式读取已归档 Excel 报文行..."
-                    else -> "⚙️ 正在执行工具: $funcName..."
+                val statusText = when (funcName) {
+                    "execute_sqlite_query" -> "🔍 [Action] 正在执行只读 SQL 查询..."
+                    "get_protocol_clarification" -> "📖 [Action] 正在检索硬件私有协议知识..."
+                    "list_archived_excels" -> "📁 [Action] 正在扫描已转储 Excel 历史分卷..."
+                    "query_excel_data" -> "📊 [Action] 正在流式提取已归档 Excel 数据行..."
+                    else -> "⚙️ [Action] 正在调用工具: $funcName..."
                 }
-                onToolAction(friendlyAction)
+                onToolAction(statusText)
 
-                val toolResult = toolRegistry.executeTool(funcName, funcArgs)
+                // 产生 Observation
+                val observation = toolRegistry.executeTool(funcName, funcArgs)
 
-                // 将工具结果注入上下文
+                // 将 Observation 回填进入上下文，作为下一次 Thought 的决策输入
                 messagesArray.put(
                     JSONObject().apply {
                         put("role", "tool")
                         put("tool_call_id", callId)
                         put("name", funcName)
-                        put("content", toolResult)
+                        put("content", observation)
                     }
                 )
             }
         }
 
-        // 达到最大轮次保护时直接完结
+        // 达到最大步数安全上限时完结
         onComplete(fullAccumulatedContent.toString(), fullAccumulatedReasoning.toString())
     }
 }

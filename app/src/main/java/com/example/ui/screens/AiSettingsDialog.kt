@@ -96,6 +96,7 @@ fun AiSettingsDialog(
     var apiKey by remember { mutableStateOf(initialConfig.apiKey) }
     var baseUrl by remember { mutableStateOf(initialConfig.baseUrl) }
     var modelName by remember { mutableStateOf(initialConfig.modelName) }
+    var contextWindow by remember { mutableIntStateOf(initialConfig.contextWindow) }
     var isApiKeyVisible by remember { mutableStateOf(false) }
 
     // Tab 2 state
@@ -313,6 +314,69 @@ fun AiSettingsDialog(
                                 onValueChange = { modelName = it }
                             )
 
+                            // Context Window Selector (Pi-Agent 内存管理)
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "模型上下文窗口 (Context Window)",
+                                        style = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = OnSurfaceDark)
+                                    )
+                                    Text(
+                                        text = "超 70% 自动记忆压缩",
+                                        style = TextStyle(fontSize = 11.sp, color = Color(0xFF10B981), fontWeight = FontWeight.Medium)
+                                    )
+                                }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    val windows = listOf(8192 to "8K", 16384 to "16K", 32768 to "32K", 65536 to "64K", 131072 to "128K")
+                                    windows.forEach { (w, label) ->
+                                        val isSelected = contextWindow == w
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .background(if (isSelected) PrimaryBlack else SurfaceContainerLow)
+                                                .clickable { contextWindow = w }
+                                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                                        ) {
+                                            Text(
+                                                text = label,
+                                                style = TextStyle(
+                                                    fontSize = 11.5.sp,
+                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                    color = if (isSelected) OnPrimaryWhite else OnSurfaceVariantGray
+                                                )
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Pi Agent ReAct 架构提示卡片
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = SurfaceContainerLow,
+                                border = BorderStroke(0.6.dp, OutlineVariantLight),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(10.dp)) {
+                                    Text(
+                                        text = "⚡ Pi Agent 范式 ReAct 引擎已启用",
+                                        style = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Bold, color = PrimaryBlack)
+                                    )
+                                    Spacer(modifier = Modifier.height(3.dp))
+                                    Text(
+                                        text = "具备标准的 Thought → Action → Observation 闭环；当历史记录与海量报文占用达到 70% 水位时，系统将自动进行事实提炼压缩，保障长效会话永不溢出。",
+                                        style = TextStyle(fontSize = 11.sp, color = OnSurfaceVariantGray, lineHeight = 15.sp)
+                                    )
+                                }
+                            }
+
                             Spacer(modifier = Modifier.height(4.dp))
 
                             // Save Button
@@ -322,7 +386,9 @@ fun AiSettingsDialog(
                                         initialConfig.copy(
                                             apiKey = apiKey.trim(),
                                             baseUrl = baseUrl.trim(),
-                                            modelName = modelName.trim()
+                                            modelName = modelName.trim(),
+                                            contextWindow = contextWindow,
+                                            compactionThreshold = 0.7
                                         )
                                     )
                                     onDismiss()
