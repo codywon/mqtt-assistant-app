@@ -11,6 +11,7 @@ import android.net.NetworkRequest
 import android.net.Uri
 import android.util.Log
 import com.example.util.AutoExportHelper
+import com.example.util.ArchivedExcelReader
 import com.example.util.AutoStartUtil
 import com.example.util.BackupData
 import com.example.util.ConfigBackupHelper
@@ -2638,12 +2639,13 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                     val session = currentSessionId.value
                     val welcomeMsg = AiChatMessage(
                         id = UUID.randomUUID().toString(),
+                        sessionId = session,
                         role = "assistant",
                         content = hint,
                         timestamp = System.currentTimeMillis()
                     )
                     aiMessages.update { it + welcomeMsg }
-                    storage.saveAiMessage(session, welcomeMsg)
+                    storage.saveAiMessage(welcomeMsg)
                 }
             }.onFailure { err ->
                 withContext(Dispatchers.Main) {
