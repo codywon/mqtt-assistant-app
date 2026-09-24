@@ -80,6 +80,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import kotlinx.coroutines.delay
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -976,6 +977,15 @@ private fun AiEmptyWelcomeView(
         Spacer(modifier = Modifier.height(16.dp))
 
         // 方案B：全盘文件管理权限状态指示 / 一键授权
+        var showSuccessBanner by remember { mutableStateOf(hasAllFilesAccess) }
+        LaunchedEffect(hasAllFilesAccess) {
+            if (hasAllFilesAccess) {
+                showSuccessBanner = true
+                delay(3500) // 仅短暂显示 3.5 秒，随后平滑自动淡出消失，绝不常驻霸占视野
+                showSuccessBanner = false
+            }
+        }
+
         if (!hasAllFilesAccess) {
             Row(
                 modifier = Modifier
@@ -994,19 +1004,34 @@ private fun AiEmptyWelcomeView(
                 )
             }
         } else {
-            Row(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(SurfaceContainerLow.copy(alpha = 0.5f))
-                    .padding(horizontal = 14.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically
+            AnimatedVisibility(
+                visible = showSuccessBanner,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically()
             ) {
-                Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color(0xFF10B981))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = "所有文件权限已开启 · 支持原地免拷贝直读全部 Excel",
-                    style = TextStyle(fontSize = 11.5.sp, color = OnSurfaceVariantGray)
-                )
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(SurfaceContainerLow.copy(alpha = 0.5f))
+                        .padding(horizontal = 14.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color(0xFF10B981))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "所有文件权限已开启 · 支持原地免拷贝直读全部 Excel",
+                        style = TextStyle(fontSize = 11.5.sp, color = OnSurfaceVariantGray)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "关闭",
+                        modifier = Modifier
+                            .size(13.dp)
+                            .clickable { showSuccessBanner = false },
+                        tint = OutlineGray
+                    )
+                }
             }
         }
     }
