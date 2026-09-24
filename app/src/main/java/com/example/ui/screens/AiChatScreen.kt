@@ -603,7 +603,7 @@ fun AiChatScreen(
                                     text = {
                                         val hasAccess = viewModel.hasAllFilesAccess(context)
                                         Text(
-                                            if (hasAccess) "🛡️ 所有文件权限已开启" else "🛡️ 开启所有文件权限 (原地免拷贝)",
+                                            if (hasAccess) "🛡️ 所有文件权限已开启" else "🛡️ 开启所有文件权限",
                                             fontSize = 13.5.sp,
                                             color = if (hasAccess) Color(0xFF10B981) else PrimaryBlack
                                         )
@@ -620,7 +620,7 @@ fun AiChatScreen(
                                     onClick = {
                                         showMoreMenu = false
                                         if (viewModel.hasAllFilesAccess(context)) {
-                                            viewModel.showToast("已拥有所有文件访问权限，AI 支持原地免拷贝直读")
+                                            viewModel.showToast("已拥有所有文件访问权限，支持原地免拷贝直读")
                                         } else {
                                             showPermissionGuideDialog = true
                                         }
@@ -960,7 +960,7 @@ private fun AiEmptyWelcomeView(
                 SuggestionCard(
                     tag = "离线归档",
                     title = "Excel 穿透分析",
-                    desc = if (hasAllFilesAccess) "原地直读 Download 归档" else "点此授权免拷贝直读",
+                    desc = "直读公共 Download 归档",
                     prompt = "查看已转储或公共 Download 目录下的 Excel 历史报文，流式分析总行数与热门主题宏观画像",
                     modifier = Modifier.weight(1f),
                     onClick = {
@@ -971,67 +971,6 @@ private fun AiEmptyWelcomeView(
                         }
                     }
                 )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // 方案B：全盘文件管理权限状态指示 / 一键授权
-        var showSuccessBanner by remember { mutableStateOf(hasAllFilesAccess) }
-        LaunchedEffect(hasAllFilesAccess) {
-            if (hasAllFilesAccess) {
-                showSuccessBanner = true
-                delay(3500) // 仅短暂显示 3.5 秒，随后平滑自动淡出消失，绝不常驻霸占视野
-                showSuccessBanner = false
-            }
-        }
-
-        if (!hasAllFilesAccess) {
-            Row(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .clickable(onClick = onRequestPermission)
-                    .background(SurfaceContainerLow)
-                    .border(0.6.dp, OutlineVariantLight, RoundedCornerShape(8.dp))
-                    .padding(horizontal = 14.dp, vertical = 7.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(Icons.Default.Security, contentDescription = null, modifier = Modifier.size(15.dp), tint = PrimaryBlack)
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = "🛡️ 开启所有文件权限（AI 原地免拷贝直读公共 Excel）",
-                    style = TextStyle(fontSize = 12.sp, color = PrimaryBlack, fontWeight = FontWeight.Medium)
-                )
-            }
-        } else {
-            AnimatedVisibility(
-                visible = showSuccessBanner,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically()
-            ) {
-                Row(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(SurfaceContainerLow.copy(alpha = 0.5f))
-                        .padding(horizontal = 14.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color(0xFF10B981))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "所有文件权限已开启 · 支持原地免拷贝直读全部 Excel",
-                        style = TextStyle(fontSize = 11.5.sp, color = OnSurfaceVariantGray)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "关闭",
-                        modifier = Modifier
-                            .size(13.dp)
-                            .clickable { showSuccessBanner = false },
-                        tint = OutlineGray
-                    )
-                }
             }
         }
     }

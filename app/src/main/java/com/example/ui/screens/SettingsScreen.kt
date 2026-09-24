@@ -134,12 +134,14 @@ fun SettingsScreen(
     val isExportingConfig by viewModel.isExportingConfig.collectAsState()
     val isImportingConfig by viewModel.isImportingConfig.collectAsState()
     val isBatteryOptimizationIgnored by viewModel.isBatteryOptimizationIgnored.collectAsState()
+    val isAllFilesAccessGranted by viewModel.isAllFilesAccessGranted.collectAsState()
 
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
                 viewModel.checkBatteryOptimizationStatus(context)
+                viewModel.checkAllFilesAccessStatus(context)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -197,7 +199,7 @@ fun SettingsScreen(
                             modifier = Modifier.size(20.dp)
                         )
                         Text(
-                            text = "多 Broker 节点集群 (${brokerProfiles.size}个)",
+                            text = "多 Broker 节点集群 · ${brokerProfiles.size} 个",
                             style = MaterialTheme.typography.titleMedium.copy(
                                 fontWeight = FontWeight.Bold,
                                 color = PrimaryBlack,
@@ -354,7 +356,7 @@ fun SettingsScreen(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "后台常驻保活服务 (Foreground Service)",
+                            text = "后台常驻保活服务",
                             style = MaterialTheme.typography.labelMedium.copy(
                                 fontWeight = FontWeight.SemiBold,
                                 color = PrimaryBlack
@@ -388,7 +390,7 @@ fun SettingsScreen(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "CPU 唤醒锁 (WakeLock)",
+                            text = "CPU 唤醒锁",
                             style = MaterialTheme.typography.labelMedium.copy(
                                 fontWeight = FontWeight.SemiBold,
                                 color = PrimaryBlack
@@ -448,7 +450,7 @@ fun SettingsScreen(
                     )
                 }
 
-                // 5. Process Guard (进程守护，默认开启)
+                // 5. Process Guard
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -456,7 +458,7 @@ fun SettingsScreen(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "进程守护 (Watchdog)",
+                            text = "进程守护",
                             style = MaterialTheme.typography.labelMedium.copy(
                                 fontWeight = FontWeight.SemiBold,
                                 color = PrimaryBlack
@@ -490,7 +492,7 @@ fun SettingsScreen(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "忽略电池优化 (防系统杀后台)",
+                            text = "忽略电池优化",
                             style = MaterialTheme.typography.labelMedium.copy(
                                 fontWeight = FontWeight.SemiBold,
                                 color = PrimaryBlack
@@ -607,6 +609,66 @@ fun SettingsScreen(
                             checkedTrackColor = PrimaryBlack
                         )
                     )
+                }
+
+                // 所有文件访问权限
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "所有文件访问权限",
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontWeight = FontWeight.SemiBold,
+                                color = PrimaryBlack
+                            )
+                        )
+                        Text(
+                            text = "允许直读公共下载、微信与外部 Excel 归档，免文件拷贝",
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontSize = 12.sp,
+                                color = OnSurfaceVariantGray
+                            )
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(16.dp))
+                    if (isAllFilesAccessGranted) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color(0xFFDCFCE7))
+                                .clickable { viewModel.openAllFilesAccessSettings(context) }
+                                .padding(horizontal = 10.dp, vertical = 6.dp)
+                        ) {
+                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(15.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("已开启", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF047857))
+                        }
+                    } else {
+                        Button(
+                            onClick = { viewModel.openAllFilesAccessSettings(context) },
+                            modifier = Modifier
+                                .height(34.dp)
+                                .defaultMinSize(minWidth = 68.dp),
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = PrimaryBlack,
+                                contentColor = OnPrimaryWhite
+                            ),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
+                        ) {
+                            Text(
+                                text = "立即开启",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color.White,
+                                maxLines = 1
+                            )
+                        }
+                    }
                 }
 
                 // Metrics cards (1:1 绝对等高与严格对称排版)

@@ -107,6 +107,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
 
     val isForegroundKeepAliveRunning = MutableStateFlow(false)
     val isBatteryOptimizationIgnored = MutableStateFlow(false)
+    val isAllFilesAccessGranted = MutableStateFlow(false)
 
     // --- Live Packet Log States (Backed by SQLite Database, Chronological Order: Newest at Bottom) ---
     val livePackets = MutableStateFlow<List<MqttLogPacket>>(emptyList())
@@ -306,6 +307,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
         registerNetworkCallback()
         refreshStorageStats()
         checkBatteryOptimizationStatus(application)
+        checkAllFilesAccessStatus(application)
 
         // 严密校验：若 Broker 节点为 0 或主机为空，绝不发起连接和无限重连循环
         if (brokerProfiles.value.isNotEmpty() && serverConfig.value.host.isNotBlank()) {
@@ -1500,9 +1502,18 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
      */
     fun onAppResume() {
         checkBatteryOptimizationStatus(getApplication())
+        checkAllFilesAccessStatus(getApplication())
         if (!serverConfig.value.isConnected && !isManualDisconnecting && serverConfig.value.autoReconnect && brokerProfiles.value.isNotEmpty() && serverConfig.value.host.isNotBlank()) {
             Log.d("MqttAssistantViewModel", "onAppResume: app returned to foreground, probing immediate reconnect")
             startAutoReconnectLoop(isImmediate = true)
+        }
+    }
+
+    fun checkAllFilesAccessStatus(context: Context) {
+        try {
+            isAllFilesAccessGranted.value = ArchivedExcelReader.hasAllFilesAccess(context)
+        } catch (e: Exception) {
+            Log.w("MqttAssistantViewModel", "Failed to check all files access status", e)
         }
     }
 
