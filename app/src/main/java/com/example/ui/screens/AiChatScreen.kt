@@ -48,6 +48,7 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DeleteOutline
@@ -147,6 +148,7 @@ fun AiChatScreen(
     var renameSessionTitle by remember { mutableStateOf("") }
     var sessionToDelete by remember { mutableStateOf<com.example.model.AiChatSession?>(null) }
     var showClearConfirmDialog by remember { mutableStateOf(false) }
+    var showPermissionGuideDialog by remember { mutableStateOf(false) }
 
     val pendingQueue by viewModel.pendingAiPromptQueue.collectAsState()
     val listState = rememberLazyListState()
@@ -283,6 +285,42 @@ fun AiChatScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showClearConfirmDialog = false }) {
+                    Text("取消", color = OnSurfaceVariantGray)
+                }
+            },
+            containerColor = SurfaceContainerLowest,
+            shape = RoundedCornerShape(16.dp)
+        )
+    }
+
+    // 方案B：全盘文件管理权限一键开启引导弹窗 (原地直读，免文件拷贝)
+    if (showPermissionGuideDialog) {
+        AlertDialog(
+            onDismissRequest = { showPermissionGuideDialog = false },
+            title = {
+                Text(
+                    text = "开启所有文件访问权限",
+                    style = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Bold, color = PrimaryBlack)
+                )
+            },
+            text = {
+                Text(
+                    text = "开启后，AI 智能体将能够直接原地扫描并分析公共 Download、微信与 QQ 接收的 Excel 报文日志。\n\n✨ 核心优势：\n• 原地直接只读分析，绝不产生重复拷贝；\n• 零多余存储占用，支持万条大表毫秒级穿透；\n• 随拷贝随问，AI 自动感知，彻底免去手动选文件。",
+                    style = TextStyle(fontSize = 13.5.sp, color = OnSurfaceDark, lineHeight = 20.sp)
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showPermissionGuideDialog = false
+                        viewModel.openAllFilesAccessSettings(context)
+                    }
+                ) {
+                    Text("前往系统设置开启", color = PrimaryBlack, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showPermissionGuideDialog = false }) {
                     Text("取消", color = OnSurfaceVariantGray)
                 }
             },
@@ -564,7 +602,7 @@ fun AiChatScreen(
                                     text = {
                                         val hasAccess = viewModel.hasAllFilesAccess(context)
                                         Text(
-                                            if (hasAccess) "🛡️ 所有文件权限已开启" else "🛡️ 授予所有文件管理权限",
+                                            if (hasAccess) "🛡️ 所有文件权限已开启" else "🛡️ 开启所有文件权限 (原地免拷贝)",
                                             fontSize = 13.5.sp,
                                             color = if (hasAccess) Color(0xFF10B981) else PrimaryBlack
                                         )
@@ -581,9 +619,9 @@ fun AiChatScreen(
                                     onClick = {
                                         showMoreMenu = false
                                         if (viewModel.hasAllFilesAccess(context)) {
-                                            viewModel.showToast("已拥有所有文件访问权限，Agent 可自动扫描所有公共下载目录")
+                                            viewModel.showToast("已拥有所有文件访问权限，AI 支持原地免拷贝直读")
                                         } else {
-                                            viewModel.openAllFilesAccessSettings(context)
+                                            showPermissionGuideDialog = true
                                         }
                                     }
                                 )
@@ -632,6 +670,8 @@ fun AiChatScreen(
                     },
                     onOpenSettings = { showSettingsDialog = true },
                     onImportExcel = launchExcelPicker,
+                    onRequestPermission = { showPermissionGuideDialog = true },
+                    hasAllFilesAccess = viewModel.hasAllFilesAccess(context),
                     isConfigured = aiConfig.apiKey.isNotBlank()
                 )
             } else {
@@ -809,6 +849,8 @@ private fun AiEmptyWelcomeView(
     onPillClick: (String) -> Unit,
     onOpenSettings: () -> Unit,
     onImportExcel: () -> Unit,
+    onRequestPermission: () -> Unit,
+    hasAllFilesAccess: Boolean,
     isConfigured: Boolean
 ) {
     Column(
@@ -917,32 +959,55 @@ private fun AiEmptyWelcomeView(
                 SuggestionCard(
                     tag = "离线归档",
                     title = "Excel 穿透分析",
-                    desc = "读取已归档或导入日志",
-                    prompt = "查看已转储或导入的 Excel 历史报文，流式分析总行数与热门主题宏观画像",
+                    desc = if (hasAllFilesAccess) "原地直读 Download 归档" else "点此授权免拷贝直读",
+                    prompt = "查看已转储或公共 Download 目录下的 Excel 历史报文，流式分析总行数与热门主题宏观画像",
                     modifier = Modifier.weight(1f),
-                    onClick = onPillClick
+                    onClick = {
+                        if (!hasAllFilesAccess) {
+                            onRequestPermission()
+                        } else {
+                            onPillClick(it)
+                        }
+                    }
                 )
             }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // 外部微信/电脑 Excel 文件一键免权限导入快捷条
-        Row(
-            modifier = Modifier
-                .clip(RoundedCornerShape(8.dp))
-                .clickable(onClick = onImportExcel)
-                .background(SurfaceContainerLow)
-                .border(0.6.dp, OutlineVariantLight, RoundedCornerShape(8.dp))
-                .padding(horizontal = 14.dp, vertical = 7.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(15.dp), tint = PrimaryBlack)
-            Spacer(modifier = Modifier.width(6.dp))
-            Text(
-                text = "外部微信/电脑 Excel 文件找不到？点此免权限导入",
-                style = TextStyle(fontSize = 12.sp, color = PrimaryBlack, fontWeight = FontWeight.Medium)
-            )
+        // 方案B：全盘文件管理权限状态指示 / 一键授权
+        if (!hasAllFilesAccess) {
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(onClick = onRequestPermission)
+                    .background(SurfaceContainerLow)
+                    .border(0.6.dp, OutlineVariantLight, RoundedCornerShape(8.dp))
+                    .padding(horizontal = 14.dp, vertical = 7.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Default.Security, contentDescription = null, modifier = Modifier.size(15.dp), tint = PrimaryBlack)
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "🛡️ 开启所有文件权限（AI 原地免拷贝直读公共 Excel）",
+                    style = TextStyle(fontSize = 12.sp, color = PrimaryBlack, fontWeight = FontWeight.Medium)
+                )
+            }
+        } else {
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(SurfaceContainerLow.copy(alpha = 0.5f))
+                    .padding(horizontal = 14.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color(0xFF10B981))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "所有文件权限已开启 · 支持原地免拷贝直读全部 Excel",
+                    style = TextStyle(fontSize = 11.5.sp, color = OnSurfaceVariantGray)
+                )
+            }
         }
     }
 }

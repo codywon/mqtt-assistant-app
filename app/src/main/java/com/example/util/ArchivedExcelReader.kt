@@ -163,8 +163,16 @@ object ArchivedExcelReader {
             if (docsDir != null && docsDir.exists()) publicDirs.add(docsDir)
         } catch (_: Exception) {}
 
-        // 常见厂商固定路径补齐
-        listOf("/storage/emulated/0/Download", "/sdcard/Download", "/storage/emulated/0/Documents").forEach { p ->
+        // 常见厂商固定路径补齐（含微信、QQ子路径）
+        listOf(
+            "/storage/emulated/0/Download",
+            "/sdcard/Download",
+            "/storage/emulated/0/Download/WeiXin",
+            "/storage/emulated/0/Download/QQ",
+            "/storage/emulated/0/Documents",
+            "/storage/emulated/0/Tencent/MicroMsg/Download",
+            "/sdcard/Documents"
+        ).forEach { p ->
             val f = File(p)
             if (f.exists() && f.isDirectory && !publicDirs.contains(f)) {
                 publicDirs.add(f)
@@ -172,7 +180,7 @@ object ArchivedExcelReader {
         }
 
         for (dir in publicDirs) {
-            scanDirectoryRecursively(dir, foundMap, maxDepth = 2)
+            scanDirectoryRecursively(dir, foundMap, maxDepth = 3)
         }
 
         return foundMap.values.sortedByDescending { it.lastModifiedTime }
