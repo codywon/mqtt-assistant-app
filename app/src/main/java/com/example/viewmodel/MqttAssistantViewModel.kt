@@ -364,11 +364,10 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 batch.clear()
                 val maxBuffer = serverConfig.value.bufferThreshold
 
-                // 1. 批量更新 livePackets 与订阅条目计数 (主线程一次性发射)
+                // 1. 纯内存高速环形存储与主线程极速发射 (零 SQLite 写入，零闪存磨损)
+                val allPackets = com.example.data.MemoryPacketStore.addPackets(currentBatch, maxBuffer)
                 withContext(Dispatchers.Main) {
-                    livePackets.update { current ->
-                        (current + currentBatch).takeLast(maxBuffer)
-                    }
+                    livePackets.value = allPackets
 
                     val topicCounts = currentBatch.groupBy { it.topic }
                     subscriptions.update { list ->
@@ -387,29 +386,19 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                         }
                     }
                 }
-
-                // 2. 异步批量单事务入库 SQLite
-                withContext(Dispatchers.IO) {
-                    try {
-                        storage.savePackets(currentBatch, maxBuffer)
-                    } catch (e: Exception) {
-                        android.util.Log.e("MqttViewModel", "写入 SQLite 异常: ${e.message}", e)
-                    }
-                }
                 refreshStorageStats()
 
-                // 3. 满额自动导出 Excel 归档检查 (滚动分卷转储)
+                // 2. 满额自动导出 Excel 归档检查 (受系统设置 autoExportExcel 开关管控)
                 if (serverConfig.value.autoExportExcel) {
-                    AutoExportHelper.checkAndTrigger(
+                    AutoExportHelper.checkAndExportFromMemory(
                         context = getApplication(),
-                        storage = storage,
                         bufferThreshold = maxBuffer,
                         clientId = serverConfig.value.clientId
                     ) { exportedCount, _ ->
                         packetSeqCounter.set(0L)
                         viewModelScope.launch(Dispatchers.Main) {
-                            livePackets.update { it.drop(exportedCount) }
-                            showToast("已自动归档 $exportedCount 条报文至系统 Download 目录")
+                            livePackets.value = com.example.data.MemoryPacketStore.getAll()
+                            showToast("已自动将 $exportedCount 条报文归档为 Excel (存至 Download 目录)")
                         }
                         refreshStorageStats()
                     }
@@ -803,8 +792,8 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 category = preset.name.ifBlank { preset.topic.substringBefore('/') },
                 dotColorHex = dotColor
             )
-            livePackets.update { (it + packet).takeLast(serverConfig.value.bufferThreshold) }
-            storage.savePacket(packet, serverConfig.value.bufferThreshold)
+            val allPackets = com.example.data.MemoryPacketStore.addPacket(packet, serverConfig.value.bufferThreshold)
+            livePackets.value = allPackets
 
             // Match against subscriptions
             subscriptions.update { list ->
@@ -939,8 +928,8 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 category = topic.substringBefore('/'),
                 dotColorHex = dotColor
             )
-            livePackets.update { (it + packet).takeLast(serverConfig.value.bufferThreshold) }
-            storage.savePacket(packet, serverConfig.value.bufferThreshold)
+            val allPackets = com.example.data.MemoryPacketStore.addPacket(packet, serverConfig.value.bufferThreshold)
+            livePackets.value = allPackets
 
             if (result.isSuccess) {
                 // If any enabled subscription matches the published topic, update stats immediately
@@ -1396,15 +1385,9 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
     }
 
     fun refreshStorageStats() {
-        viewModelScope.launch(Dispatchers.IO) {
-            val count = storage.getPacketCount().toInt()
-            val bytes = storage.getDatabaseSizeBytes(getApplication())
-            val mb = bytes.toDouble() / (1024.0 * 1024.0)
-            val formattedMb = Math.round(mb * 100.0) / 100.0
-            withContext(Dispatchers.Main) {
-                serverConfig.update { it.copy(usedSpaceMb = formattedMb, packetCount = count) }
-            }
-        }
+        val count = com.example.data.MemoryPacketStore.size()
+        val mb = Math.round((count * 350.0 / (1024.0 * 1024.0)) * 100.0) / 100.0
+        serverConfig.update { it.copy(usedSpaceMb = mb, packetCount = count) }
     }
 
     fun triggerManualReconnect() {
@@ -1628,13 +1611,14 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
     }
 
     fun clearPacketLogs() {
+        com.example.data.MemoryPacketStore.clear()
         livePackets.value = emptyList()
         selectedPacket.value = null
         packetSeqCounter.set(0L)
         viewModelScope.launch(Dispatchers.IO) {
             storage.clearAllPackets()
-            refreshStorageStats()
         }
+        refreshStorageStats()
         if (MqttBackgroundService.isRunning) {
             val host = serverConfig.value.host
             val brokerLabel = if (host.isNotBlank()) "${host}:${serverConfig.value.port}" else ""
@@ -1645,7 +1629,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 latestTopic = null
             )
         }
-        showToast("本地历史报文已清空，存储空间已物理收缩")
+        showToast("本地内存报文缓存已清空")
     }
 
     fun clearAllData() {
@@ -1665,35 +1649,27 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
 
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val limit = serverConfig.value.bufferThreshold.coerceAtLeast(1000)
                 var exportedCount = 0
                 val clientId = serverConfig.value.clientId
+                val memPackets = com.example.data.MemoryPacketStore.getAll()
+
+                if (memPackets.isEmpty()) {
+                    withContext(Dispatchers.Main) {
+                        isExporting.value = false
+                        showToast("当前暂无报文记录可导出")
+                    }
+                    return@launch
+                }
 
                 val file = ExcelExportHelper.exportStreamToXlsx(context) { rowWriter ->
-                    val streamCount = storage.exportPacketsStream(limit) { packet, createdAt ->
-                        val timeStr = ExcelExportHelper.formatTimestamp(createdAt)
+                    for (packet in memPackets) {
                         val devId = ExcelExportHelper.extractDeviceId(
                             packet.payload,
                             packet.topic,
                             clientId
                         )
-                        rowWriter.writeRow(packet.topic, devId, packet.payload, timeStr)
+                        rowWriter.writeRow(packet.topic, devId, packet.payload, packet.timestamp)
                         exportedCount++
-                    }
-
-                    // 若数据库暂未落盘 (如冷启动且未刷盘)，回退从内存快照流式写入
-                    if (streamCount == 0) {
-                        val memPackets = livePackets.value
-                        val nowStr = ExcelExportHelper.formatTimestamp(System.currentTimeMillis())
-                        for (packet in memPackets) {
-                            val devId = ExcelExportHelper.extractDeviceId(
-                                packet.payload,
-                                packet.topic,
-                                clientId
-                            )
-                            rowWriter.writeRow(packet.topic, devId, packet.payload, nowStr)
-                            exportedCount++
-                        }
                     }
                 }
 

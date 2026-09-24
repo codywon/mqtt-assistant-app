@@ -706,7 +706,7 @@ fun SettingsScreen(
                             )
                         }
                         Text(
-                            text = "超限循环覆盖",
+                            text = if (config.autoExportExcel) "满额自动切卷" else "超限循环覆盖",
                             style = TextStyle(
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 10.sp,
@@ -725,7 +725,7 @@ fun SettingsScreen(
                         verticalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(
-                            text = "已占用空间",
+                            text = "内存实时占用",
                             style = MaterialTheme.typography.labelSmall.copy(color = OnSurfaceVariantGray, fontSize = 11.5.sp)
                         )
                         Row(verticalAlignment = Alignment.Bottom) {
@@ -745,7 +745,7 @@ fun SettingsScreen(
                             )
                         }
                         Text(
-                            text = "累计 ${config.packetCount} 条报文",
+                            text = "当前 ${config.packetCount} 条报文",
                             style = TextStyle(
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 10.sp,

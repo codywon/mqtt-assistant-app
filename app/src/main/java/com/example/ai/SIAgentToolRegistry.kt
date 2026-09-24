@@ -27,46 +27,7 @@ class SIAgentToolRegistry(
         fun getToolDefinitionsJson(): JSONArray {
             val tools = JSONArray()
 
-            // 工具 1: execute_sqlite_query
-            tools.put(
-                JSONObject().apply {
-                    put("type", "function")
-                    put(
-                        "function",
-                        JSONObject().apply {
-                            put("name", "execute_sqlite_query")
-                            put(
-                                "description",
-                                "执行只读 SQLite SQL 查询以分析 MQTT 实时数据。表 tbl_mqtt_packets 真实可用列仅为: topic(主题/网关路径), qos, packetSeq, timestamp(HH:mm:ss.SSS), payload(报文内容/Hex串/JSON), devInfo(设备信息), sizeText, category, created_at(毫秒时间戳)。⚠️重要提醒：绝对没有名为 gateway、gateway_id、device_id 的列！网关名称通常位于 topic 中，如查询各网关报文请写: SELECT topic, count(*) as count FROM tbl_mqtt_packets GROUP BY topic ORDER BY count DESC。"
-                            )
-                            put(
-                                "parameters",
-                                JSONObject().apply {
-                                    put("type", "object")
-                                    put(
-                                        "properties",
-                                        JSONObject().apply {
-                                            put(
-                                                "sql",
-                                                JSONObject().apply {
-                                                    put("type", "string")
-                                                    put(
-                                                        "description",
-                                                        "标准只读 SELECT SQL 查询语句，例如: SELECT topic, count(*) as cnt FROM tbl_mqtt_packets GROUP BY topic"
-                                                    )
-                                                }
-                                            )
-                                        }
-                                    )
-                                    put("required", JSONArray().apply { put("sql") })
-                                }
-                            )
-                        }
-                    )
-                }
-            )
-
-            // 工具 2: get_live_packets (直接检索内存热报文)
+            // 工具 1: get_live_packets (直接多维分析内存热报文)
             tools.put(
                 JSONObject().apply {
                     put("type", "function")
@@ -76,7 +37,7 @@ class SIAgentToolRegistry(
                             put("name", "get_live_packets")
                             put(
                                 "description",
-                                "【内存实时热报文检索】直接从应用内存实时消息流中获取最新收到的 MQTT 报文。当需要分析当前最新推送的报文、排查实时数据流、或 SQLite 数据库查无记录时，调用此工具获取内存中热数据。"
+                                "【内存实时热报文多维分析】从应用内存高速缓冲流中检索当前最新到达的 MQTT 报文（零 I/O 极速直读）。支持两种模式：1. mode='summary'（极速提取宏观统计：总条数、活跃主题分布 Top 10、各网关吞吐量、识别的设备 ID 清单、最新时间戳，仅消耗 ~80 tokens）；2. mode='sample'（按主题或内容关键词过滤精准抽样具体明细报文，单次上限 50 条）。分析当前在线网关通信质量、生成现场验收报告、排查实时告警时必须调用此工具。"
                             )
                             put(
                                 "parameters",
@@ -86,17 +47,31 @@ class SIAgentToolRegistry(
                                         "properties",
                                         JSONObject().apply {
                                             put(
+                                                "mode",
+                                                JSONObject().apply {
+                                                    put("type", "string")
+                                                    put("description", "分析模式: 'summary' (汇总全网各主题吞吐分布与在线设备画像，极其省 token) 或 'sample' (抽样读取具体报文明细，默认)")
+                                                }
+                                            )
+                                            put(
                                                 "topicFilter",
                                                 JSONObject().apply {
                                                     put("type", "string")
-                                                    put("description", "可选的主题过滤关键词或通配符，默认为空匹配所有主题")
+                                                    put("description", "可选的主题过滤关键词或路径，例如 'gateway/gw_01' 或 'sensor'")
+                                                }
+                                            )
+                                            put(
+                                                "keyword",
+                                                JSONObject().apply {
+                                                    put("type", "string")
+                                                    put("description", "可选的报文内容/Hex过滤关键词")
                                                 }
                                             )
                                             put(
                                                 "limit",
                                                 JSONObject().apply {
                                                     put("type", "integer")
-                                                    put("description", "获取的最新报文数量，默认 20 条，最大 50 条")
+                                                    put("description", "采样数量 (仅在 mode='sample' 时生效)，默认 20 条，最大 50 条")
                                                 }
                                             )
                                         }
@@ -435,33 +410,9 @@ class SIAgentToolRegistry(
             val args = if (argumentsJson.isNotBlank()) JSONObject(argumentsJson) else JSONObject()
             when (functionName) {
                 "execute_sqlite_query" -> {
-                    var sql = args.optString("sql", "").trim()
-                    if (sql.isBlank()) sql = args.optString("query", "").trim()
-                    if (sql.isBlank()) sql = args.optString("statement", "").trim()
-                    if (sql.isBlank()) return "错误: SQL 语句不能为空"
-                    try {
-                        val rows = storage.executeReadOnlyQuery(sql)
-                        if (rows.isEmpty()) {
-                            val liveCount = livePacketsProvider?.invoke()?.size ?: 0
-                            val hint = if (liveCount > 0) {
-                                "提示：当前内存实时队列中正活跃缓存着 $liveCount 条最新接收的报文！若您需要分析当前在线数据，建议立即调用 get_live_packets 工具直接查看内存中的最新数据！"
-                            } else {
-                                "提示：当前暂未接收到 MQTT 报文，请确认 Broker 是否已连接且订阅已启用。"
-                            }
-                            return "SQL 执行完成，未检索到数据（结果 0 行）。$hint"
-                        }
-                        val array = JSONArray()
-                        for (row in rows) {
-                            array.put(JSONObject(row))
-                        }
-                        val resultObj = JSONObject().apply {
-                            put("rowCount", rows.size)
-                            put("rows", array)
-                        }
-                        resultObj.toString()
-                    } catch (e: Exception) {
-                        "SQL 执行失败: ${e.message}。特别提醒: 表 tbl_mqtt_packets 真实可用列名仅有 (id, topic, qos, packetSeq, timestamp, payload, devInfo, sizeText, category, created_at)。绝不存在名为 gateway 或 gateway_id 的列！查询各网关吞吐或设备，请以 topic 字段进行分组聚合，例如: SELECT topic, count(*) as count FROM tbl_mqtt_packets GROUP BY topic ORDER BY count DESC。请修正 SQL 后重新执行。"
-                    }
+                    // 架构升级兼容：提示大模型数据已全面在内存与 Excel 分级维护
+                    val liveCount = livePacketsProvider?.invoke()?.size ?: 0
+                    "【存储架构升级提示】实时报文已全面升级为零 I/O 纯内存环形缓冲区 (当前内存活跃 $liveCount 条) 与公共 Download 目录 Excel 自动分卷存储，不再向 SQLite 盲目落盘。请立即调用 get_live_packets(mode=\"summary\") 获取全网主题吞吐画像，或调用 list_archived_excels 分析已转储的历史 Excel 日志！"
                 }
 
                 "get_live_packets" -> {
@@ -469,38 +420,67 @@ class SIAgentToolRegistry(
                     if (packets.isEmpty()) {
                         return "【内存状态】当前内存实时报文队列为空（暂未收到新报文，或刚启动未建立连接）。"
                     }
-                    val filter = args.optString("topicFilter", "").trim()
+                    val mode = args.optString("mode", "sample").lowercase()
+                    val topicFilter = args.optString("topicFilter", "").trim()
+                    val keyword = args.optString("keyword", "").trim()
                     val limit = args.optInt("limit", 20).coerceIn(1, 50)
-                    val filtered = if (filter.isBlank()) {
-                        packets.takeLast(limit)
+
+                    val filtered = packets.filter { p ->
+                        (topicFilter.isBlank() || p.topic.contains(topicFilter, ignoreCase = true)) &&
+                        (keyword.isBlank() || p.payload.contains(keyword, ignoreCase = true) || p.devInfo.contains(keyword, ignoreCase = true))
+                    }
+
+                    if (mode == "summary") {
+                        val topicGroups = filtered.groupBy { it.topic }
+                        val topTopics = topicGroups.mapValues { it.value.size }
+                            .toList()
+                            .sortedByDescending { it.second }
+                            .take(10)
+                            .toMap()
+
+                        val sampleDevices = filtered.mapNotNull {
+                            val dev = it.devInfo.substringBefore(" ·").trim()
+                            if (dev.isNotBlank() && !dev.startsWith("QoS")) dev else null
+                        }.distinct().take(15)
+
+                        val firstTime = filtered.firstOrNull()?.timestamp ?: "-"
+                        val lastTime = filtered.lastOrNull()?.timestamp ?: "-"
+
+                        val summaryObj = JSONObject().apply {
+                            put("status", "SUCCESS")
+                            put("totalInMemory", packets.size)
+                            put("matchedCount", filtered.size)
+                            put("uniqueTopicsCount", topicGroups.size)
+                            put("startTime", firstTime)
+                            put("latestTime", lastTime)
+                            put("topTopicsThroughput", JSONObject(topTopics))
+                            put("sampleDevices", JSONArray(sampleDevices))
+                        }
+                        summaryObj.toString()
                     } else {
-                        packets.filter {
-                            it.topic.contains(filter, ignoreCase = true) ||
-                            it.payload.contains(filter, ignoreCase = true) ||
-                            it.category.contains(filter, ignoreCase = true)
-                        }.takeLast(limit)
+                        if (filtered.isEmpty()) {
+                            return "【内存状态】内存中共有 ${packets.size} 条报文，但未匹配到条件 (主题: '$topicFilter', 关键词: '$keyword') 的报文。"
+                        }
+                        val sampleList = filtered.takeLast(limit)
+                        val array = JSONArray()
+                        for (p in sampleList.reversed()) {
+                            array.put(
+                                JSONObject().apply {
+                                    put("seq", p.packetSeq)
+                                    put("topic", p.topic)
+                                    put("time", p.timestamp)
+                                    put("payload", p.payload)
+                                    put("devInfo", p.devInfo)
+                                }
+                            )
+                        }
+                        val res = JSONObject().apply {
+                            put("totalInMemory", packets.size)
+                            put("returnedCount", sampleList.size)
+                            put("packets", array)
+                        }
+                        res.toString()
                     }
-                    if (filtered.isEmpty()) {
-                        return "【内存状态】内存中共有 ${packets.size} 条报文，但未匹配到包含 '$filter' 的报文。"
-                    }
-                    val array = JSONArray()
-                    for (p in filtered.reversed()) {
-                        array.put(
-                            JSONObject().apply {
-                                put("seq", p.packetSeq)
-                                put("topic", p.topic)
-                                put("time", p.timestamp)
-                                put("payload", p.payload)
-                                put("devInfo", p.devInfo)
-                            }
-                        )
-                    }
-                    val res = JSONObject().apply {
-                        put("totalInMemory", packets.size)
-                        put("returnedCount", filtered.size)
-                        put("packets", array)
-                    }
-                    res.toString()
                 }
 
                 "get_protocol_clarification" -> {

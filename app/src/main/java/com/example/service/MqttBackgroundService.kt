@@ -83,12 +83,11 @@ class MqttBackgroundService : Service() {
                 )
                 val storage = MqttStorageRepository(applicationContext)
                 val bufferTh = storage.loadBufferThreshold()
-                storage.savePackets(listOf(packet), bufferTh)
+                com.example.data.MemoryPacketStore.addPacket(packet, bufferTh)
 
                 if (storage.loadAutoExportExcel()) {
-                    AutoExportHelper.checkAndTrigger(
+                    AutoExportHelper.checkAndExportFromMemory(
                         context = applicationContext,
-                        storage = storage,
                         bufferThreshold = bufferTh,
                         clientId = ""
                     ) { exportedCount, _ ->
