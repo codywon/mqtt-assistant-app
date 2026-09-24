@@ -68,6 +68,12 @@ class AiAgentClient(
             3. 若报文为十六进制字节流，将 format 指定为 "HEX"，payload 传入十六进制字符串（如 'AA 55 01 02'）；若为 JSON 或文本则保持 format 为 "TEXT"；
             4. 发送完成后向用户汇报发送状态与下发参数。
 
+            【实时联网搜索与外部工业规约检索 (web_search)】
+            1. 当遇到用户上传或报文中出现的未知 Hex 帧格式（例如带有特定起始字头 68 ... 16、或者包含国标协议特征），且本地私有协议库未命中时；
+            2. 或者用户直接询问某个工业协议标准（如“HJ212 报文校验码怎么算”、“DL/T 645-2007 数据标识编码规则”）、特定变频器/PLC 错误代码（如“西门子 S7 错误 0x8090 是什么原因”）；
+            3. 主动调用 web_search(query="检索关键词") 检索公网权威技术规范与故障手册；
+            4. 检索获得规约解析后，反哺当前报文的逐字节切片逆向分析，并在分析末尾贴心询问用户：“是否需要将该协议规则沉淀入本地知识库？如需沉淀，我可立即为您保存”。
+
             【工业物联网现场验收交付报告规范】
             当用户要求“生成现场验收报告”、“工程排查报告”或盘点整网通信质量时：
             1. 必须调用 get_live_packets 与 execute_sqlite_query 获取在线网关数、各网关吞吐分布及异常告警；
@@ -83,6 +89,7 @@ class AiAgentClient(
             - execute_sqlite_query: 执行只读 SQL 语句查询当前 SQLite 数据库 (tbl_mqtt_packets)，分析历史/离线报文；
             - get_live_packets: 【内存实时热报文检索】直接从应用内存实时消息流中获取最新到达的报文（无需经过磁盘或 SQL），排查实时数据流或当 SQLite 查无记录时使用；
             - publish_mqtt_message: 【双向发包与Mock调试】向 Broker 指定主题直接发布消息（支持 JSON/文本或十六进制 HEX 串），实现自然语言发包与指令下发；
+            - web_search: 【工业规约与技术资料联网检索】遇到未知私有硬件报文、行业标准（DL/T 645、CJ/T 188、HJ 212、JT/T 808、Modbus 等）、PLC/变频器故障代码或需要权威技术资料时，实时联网搜索；
             - get_protocol_clarification: 按需查询硬件私有协议解码规范与字段偏移；
             - save_protocol_knowledge: 对话即沉淀，将用户描述的私有协议持久化入库；
             - list_archived_excels: 全渠道穿透检索已导出的 Excel 历史分卷列表（覆盖系统公共 Download、微信/QQ目录及应用私有导出目录）；
@@ -379,6 +386,9 @@ class AiAgentClient(
 
                 val statusText = when (funcName) {
                     "execute_sqlite_query" -> "🔍 [Action] 正在执行只读 SQL 查询..."
+                    "get_live_packets" -> "⚡ [Action] 正在检索内存实时消息流..."
+                    "publish_mqtt_message" -> "📤 [Action] 正在下发 MQTT 消息/模拟报文..."
+                    "web_search" -> "🌐 [Action] 正在联网检索工业技术资料与标准规约..."
                     "get_protocol_clarification" -> "📖 [Action] 正在检索硬件私有协议知识..."
                     "save_protocol_knowledge" -> "💾 [Action] 正在将私有协议规则沉淀入库..."
                     "list_archived_excels" -> "📁 [Action] 正在扫描已转储 Excel 历史分卷..."

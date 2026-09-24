@@ -5,6 +5,7 @@ import com.example.data.MqttStorageRepository
 import com.example.model.MqttLogPacket
 import com.example.model.ProtocolKnowledge
 import com.example.util.ArchivedExcelReader
+import com.example.util.WebSearchHelper
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -383,6 +384,39 @@ class SIAgentToolRegistry(
                             )
                         }
                     )
+            // 工具 8: web_search (实时工业与技术规约联网搜索)
+            tools.put(
+                JSONObject().apply {
+                    put("type", "function")
+                    put(
+                        "function",
+                        JSONObject().apply {
+                            put("name", "web_search")
+                            put(
+                                "description",
+                                "【实时工业与技术规约联网搜索】在面对未知私有硬件报文（如电表 DL/T 645、水气表 CJ/T 188、环保 HJ 212、车载车联网 JT/T 808、Modbus、BACnet 等规约）、特定硬件/PLC 报错代码（如西门子、汇川、三菱等）、或需要查阅最新工业技术标准与参考资料时调用此工具。通过双通道搜索引擎实时检索公网权威资料与技术规范。"
+                            )
+                            put(
+                                "parameters",
+                                JSONObject().apply {
+                                    put("type", "object")
+                                    put(
+                                        "properties",
+                                        JSONObject().apply {
+                                            put(
+                                                "query",
+                                                JSONObject().apply {
+                                                    put("type", "string")
+                                                    put("description", "要检索的工业关键词、协议规约名称、帧格式或设备故障代码，例如: 'DL/T 645-2007 报文格式'、'HJ 212 报文校验算法' 或 '汇川变频器 E010 故障代码'")
+                                                }
+                                            )
+                                        }
+                                    )
+                                    put("required", JSONArray().apply { put("query") })
+                                }
+                            )
+                        }
+                    )
                 }
             )
 
@@ -651,6 +685,38 @@ class SIAgentToolRegistry(
                             }
                         } catch (e: Exception) {
                             "报文编码处理或发布异常: ${e.message}"
+                        }
+                    }
+                }
+
+                "web_search" -> {
+                    val query = args.optString("query", "").trim()
+                    if (query.isBlank()) {
+                        "搜索失败: 检索关键词 (query) 不能为空"
+                    } else {
+                        val searchResult = kotlinx.coroutines.runBlocking {
+                            WebSearchHelper.search(query, maxResults = 4)
+                        }
+                        if (searchResult.items.isEmpty()) {
+                            "【联网搜索结果】未检索到与 '$query' 相关的资料（${searchResult.error ?: "无匹配结果"}）。建议更换更具针对性的工控关键词或规约标准名称重试。"
+                        } else {
+                            val array = JSONArray()
+                            for (item in searchResult.items) {
+                                array.put(
+                                    JSONObject().apply {
+                                        put("title", item.title)
+                                        put("snippet", item.snippet)
+                                        put("url", item.url)
+                                    }
+                                )
+                            }
+                            val resObj = JSONObject().apply {
+                                put("query", searchResult.query)
+                                put("engine", searchResult.source)
+                                put("resultCount", searchResult.items.size)
+                                put("results", array)
+                            }
+                            resObj.toString()
                         }
                     }
                 }
