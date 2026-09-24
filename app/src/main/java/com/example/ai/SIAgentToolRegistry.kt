@@ -384,6 +384,9 @@ class SIAgentToolRegistry(
                             )
                         }
                     )
+                }
+            )
+
             // 工具 8: web_search (实时工业与技术规约联网搜索)
             tools.put(
                 JSONObject().apply {
