@@ -442,4 +442,28 @@ class MqttStorageRepository(context: Context) {
         dbHelper.saveSetting("ai_context_window", config.contextWindow.toString())
         dbHelper.saveSetting("ai_compaction_threshold", config.compactionThreshold.toString())
     }
+
+    // =========================================================================
+    // TSL 物模型协议库 (委托至 MqttDatabaseHelper)
+    // =========================================================================
+
+    fun saveTslProtocol(protocol: com.example.model.TslProtocol) = dbHelper.saveTslProtocol(protocol)
+    fun saveTslProtocols(protocols: List<com.example.model.TslProtocol>) = dbHelper.saveTslProtocols(protocols)
+    fun loadAllTslProtocols(): List<com.example.model.TslProtocol> = dbHelper.loadAllTslProtocols()
+    fun loadEnabledTslProtocols(): List<com.example.model.TslProtocol> = dbHelper.loadEnabledTslProtocols()
+    fun toggleTslProtocolEnabled(id: String, enabled: Boolean) = dbHelper.toggleTslProtocolEnabled(id, enabled)
+    fun deleteTslProtocol(id: String) = dbHelper.deleteTslProtocol(id)
+    fun hasTslProtocol(id: String): Boolean = dbHelper.hasTslProtocol(id)
+
+    /**
+     * 初始化内置 TSL 协议模板（仅首次安装时执行，已存在则跳过）
+     */
+    fun initBuiltinTslProtocols() {
+        val builtins = com.example.engine.TslBuiltinTemplates.getAll()
+        for (proto in builtins) {
+            if (!hasTslProtocol(proto.id)) {
+                saveTslProtocol(proto)
+            }
+        }
+    }
 }

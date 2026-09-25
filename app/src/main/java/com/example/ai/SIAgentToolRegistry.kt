@@ -17,6 +17,8 @@ class SIAgentToolRegistry(
     val storage: MqttStorageRepository,
     val context: Context? = null,
     val livePacketsProvider: (() -> List<MqttLogPacket>)? = null,
+    val tslParseResultsProvider: (() -> Map<String, com.example.model.TslParseResult>)? = null,
+    val tslProtocolsProvider: (() -> List<com.example.model.TslProtocol>)? = null,
     val onMessagePublished: ((topic: String, qos: Int, retain: Boolean, payload: String) -> Unit)? = null
 ) {
 
@@ -430,6 +432,8 @@ class SIAgentToolRegistry(
                         (keyword.isBlank() || p.payload.contains(keyword, ignoreCase = true) || p.devInfo.contains(keyword, ignoreCase = true))
                     }
 
+                    val tslResults = tslParseResultsProvider?.invoke() ?: emptyMap()
+
                     if (mode == "summary") {
                         val topicGroups = filtered.groupBy { it.topic }
                         val topTopics = topicGroups.mapValues { it.value.size }
@@ -446,6 +450,13 @@ class SIAgentToolRegistry(
                         val firstTime = filtered.firstOrNull()?.timestamp ?: "-"
                         val lastTime = filtered.lastOrNull()?.timestamp ?: "-"
 
+                        // 提取 TSL 物模型解析状态与告警画像
+                        val tslMatchedPackets = filtered.mapNotNull { tslResults[it.id] }
+                        val warningPackets = tslMatchedPackets.filter { it.hasWarnings }
+                        val recentAlarms = warningPackets.takeLast(5).flatMap { r ->
+                            r.values.filter { it.isWarning }.mapNotNull { it.warningMessage }
+                        }
+
                         val summaryObj = JSONObject().apply {
                             put("status", "SUCCESS")
                             put("totalInMemory", packets.size)
@@ -455,6 +466,12 @@ class SIAgentToolRegistry(
                             put("latestTime", lastTime)
                             put("topTopicsThroughput", JSONObject(topTopics))
                             put("sampleDevices", JSONArray(sampleDevices))
+                            put("tslProtocolsActive", tslProtocolsProvider?.invoke()?.size ?: 0)
+                            put("tslParsedCount", tslMatchedPackets.size)
+                            put("alarmPacketsCount", warningPackets.size)
+                            if (recentAlarms.isNotEmpty()) {
+                                put("recentAlarms", JSONArray(recentAlarms))
+                            }
                         }
                         summaryObj.toString()
                     } else {
@@ -464,15 +481,22 @@ class SIAgentToolRegistry(
                         val sampleList = filtered.takeLast(limit)
                         val array = JSONArray()
                         for (p in sampleList.reversed()) {
-                            array.put(
-                                JSONObject().apply {
-                                    put("seq", p.packetSeq)
-                                    put("topic", p.topic)
-                                    put("time", p.timestamp)
-                                    put("payload", p.payload)
-                                    put("devInfo", p.devInfo)
+                            val itemObj = JSONObject().apply {
+                                put("seq", p.packetSeq)
+                                put("topic", p.topic)
+                                put("time", p.timestamp)
+                                put("payload", p.payload)
+                                put("devInfo", p.devInfo)
+                            }
+                            val parseRes = tslResults[p.id]
+                            if (parseRes != null) {
+                                itemObj.put("tslDecoded", parseRes.toSummaryText())
+                                if (parseRes.hasWarnings) {
+                                    val warns = parseRes.values.filter { it.isWarning }.mapNotNull { it.warningMessage }
+                                    itemObj.put("warnings", JSONArray(warns))
                                 }
-                            )
+                            }
+                            array.put(itemObj)
                         }
                         val res = JSONObject().apply {
                             put("totalInMemory", packets.size)

@@ -139,6 +139,7 @@ fun LiveLogsScreen(
     val includeFilters by viewModel.includeTopicFilters.collectAsState()
     val excludeFilters by viewModel.excludeTopicFilters.collectAsState()
     val filteredPackets by viewModel.filteredLivePackets.collectAsState()
+    val tslParseResults by viewModel.tslParseResults.collectAsState()
 
     var selectedDetailsPacket by remember { mutableStateOf<MqttLogPacket?>(null) }
     var isTopicFilterDialogVisible by remember { mutableStateOf(false) }
@@ -414,6 +415,7 @@ fun LiveLogsScreen(
                     items(filteredPackets, key = { it.id }) { packet ->
                         CompactMessageCard(
                             packet = packet,
+                            tslResult = tslParseResults[packet.id],
                             onCardClick = onSelectPacket,
                             onInspectWithAi = onInspectPacket,
                             onCopyTopic = onCopyTopicText,
@@ -455,6 +457,7 @@ fun LiveLogsScreen(
     selectedDetailsPacket?.let { packet ->
         MessageDetailsModalDialog(
             packet = packet,
+            tslResult = tslParseResults[packet.id],
             onDismiss = { selectedDetailsPacket = null },
             onInspectWithAi = {
                 selectedDetailsPacket = null
@@ -588,6 +591,7 @@ fun LiveLogsScreen(
 @Composable
 private fun CompactMessageCard(
     packet: MqttLogPacket,
+    tslResult: com.example.model.TslParseResult? = null,
     onCardClick: (MqttLogPacket) -> Unit,
     onInspectWithAi: (MqttLogPacket) -> Unit,
     onCopyTopic: (String) -> Unit,
@@ -773,6 +777,65 @@ private fun CompactMessageCard(
                     overflow = TextOverflow.Ellipsis
                 )
             }
+
+            // Row 4: TSL 物模型物理量解析 (直观呈现工程指标与越限报警，彻底替代正则)
+            if (tslResult != null && tslResult.values.isNotEmpty()) {
+                val hasWarn = tslResult.hasWarnings
+                val bgColor = if (hasWarn) Color(0xFFFEF2F2) else Color(0xFFF0FDF4)
+                val borderColor = if (hasWarn) Color(0xFFFECACA) else Color(0xFFDCFCE7)
+                val titleColor = if (hasWarn) Color(0xFFDC2626) else Color(0xFF16A34A)
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(bgColor)
+                        .border(0.6.dp, borderColor, RoundedCornerShape(6.dp))
+                        .padding(horizontal = 8.dp, vertical = 5.dp),
+                    verticalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = if (hasWarn) "⚠️ 告警 · ${tslResult.protocolName}" else "物模型 · ${tslResult.protocolName}",
+                            style = TextStyle(
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = titleColor
+                            )
+                        )
+                    }
+
+                    // 物理量横向紧凑平铺
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        tslResult.values.take(4).forEach { v ->
+                            val valColor = if (v.isWarning) Color(0xFFDC2626) else PrimaryBlack
+                            Text(
+                                text = "${v.name}: ${v.displayValue}",
+                                style = TextStyle(
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 11.5.sp,
+                                    fontWeight = if (v.isWarning) FontWeight.Bold else FontWeight.Medium,
+                                    color = valColor
+                                )
+                            )
+                        }
+                        if (tslResult.values.size > 4) {
+                            Text(
+                                text = "+${tslResult.values.size - 4}",
+                                style = TextStyle(fontSize = 10.sp, color = OnSurfaceVariantGray)
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -783,6 +846,7 @@ private fun CompactMessageCard(
 @Composable
 private fun MessageDetailsModalDialog(
     packet: MqttLogPacket,
+    tslResult: com.example.model.TslParseResult? = null,
     onDismiss: () -> Unit,
     onInspectWithAi: () -> Unit,
     onCopyTopic: () -> Unit,
@@ -890,6 +954,83 @@ private fun MessageDetailsModalDialog(
                                 color = PrimaryBlack
                             )
                         )
+                    }
+
+                    // TSL 物模型解析指标看板 (如果命中了协议)
+                    if (tslResult != null && tslResult.values.isNotEmpty()) {
+                        val hasWarn = tslResult.hasWarnings
+                        val cardBg = if (hasWarn) Color(0xFFFEF2F2) else Color(0xFFF0FDF4)
+                        val borderC = if (hasWarn) Color(0xFFFECACA) else Color(0xFFDCFCE7)
+                        val titleC = if (hasWarn) Color(0xFFDC2626) else Color(0xFF16A34A)
+
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(cardBg)
+                                .border(0.8.dp, borderC, RoundedCornerShape(8.dp))
+                                .padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = if (hasWarn) "⚠️ 越限告警 · ${tslResult.protocolName}" else "物模型解析 · ${tslResult.protocolName}",
+                                    style = TextStyle(
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = titleC
+                                    )
+                                )
+                                Text(
+                                    text = "共 ${tslResult.values.size} 项指标",
+                                    style = TextStyle(fontSize = 11.sp, color = OnSurfaceVariantGray)
+                                )
+                            }
+
+                            // 逐个物理量网格/列表呈现
+                            tslResult.values.forEach { v ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .clickable { onCopyValue("${v.name}: ${v.displayValue}") }
+                                        .padding(horizontal = 4.dp, vertical = 3.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        if (v.isWarning) {
+                                            Text(
+                                                text = "⚠️",
+                                                style = TextStyle(fontSize = 11.sp)
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                        }
+                                        Text(
+                                            text = v.name,
+                                            style = TextStyle(
+                                                fontSize = 12.5.sp,
+                                                fontWeight = FontWeight.Medium,
+                                                color = if (v.isWarning) Color(0xFFDC2626) else PrimaryBlack
+                                            )
+                                        )
+                                    }
+                                    Text(
+                                        text = v.displayValue,
+                                        style = TextStyle(
+                                            fontFamily = FontFamily.Monospace,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (v.isWarning) Color(0xFFDC2626) else PrimaryBlack
+                                        )
+                                    )
+                                }
+                            }
+                        }
                     }
 
                     // Message Payload Header with JSON 格式化开关 & 复制消息 buttons (格式化开关挪到这里，并列于复制消息旁边)

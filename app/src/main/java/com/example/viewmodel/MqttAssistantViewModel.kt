@@ -122,6 +122,10 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
     val isJsonPrettyFormat = MutableStateFlow(true)
     val filterJsonOnly = MutableStateFlow(false)
 
+    // --- TSL 物模型协议解析引擎状态 ---
+    val tslProtocols = MutableStateFlow<List<com.example.model.TslProtocol>>(emptyList())
+    val tslParseResults = MutableStateFlow<Map<String, com.example.model.TslParseResult>>(emptyMap()) // packetId -> result
+
     // --- PC-Grade Topic Filters (Persistent: Include / Exclude) ---
     val includeTopicFilters = MutableStateFlow<List<String>>(storage.loadIncludeTopicFilters())
     val excludeTopicFilters = MutableStateFlow<List<String>>(storage.loadExcludeTopicFilters())
@@ -236,6 +240,8 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
         storage = storage,
         context = application,
         livePacketsProvider = { livePackets.value },
+        tslParseResultsProvider = { tslParseResults.value },
+        tslProtocolsProvider = { tslProtocols.value },
         onMessagePublished = { topic, qos, _, payload ->
             viewModelScope.launch(Dispatchers.Main) {
                 val dotColor = when (qos) {
@@ -294,12 +300,18 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
             val activeSessionId = savedSessions.first().id
             val savedAiMsgs = storage.loadAiMessages(activeSessionId, 100)
             val savedProtocols = storage.loadAllProtocolKnowledge()
+
+            // TSL 物模型：首次安装注入内置模板，然后加载所有已启用协议
+            storage.initBuiltinTslProtocols()
+            val enabledTslProtos = storage.loadEnabledTslProtocols()
+
             withContext(Dispatchers.Main) {
                 livePackets.value = cached
                 aiSessions.value = savedSessions
                 currentSessionId.value = activeSessionId
                 aiMessages.value = savedAiMsgs
                 protocolKnowledgeList.value = savedProtocols
+                tslProtocols.value = enabledTslProtos
             }
         }
         startPacketBatchCollector()
@@ -368,6 +380,29 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 val allPackets = com.example.data.MemoryPacketStore.addPackets(currentBatch, maxBuffer)
                 withContext(Dispatchers.Main) {
                     livePackets.value = allPackets
+
+                    // TSL 物模型引擎：实时自动解析新到达的报文（微秒级，零额外 I/O）
+                    val protos = tslProtocols.value
+                    if (protos.isNotEmpty()) {
+                        val newResults = tslParseResults.value.toMutableMap()
+                        for (pkt in currentBatch) {
+                            val result = com.example.engine.TslParseEngine.tryParse(
+                                topic = pkt.topic,
+                                payload = pkt.payload,
+                                category = pkt.category,
+                                protocols = protos
+                            )
+                            if (result != null) {
+                                newResults[pkt.id] = result
+                            }
+                        }
+                        // 保持缓存大小与 livePackets 对齐，防止无限膨胀
+                        if (newResults.size > maxBuffer * 2) {
+                            val liveIds = allPackets.map { it.id }.toSet()
+                            newResults.keys.retainAll(liveIds)
+                        }
+                        tslParseResults.value = newResults
+                    }
 
                     val topicCounts = currentBatch.groupBy { it.topic }
                     subscriptions.update { list ->
@@ -2640,6 +2675,80 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 }
             }
         }
+    }
+
+    // =========================================================================
+    // TSL 物模型协议库管理方法
+    // =========================================================================
+
+    fun saveTslProtocol(protocol: com.example.model.TslProtocol) {
+        viewModelScope.launch(Dispatchers.IO) {
+            storage.saveTslProtocol(protocol)
+            val updated = storage.loadEnabledTslProtocols()
+            withContext(Dispatchers.Main) {
+                tslProtocols.value = updated
+                reparseAllLivePacketsWithTsl()
+                showToast("TSL 协议【${protocol.name}】已保存并生效！")
+            }
+        }
+    }
+
+    fun deleteTslProtocol(id: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            storage.deleteTslProtocol(id)
+            val updated = storage.loadEnabledTslProtocols()
+            withContext(Dispatchers.Main) {
+                tslProtocols.value = updated
+                reparseAllLivePacketsWithTsl()
+                showToast("协议已删除")
+            }
+        }
+    }
+
+    fun toggleTslProtocol(id: String, enabled: Boolean) {
+        viewModelScope.launch(Dispatchers.IO) {
+            storage.toggleTslProtocolEnabled(id, enabled)
+            val updated = storage.loadEnabledTslProtocols()
+            withContext(Dispatchers.Main) {
+                tslProtocols.value = updated
+                reparseAllLivePacketsWithTsl()
+                showToast(if (enabled) "协议已启用并实时生效" else "协议已停用")
+            }
+        }
+    }
+
+    fun importTslProtocolFromJson(jsonStr: String): Boolean {
+        return try {
+            val json = org.json.JSONObject(jsonStr.trim())
+            val protocol = com.example.model.TslProtocol.fromJson(json)
+            saveTslProtocol(protocol)
+            true
+        } catch (e: Exception) {
+            showToast("TSL 协议导入失败: ${e.message}")
+            false
+        }
+    }
+
+    fun reparseAllLivePacketsWithTsl() {
+        val protos = tslProtocols.value
+        val packets = livePackets.value
+        if (protos.isEmpty() || packets.isEmpty()) {
+            tslParseResults.value = emptyMap()
+            return
+        }
+        val map = mutableMapOf<String, com.example.model.TslParseResult>()
+        for (pkt in packets) {
+            val res = com.example.engine.TslParseEngine.tryParse(
+                topic = pkt.topic,
+                payload = pkt.payload,
+                category = pkt.category,
+                protocols = protos
+            )
+            if (res != null) {
+                map[pkt.id] = res
+            }
+        }
+        tslParseResults.value = map
     }
 
     override fun onCleared() {

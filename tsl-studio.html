@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TSL 物模型可视化工作室 · MQTT Assistant</title>
+  <!-- 离线零依赖样式与二维码库 -->
+  <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+  <style>
+    :root {
+      --primary: #1E293B;
+      --accent: #2563EB;
+      --accent-hover: #1D4ED8;
+      --bg: #F8FAFC;
+      --surface: #FFFFFF;
+      --border: #E2E8F0;
+      --text-main: #0F172A;
+      --text-muted: #64748B;
+      --danger: #EF4444;
+      --success: #10B981;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background: var(--bg); color: var(--text-main); line-height: 1.5; padding: 20px; }
+    .container { max-width: 1300px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+    header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+    h1 { font-size: 20px; font-weight: 700; color: var(--primary); display: flex; align-items: center; gap: 8px; }
+    .badge { background: #E0E7FF; color: #4338CA; font-size: 12px; padding: 2px 8px; border-radius: 12px; font-weight: 600; }
+    .toolbar { display: flex; gap: 10px; }
+    button { background: var(--surface); border: 1px solid var(--border); padding: 8px 14px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s; }
+    button:hover { background: #F1F5F9; border-color: #CBD5E1; }
+    button.primary { background: var(--accent); color: white; border-color: var(--accent); }
+    button.primary:hover { background: var(--accent-hover); }
+    button.danger { color: var(--danger); }
+    button.danger:hover { background: #FEF2F2; }
+
+    .main-grid { display: grid; grid-template-columns: 1.35fr 1fr; gap: 20px; }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); display: flex; flex-direction: column; gap: 14px; }
+    .card-title { font-size: 15px; font-weight: 700; color: var(--primary); display: flex; justify-content: space-between; align-items: center; }
+
+    .form-group { display: flex; flex-direction: column; gap: 4px; }
+    label { font-size: 12px; font-weight: 600; color: var(--text-muted); }
+    input, select, textarea { padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; font-family: monospace; outline: none; transition: border-color 0.15s; }
+    input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+
+    .meta-row { display: grid; grid-template-columns: 2fr 1fr 2fr; gap: 12px; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+    th { text-align: left; padding: 8px; background: #F8FAFC; border-bottom: 1px solid var(--border); color: var(--text-muted); font-size: 11.5px; }
+    td { padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+    td input, td select { width: 100%; font-size: 12px; padding: 4px 6px; }
+
+    .preview-box { background: #0F172A; color: #F8FAFC; border-radius: 6px; padding: 12px; font-family: monospace; font-size: 12px; min-height: 120px; overflow-x: auto; white-space: pre-wrap; }
+    .result-table { width: 100%; border-collapse: collapse; }
+    .result-table th { background: #F1F5F9; color: var(--text-muted); padding: 8px; font-size: 12px; }
+    .result-table td { padding: 8px; border-bottom: 1px solid var(--border); font-size: 13px; }
+    .val-cell { font-family: monospace; font-weight: 700; }
+    .warn-badge { background: #FEE2E2; color: #DC2626; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 700; }
+    .ok-badge { background: #DCFCE7; color: #16A34A; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 700; }
+
+    #qrcode-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); justify-content: center; align-items: center; z-index: 100; }
+    .modal-content { background: white; padding: 24px; border-radius: 12px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 14px; max-width: 360px; box-shadow: 0 10px 25px rgba(0,0,0,0.15); }
+    #qrcode { padding: 12px; background: white; border: 1px solid var(--border); border-radius: 8px; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <header>
+    <h1>
+      <span>⚡ TSL 物模型可视化工作室</span>
+      <span class="badge">PC 极速免装版</span>
+    </h1>
+    <div class="toolbar">
+      <button onclick="loadTemplate('vital')">🏥 体征采集模板</button>
+      <button onclick="loadTemplate('modbus')">🏭 Modbus 模板</button>
+      <button onclick="loadTemplate('json')">🌐 JSON 遥测模板</button>
+      <button class="primary" onclick="showQrModal()">📱 生成扫码导入二维码</button>
+      <button class="primary" onclick="exportJson()">💾 导出 .tsl.json</button>
+    </div>
+  </header>
+
+  <div class="main-grid">
+    <!-- 左侧：协议与物模型字段定义 -->
+    <div class="card">
+      <div class="card-title">
+        <span>1. 协议元数据与字段声明</span>
+        <button onclick="addField()">+ 添加字段</button>
+      </div>
+
+      <div class="meta-row">
+        <div class="form-group">
+          <label>协议名称</label>
+          <input type="text" id="protoName" value="多参数健康体征网关协议">
+        </div>
+        <div class="form-group">
+          <label>报文格式</label>
+          <select id="protoFormat" onchange="onFormatChange()">
+            <option value="HEX">HEX (二进制)</option>
+            <option value="JSON">JSON (文本)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>匹配主题 Topic (支持 + 和 #)</label>
+          <input type="text" id="protoTopic" value="+/+/vital">
+        </div>
+      </div>
+
+      <div style="overflow-x: auto; margin-top: 8px;">
+        <table id="fieldTable">
+          <thead>
+            <tr>
+              <th style="width: 140px;">字段名</th>
+              <th style="width: 120px;">标识符</th>
+              <th style="width: 60px;">偏移</th>
+              <th style="width: 60px;">长度</th>
+              <th style="width: 110px;">类型</th>
+              <th style="width: 65px;">倍率</th>
+              <th style="width: 60px;">单位</th>
+              <th style="width: 70px;">上限告警</th>
+              <th style="width: 40px;">操作</th>
+            </tr>
+          </thead>
+          <tbody id="fieldBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 右侧：实机测试与即时验证 -->
+    <div class="card">
+      <div class="card-title">
+        <span>2. 现场报文即时逆向测试</span>
+        <button onclick="runTest()">▶ 立即解析</button>
+      </div>
+
+      <div class="form-group">
+        <label>现场测试 Hex 报文 (支持带空格/连字符)</label>
+        <textarea id="testPayload" rows="3" placeholder="例如: AA 55 01 02 78 8C 5A 01 6D">AA 55 01 02 78 8C 5A 01 6D</textarea>
+      </div>
+
+      <div class="card-title" style="margin-top: 4px;">
+        <span>解析物理量看板</span>
+        <span id="testStatus" class="ok-badge">就绪</span>
+      </div>
+
+      <div style="overflow-x: auto;">
+        <table class="result-table">
+          <thead>
+            <tr>
+              <th>物理量名称</th>
+              <th>解析数值</th>
+              <th>状态</th>
+            </tr>
+          </thead>
+          <tbody id="resultBody">
+            <tr><td colspan="3" style="text-align: center; color: var(--text-muted);">点击右上角「立即解析」查看物理量</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="form-group" style="margin-top: 10px;">
+        <label>生成的 TSL JSON (直接与手机 App 兼容)</label>
+        <div class="preview-box" id="jsonPreview"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 扫码导入弹窗 -->
+<div id="qrcode-modal" onclick="closeQrModal(event)">
+  <div class="modal-content" onclick="event.stopPropagation()">
+    <h3 style="font-size: 16px; font-weight: 700;">手机 App 扫码一键导入</h3>
+    <p style="font-size: 12.5px; color: var(--text-muted);">打开手机端「MQTT 助手」协议管理，点击右上角「扫一扫」即可将此协议瞬间同步入库。</p>
+    <div id="qrcode"></div>
+    <button class="primary" style="width: 100%; margin-top: 8px;" onclick="closeQrModal()">完成关闭</button>
+  </div>
+</div>
+
+<script>
+  // 模板定义
+  const templates = {
+    vital: {
+      name: "多参数健康体征网关协议",
+      format: "HEX",
+      matchTopic: "+/+/vital",
+      fields: [
+        { name: "心率", id: "heart_rate", offset: 3, length: 1, type: "uint8", scale: 1, unit: "bpm", warnMax: 120 },
+        { name: "收缩压(高压)", id: "systolic", offset: 4, length: 1, type: "uint8", scale: 1, unit: "mmHg", warnMax: 140 },
+        { name: "舒张压(低压)", id: "diastolic", offset: 5, length: 1, type: "uint8", scale: 1, unit: "mmHg", warnMax: 90 },
+        { name: "体温", id: "temperature", offset: 6, length: 2, type: "uint16_be", scale: 0.1, unit: "℃", warnMax: 37.3 }
+      ],
+      sample: "AA 55 01 02 78 8C 5A 01 6D"
+    },
+    modbus: {
+      name: "Modbus RTU 四寄存器通用采集",
+      format: "HEX",
+      matchTopic: "+/modbus/+",
+      fields: [
+        { name: "从站地址", id: "slave_addr", offset: 0, length: 1, type: "uint8", scale: 1, unit: "" },
+        { name: "功能码", id: "func_code", offset: 1, length: 1, type: "uint8", scale: 1, unit: "" },
+        { name: "温度", id: "temperature", offset: 3, length: 2, type: "int16_be", scale: 0.1, unit: "℃", warnMax: 85 },
+        { name: "湿度", id: "humidity", offset: 5, length: 2, type: "uint16_be", scale: 0.1, unit: "%RH", warnMax: 95 }
+      ],
+      sample: "01 03 04 01 04 02 58 7B 4A"
+    },
+    json: {
+      name: "通用 JSON 遥测上报协议",
+      format: "JSON",
+      matchTopic: "+/+/telemetry",
+      fields: [
+        { name: "温度", id: "temperature", offset: 0, length: 0, type: "json_number", scale: 1, unit: "℃", warnMax: 60 },
+        { name: "湿度", id: "humidity", offset: 0, length: 0, type: "json_number", scale: 1, unit: "%RH", warnMax: 95 }
+      ],
+      sample: '{"temperature": 26.5, "humidity": 68}'
+    }
+  };
+
+  let currentFields = [];
+
+  function loadTemplate(key) {
+    const t = templates[key];
+    if (!t) return;
+    document.getElementById("protoName").value = t.name;
+    document.getElementById("protoFormat").value = t.format;
+    document.getElementById("protoTopic").value = t.matchTopic;
+    document.getElementById("testPayload").value = t.sample;
+    currentFields = JSON.parse(JSON.stringify(t.fields));
+    renderFields();
+    runTest();
+  }
+
+  function addField() {
+    currentFields.push({
+      name: "新指标",
+      id: "metric_" + (currentFields.length + 1),
+      offset: currentFields.length > 0 ? (currentFields[currentFields.length - 1].offset + (currentFields[currentFields.length - 1].length || 1)) : 0,
+      length: 1,
+      type: "uint8",
+      scale: 1,
+      unit: "",
+      warnMax: null
+    });
+    renderFields();
+    updateJsonPreview();
+  }
+
+  function deleteField(idx) {
+    currentFields.splice(idx, 1);
+    renderFields();
+    updateJsonPreview();
+  }
+
+  function renderFields() {
+    const tbody = document.getElementById("fieldBody");
+    tbody.innerHTML = "";
+    currentFields.forEach((f, idx) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td><input type="text" value="${f.name}" onchange="updateField(${idx}, 'name', this.value)"></td>
+        <td><input type="text" value="${f.id}" onchange="updateField(${idx}, 'id', this.value)"></td>
+        <td><input type="number" value="${f.offset}" onchange="updateField(${idx}, 'offset', parseInt(this.value)||0)"></td>
+        <td><input type="number" value="${f.length}" onchange="updateField(${idx}, 'length', parseInt(this.value)||1)"></td>
+        <td>
+          <select onchange="updateField(${idx}, 'type', this.value)">
+            <option value="uint8" ${f.type==='uint8'?'selected':''}>uint8 (1B)</option>
+            <option value="int8" ${f.type==='int8'?'selected':''}>int8 (1B)</option>
+            <option value="uint16_be" ${f.type==='uint16_be'?'selected':''}>uint16_be (2B大端)</option>
+            <option value="uint16_le" ${f.type==='uint16_le'?'selected':''}>uint16_le (2B小端)</option>
+            <option value="int16_be" ${f.type==='int16_be'?'selected':''}>int16_be (2B大端)</option>
+            <option value="int16_le" ${f.type==='int16_le'?'selected':''}>int16_le (2B小端)</option>
+            <option value="float32_be" ${f.type==='float32_be'?'selected':''}>float32_be (4B浮点)</option>
+            <option value="ascii" ${f.type==='ascii'?'selected':''}>ascii (字符串)</option>
+            <option value="json_number" ${f.type==='json_number'?'selected':''}>json_number</option>
+          </select>
+        </td>
+        <td><input type="number" step="0.01" value="${f.scale}" onchange="updateField(${idx}, 'scale', parseFloat(this.value)||1)"></td>
+        <td><input type="text" value="${f.unit}" onchange="updateField(${idx}, 'unit', this.value)"></td>
+        <td><input type="number" value="${f.warnMax != null ? f.warnMax : ''}" placeholder="无" onchange="updateField(${idx}, 'warnMax', this.value ? parseFloat(this.value) : null)"></td>
+        <td><button class="danger" style="padding: 2px 6px;" onclick="deleteField(${idx})">×</button></td>
+      `;
+      tbody.appendChild(tr);
+    });
+    updateJsonPreview();
+  }
+
+  function updateField(idx, key, val) {
+    currentFields[idx][key] = val;
+    updateJsonPreview();
+  }
+
+  function getProtocolObject() {
+    return {
+      protocolId: "proto_" + Date.now(),
+      name: document.getElementById("protoName").value.trim(),
+      format: document.getElementById("protoFormat").value,
+      matchTopic: document.getElementById("protoTopic").value.trim(),
+      fields: currentFields.map(f => ({
+        identifier: f.id,
+        name: f.name,
+        offset: f.offset,
+        length: f.length,
+        type: f.type,
+        scale: f.scale,
+        unit: f.unit,
+        warnMax: f.warnMax
+      })),
+      builtin: false,
+      enabled: true,
+      createdAt: Date.now()
+    };
+  }
+
+  function updateJsonPreview() {
+    const obj = getProtocolObject();
+    document.getElementById("jsonPreview").textContent = JSON.stringify(obj, null, 2);
+  }
+
+  function runTest() {
+    const payload = document.getElementById("testPayload").value.trim();
+    const format = document.getElementById("protoFormat").value;
+    const resultBody = document.getElementById("resultBody");
+    resultBody.innerHTML = "";
+
+    try {
+      if (format === "HEX") {
+        const hexCleaned = payload.replace(/0x/gi, "").replace(/[\s\-,]/g, "");
+        if (hexCleaned.length % 2 !== 0) throw new Error("HEX 长度不符合偶数字节规范");
+        const bytes = [];
+        for (let i = 0; i < hexCleaned.length; i += 2) {
+          bytes.push(parseInt(hexCleaned.substr(i, 2), 16));
+        }
+
+        let hasAnyWarn = false;
+        currentFields.forEach(f => {
+          let rawVal = 0;
+          if (f.offset >= bytes.length) return;
+          if (f.type === "uint8") {
+            rawVal = bytes[f.offset];
+          } else if (f.type === "int8") {
+            rawVal = bytes[f.offset] > 127 ? bytes[f.offset] - 256 : bytes[f.offset];
+          } else if (f.type === "uint16_be") {
+            rawVal = (bytes[f.offset] << 8) | bytes[f.offset + 1];
+          } else if (f.type === "uint16_le") {
+            rawVal = bytes[f.offset] | (bytes[f.offset + 1] << 8);
+          } else if (f.type === "int16_be") {
+            const v = (bytes[f.offset] << 8) | bytes[f.offset + 1];
+            rawVal = v > 32767 ? v - 65536 : v;
+          }
+
+          const scaled = (rawVal * f.scale).toFixed(f.scale < 1 ? 1 : 0);
+          const isWarn = f.warnMax != null && parseFloat(scaled) > f.warnMax;
+          if (isWarn) hasAnyWarn = true;
+
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td>${f.name}</td>
+            <td class="val-cell" style="color: ${isWarn ? '#DC2626' : '#0F172A'}">${scaled} ${f.unit}</td>
+            <td>${isWarn ? '<span class="warn-badge">⚠️ 超过上限 ' + f.warnMax + '</span>' : '<span class="ok-badge">正常</span>'}</td>
+          `;
+          resultBody.appendChild(tr);
+        });
+
+        document.getElementById("testStatus").className = hasAnyWarn ? "warn-badge" : "ok-badge";
+        document.getElementById("testStatus").textContent = hasAnyWarn ? "⚠️ 触发越限告警" : "全部指标正常";
+      } else {
+        const json = JSON.parse(payload);
+        currentFields.forEach(f => {
+          const val = json[f.id] !== undefined ? json[f.id] : "-";
+          const isWarn = f.warnMax != null && val > f.warnMax;
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td>${f.name}</td>
+            <td class="val-cell">${val} ${f.unit}</td>
+            <td>${isWarn ? '<span class="warn-badge">⚠️ 超限</span>' : '<span class="ok-badge">正常</span>'}</td>
+          `;
+          resultBody.appendChild(tr);
+        });
+      }
+    } catch (e) {
+      resultBody.innerHTML = `<tr><td colspan="3" style="color: var(--danger); padding: 10px;">解析失败: ${e.message}</td></tr>`;
+      document.getElementById("testStatus").className = "warn-badge";
+      document.getElementById("testStatus").textContent = "解析失败";
+    }
+  }
+
+  function exportJson() {
+    const obj = getProtocolObject();
+    const str = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(obj, null, 2));
+    const a = document.createElement("a");
+    a.setAttribute("href", str);
+    a.setAttribute("download", (obj.name || "protocol") + ".tsl.json");
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
+  function showQrModal() {
+    const modal = document.getElementById("qrcode-modal");
+    const container = document.getElementById("qrcode");
+    container.innerHTML = "";
+    const jsonStr = JSON.stringify(getProtocolObject());
+    new QRCode(container, {
+      text: jsonStr,
+      width: 240,
+      height: 240,
+      correctLevel: QRCode.CorrectLevel.M
+    });
+    modal.style.display = "flex";
+  }
+
+  function closeQrModal() {
+    document.getElementById("qrcode-modal").style.display = "none";
+  }
+
+  // 初始化
+  loadTemplate('vital');
+</script>
+
+</body>
+</html>

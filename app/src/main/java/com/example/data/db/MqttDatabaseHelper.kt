@@ -12,6 +12,7 @@ import com.example.model.MqttLogPacket
 import com.example.model.ProtocolKnowledge
 import com.example.model.PublishPreset
 import com.example.model.SubscriptionItem
+import com.example.model.TslProtocol
 
 /**
  * Production-grade SQLite database helper for MQTT Assistant.
@@ -30,7 +31,7 @@ class MqttDatabaseHelper(context: Context) : SQLiteOpenHelper(
 
     companion object {
         const val DATABASE_NAME = "mqtt_assistant.db"
-        const val DATABASE_VERSION = 3
+        const val DATABASE_VERSION = 4
 
         // Tables
         private const val TABLE_BROKERS = "tbl_broker_profiles"
@@ -39,6 +40,7 @@ class MqttDatabaseHelper(context: Context) : SQLiteOpenHelper(
         private const val TABLE_PACKETS = "tbl_mqtt_packets"
         private const val TABLE_SETTINGS = "tbl_app_settings"
         private const val TABLE_PROTOCOLS = "tbl_protocol_knowledge"
+        private const val TABLE_TSL_PROTOCOLS = "tbl_tsl_protocols"
         private const val TABLE_AI_SESSIONS = "tbl_ai_sessions"
         private const val TABLE_AI_MESSAGES = "tbl_ai_messages"
     }
@@ -176,6 +178,22 @@ class MqttDatabaseHelper(context: Context) : SQLiteOpenHelper(
             )
             """.trimIndent()
         )
+
+        // 9. TSL 物模型协议库表 (声明式协议解析规则)
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS $TABLE_TSL_PROTOCOLS (
+                id TEXT PRIMARY KEY,
+                name TEXT,
+                format TEXT,
+                matchTopic TEXT,
+                fieldsJson TEXT,
+                builtin INTEGER,
+                enabled INTEGER,
+                created_at INTEGER
+            )
+            """.trimIndent()
+        )
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -193,6 +211,22 @@ class MqttDatabaseHelper(context: Context) : SQLiteOpenHelper(
             try {
                 db.execSQL("ALTER TABLE $TABLE_AI_MESSAGES ADD COLUMN sessionId TEXT DEFAULT 'default'")
             } catch (_: Exception) {}
+        }
+        if (oldVersion < 4) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS $TABLE_TSL_PROTOCOLS (
+                    id TEXT PRIMARY KEY,
+                    name TEXT,
+                    format TEXT,
+                    matchTopic TEXT,
+                    fieldsJson TEXT,
+                    builtin INTEGER,
+                    enabled INTEGER,
+                    created_at INTEGER
+                )
+                """.trimIndent()
+            )
         }
         try {
             db.execSQL("CREATE INDEX IF NOT EXISTS idx_packet_topic ON $TABLE_PACKETS(topic)")
@@ -873,5 +907,129 @@ class MqttDatabaseHelper(context: Context) : SQLiteOpenHelper(
         } else {
             db.delete(TABLE_AI_MESSAGES, null, null)
         }
+    }
+
+    // =========================================================================
+    // TSL 物模型协议库 CRUD
+    // =========================================================================
+
+    /**
+     * 保存或更新一条 TSL 协议（使用 JSON 序列化 fields 列表）
+     */
+    fun saveTslProtocol(protocol: TslProtocol) {
+        val db = writableDatabase
+        val fieldsJson = org.json.JSONArray().apply {
+            for (f in protocol.fields) put(f.toJson())
+        }.toString()
+
+        val cv = ContentValues().apply {
+            put("id", protocol.id)
+            put("name", protocol.name)
+            put("format", protocol.format.name)
+            put("matchTopic", protocol.matchTopic)
+            put("fieldsJson", fieldsJson)
+            put("builtin", if (protocol.builtin) 1 else 0)
+            put("enabled", if (protocol.enabled) 1 else 0)
+            put("created_at", protocol.createdAt)
+        }
+        db.insertWithOnConflict(TABLE_TSL_PROTOCOLS, null, cv, SQLiteDatabase.CONFLICT_REPLACE)
+    }
+
+    /**
+     * 批量保存 TSL 协议（事务化，用于首次初始化内置模板）
+     */
+    fun saveTslProtocols(protocols: List<TslProtocol>) {
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            for (protocol in protocols) {
+                saveTslProtocol(protocol)
+            }
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    /**
+     * 加载所有 TSL 协议（优先返回启用的，按创建时间倒序）
+     */
+    fun loadAllTslProtocols(): List<TslProtocol> {
+        val db = readableDatabase
+        val list = mutableListOf<TslProtocol>()
+        val cursor = db.query(
+            TABLE_TSL_PROTOCOLS,
+            null, null, null, null, null,
+            "enabled DESC, created_at DESC"
+        )
+        cursor.use { c ->
+            while (c.moveToNext()) {
+                try {
+                    val fieldsJsonStr = c.getString(c.getColumnIndexOrThrow("fieldsJson"))
+                    val fieldsArray = org.json.JSONArray(fieldsJsonStr)
+                    val fields = (0 until fieldsArray.length()).map { i ->
+                        com.example.model.TslField.fromJson(fieldsArray.getJSONObject(i))
+                    }
+                    list.add(
+                        TslProtocol(
+                            id = c.getString(c.getColumnIndexOrThrow("id")),
+                            name = c.getString(c.getColumnIndexOrThrow("name")),
+                            format = try {
+                                com.example.model.TslFormat.valueOf(
+                                    c.getString(c.getColumnIndexOrThrow("format")).uppercase()
+                                )
+                            } catch (_: Exception) { com.example.model.TslFormat.HEX },
+                            matchTopic = c.getString(c.getColumnIndexOrThrow("matchTopic")),
+                            fields = fields,
+                            builtin = c.getInt(c.getColumnIndexOrThrow("builtin")) == 1,
+                            enabled = c.getInt(c.getColumnIndexOrThrow("enabled")) == 1,
+                            createdAt = c.getLong(c.getColumnIndexOrThrow("created_at"))
+                        )
+                    )
+                } catch (e: Exception) {
+                    android.util.Log.w("MqttDBHelper", "加载 TSL 协议异常: ${e.message}")
+                }
+            }
+        }
+        return list
+    }
+
+    /**
+     * 仅加载已启用的 TSL 协议（用于实时解析引擎热路径）
+     */
+    fun loadEnabledTslProtocols(): List<TslProtocol> {
+        return loadAllTslProtocols().filter { it.enabled }
+    }
+
+    /**
+     * 切换 TSL 协议启用/禁用
+     */
+    fun toggleTslProtocolEnabled(id: String, enabled: Boolean) {
+        val db = writableDatabase
+        val cv = ContentValues().apply { put("enabled", if (enabled) 1 else 0) }
+        db.update(TABLE_TSL_PROTOCOLS, cv, "id = ?", arrayOf(id))
+    }
+
+    /**
+     * 删除指定 TSL 协议
+     */
+    fun deleteTslProtocol(id: String) {
+        writableDatabase.delete(TABLE_TSL_PROTOCOLS, "id = ?", arrayOf(id))
+    }
+
+    /**
+     * 检查是否已存在指定 ID 的 TSL 协议
+     */
+    fun hasTslProtocol(id: String): Boolean {
+        val db = readableDatabase
+        val cursor = db.query(
+            TABLE_TSL_PROTOCOLS,
+            arrayOf("id"),
+            "id = ?",
+            arrayOf(id),
+            null, null, null
+        )
+        val exists = cursor.use { it.moveToFirst() }
+        return exists
     }
 }
