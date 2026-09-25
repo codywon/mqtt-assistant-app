@@ -18,18 +18,22 @@
       --text-muted: #64748B;
       --danger: #EF4444;
       --success: #10B981;
+      --ai-purple: #7C3AED;
+      --ai-purple-hover: #6D28D9;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
     body { background: var(--bg); color: var(--text-main); line-height: 1.5; padding: 20px; }
-    .container { max-width: 1300px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+    .container { max-width: 1350px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
     header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
     h1 { font-size: 20px; font-weight: 700; color: var(--primary); display: flex; align-items: center; gap: 8px; }
     .badge { background: #E0E7FF; color: #4338CA; font-size: 12px; padding: 2px 8px; border-radius: 12px; font-weight: 600; }
-    .toolbar { display: flex; gap: 10px; }
+    .toolbar { display: flex; gap: 10px; flex-wrap: wrap; }
     button { background: var(--surface); border: 1px solid var(--border); padding: 8px 14px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s; }
     button:hover { background: #F1F5F9; border-color: #CBD5E1; }
     button.primary { background: var(--accent); color: white; border-color: var(--accent); }
     button.primary:hover { background: var(--accent-hover); }
+    button.ai-btn { background: var(--ai-purple); color: white; border-color: var(--ai-purple); display: flex; align-items: center; gap: 6px; }
+    button.ai-btn:hover { background: var(--ai-purple-hover); }
     button.danger { color: var(--danger); }
     button.danger:hover { background: #FEF2F2; }
 
@@ -57,9 +61,17 @@
     .warn-badge { background: #FEE2E2; color: #DC2626; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 700; }
     .ok-badge { background: #DCFCE7; color: #16A34A; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 700; }
 
-    #qrcode-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); justify-content: center; align-items: center; z-index: 100; }
-    .modal-content { background: white; padding: 24px; border-radius: 12px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 14px; max-width: 360px; box-shadow: 0 10px 25px rgba(0,0,0,0.15); }
-    #qrcode { padding: 12px; background: white; border: 1px solid var(--border); border-radius: 8px; }
+    /* 弹窗通用样式 */
+    .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); justify-content: center; align-items: center; z-index: 100; padding: 20px; }
+    .modal-card { background: white; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); width: 100%; max-width: 820px; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; }
+    .modal-header { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+    .modal-header h3 { font-size: 16px; font-weight: 700; color: var(--primary); }
+    .modal-body { padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }
+    .modal-footer { padding: 12px 20px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 10px; background: #F8FAFC; }
+
+    .step-box { background: #F1F5F9; border-left: 4px solid var(--accent); padding: 10px 14px; border-radius: 0 6px 6px 0; font-size: 13px; }
+    .prompt-container { background: #1E293B; color: #F8FAFC; padding: 12px; border-radius: 6px; font-size: 12px; font-family: monospace; white-space: pre-wrap; max-height: 220px; overflow-y: auto; line-height: 1.4; border: 1px solid #334155; }
+    #qrcode { padding: 12px; background: white; border: 1px solid var(--border); border-radius: 8px; margin: 0 auto; }
   </style>
 </head>
 <body>
@@ -68,13 +80,14 @@
   <header>
     <h1>
       <span>⚡ TSL 物模型可视化工作室</span>
-      <span class="badge">PC 极速免装版</span>
+      <span class="badge">免安装 · 离线脱网可用</span>
     </h1>
     <div class="toolbar">
-      <button onclick="loadTemplate('vital')">🏥 体征采集模板</button>
+      <button class="ai-btn" onclick="openAiModal()">🤖 AI 逆向助手 (Kimi/Gemini 等)</button>
+      <button onclick="loadTemplate('vital')">🏥 体征模板</button>
       <button onclick="loadTemplate('modbus')">🏭 Modbus 模板</button>
-      <button onclick="loadTemplate('json')">🌐 JSON 遥测模板</button>
-      <button class="primary" onclick="showQrModal()">📱 生成扫码导入二维码</button>
+      <button onclick="loadTemplate('json')">🌐 JSON 模板</button>
+      <button class="primary" onclick="showQrModal()">📱 手机扫码导入</button>
       <button class="primary" onclick="exportJson()">💾 导出 .tsl.json</button>
     </div>
   </header>
@@ -165,13 +178,103 @@
   </div>
 </div>
 
-<!-- 扫码导入弹窗 -->
-<div id="qrcode-modal" onclick="closeQrModal(event)">
-  <div class="modal-content" onclick="event.stopPropagation()">
-    <h3 style="font-size: 16px; font-weight: 700;">手机 App 扫码一键导入</h3>
-    <p style="font-size: 12.5px; color: var(--text-muted);">打开手机端「MQTT 助手」协议管理，点击右上角「扫一扫」即可将此协议瞬间同步入库。</p>
-    <div id="qrcode"></div>
-    <button class="primary" style="width: 100%; margin-top: 8px;" onclick="closeQrModal()">完成关闭</button>
+<!-- 1. AI 逆向助手弹窗 (无缝对接 Kimi / Gemini / DeepSeek / ChatGPT) -->
+<div id="ai-modal" class="modal-overlay" onclick="closeAiModal(event)">
+  <div class="modal-card" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <h3 style="display: flex; align-items: center; gap: 8px;">
+        <span>🤖 AI 协议文档逆向助手</span>
+        <span class="badge" style="background: #F3E8FF; color: #7C3AED;">无需任何配置 · 0 依赖</span>
+      </h3>
+      <button style="border: none; font-size: 18px; padding: 4px 8px;" onclick="closeAiModal()">×</button>
+    </div>
+
+    <div class="modal-body">
+      <div class="step-box">
+        <strong>极简四步流：</strong><br>
+        1. 点击下方【复制逆向标准 Prompt】；<br>
+        2. 打开您正在使用的 <strong>Kimi / Gemini / DeepSeek / ChatGPT</strong> 网页或 App，直接把几万字的《通信协议手册.pdf/Word》拖进去，并粘贴这段提示词；<br>
+        3. 复制大模型吐出的 JSON 代码块；<br>
+        4. 粘贴到下方【一键载入】框中，所有字段、偏移量与告警阈值瞬间填好！
+      </div>
+
+      <div class="form-group">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+          <label style="font-weight: 700; color: var(--primary);">① 针对长文档优化的大模型逆向 Prompt</label>
+          <button class="primary" style="padding: 4px 10px; font-size: 12px;" onclick="copyPrompt()">📋 一键复制提示词</button>
+        </div>
+        <div class="prompt-container" id="promptText"># Role
+你是一个资深工业物联网 (IIoT) 协议逆向与物模型建模专家。你的任务是阅读用户提供的硬件通信协议说明文档（或图片、表格、报文样例），将其精确逆向转换为符合「MQTT Assistant TSL 规范」的标准 JSON。
+
+## 一、 输出数据结构规范 (Strict Schema)
+必须严格输出纯 JSON，顶层结构如下：
+{
+  "protocolId": "proto_自定义英文唯一标识",
+  "name": "协议的人类可读中文名称",
+  "format": "HEX", // 可选: "HEX" (二进制字节流) 或 "JSON" (文本键值)
+  "matchTopic": "匹配的主题通配符，如 factory/+/sensor 或 hospital/+/vital",
+  "fields": [
+    {
+      "identifier": "英文小驼峰或下划线标识符，如 heart_rate, temperature",
+      "name": "指标中文名称，如 心率, 电机温度",
+      "offset": 0, // 【核心】HEX 模式下该字段在字节流中的起始索引 (从 0 开始计数！)
+      "length": 1, // 该字段所占字节数
+      "type": "uint8", // 数据类型，见下方列表
+      "scale": 1.0, // 缩放系数。若文档写“分辨率0.1”或“乘以10上报”，则 scale 填 0.1
+      "precision": 1, // 保留小数位数 (整数填 0，一位小数填 1)
+      "unit": "物理单位，如 ℃, %, V, A, mmHg, bpm，无单位留空",
+      "warnMin": null, // 正常工作范围下限，超出将触发告警。无告警填 null
+      "warnMax": null  // 正常工作范围上限，超出将触发告警。无告警填 null
+    }
+  ],
+  "builtin": false,
+  "enabled": true
+}
+
+## 二、 字段类型 (type) 强制约束表
+只能使用以下枚举：
+- 1 字节整数: uint8 (无符号), int8 (有符号)
+- 2 字节整数: uint16_be (大端无符号), uint16_le (小端无符号), int16_be (大端有符号，如负温), int16_le (小端有符号)
+- 4 字节整数: uint32_be (大端无符号), uint32_le (小端无符号), int32_be, int32_le
+- 浮点数: float32_be (单精度大端), float32_le (小端)
+- 文本与特殊: ascii (定长字符串), bcd (BCD 码，如电表抄表值)
+- JSON 模式专用: json_number (数值), json_string (文本)
+
+## 三、 逆向推导铁律
+1. 偏移量 0 起始对齐：说明书中的第 1 字节在 JSON 中 offset 必须填 0！第 4 字节 offset 填 3！
+2. 字节序识别：工业国标与未注明时默认 _be (大端)；低位在前填 _le (小端)。
+3. 负数与符号位：温度、有功功率等可能为负值的指标，必须选用有符号类型 (int16_be)。
+4. 校验码与字头过滤：帧头与 CRC 校验位不需要定义为采集指标。
+
+请根据我发送的通信协议文档/图片内容，直接输出上述标准 JSON，不要输出任何多余废话。</div>
+      </div>
+
+      <div class="form-group">
+        <label style="font-weight: 700; color: var(--primary);">② 粘贴 AI 输出的 JSON 代码块</label>
+        <textarea id="aiJsonInput" rows="5" placeholder="把 Kimi / Gemini / DeepSeek 吐出的 JSON 粘贴到这里..."></textarea>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button onclick="closeAiModal()">取消</button>
+      <button class="primary" onclick="importAiJson()">🚀 一键载入到工作台</button>
+    </div>
+  </div>
+</div>
+
+<!-- 2. 扫码导入弹窗 -->
+<div id="qrcode-modal" class="modal-overlay" onclick="closeQrModal(event)">
+  <div class="modal-card" style="max-width: 380px; text-align: center;" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <h3 style="width: 100%;">手机 App 扫码一键导入</h3>
+    </div>
+    <div class="modal-body" style="align-items: center;">
+      <p style="font-size: 12.5px; color: var(--text-muted);">打开手机端「MQTT 助手」协议管理，点击右上角「扫一扫」即可将此协议瞬间同步入库。</p>
+      <div id="qrcode"></div>
+    </div>
+    <div class="modal-footer" style="justify-content: center;">
+      <button class="primary" style="width: 100%;" onclick="closeQrModal()">完成关闭</button>
+    </div>
   </div>
 </div>
 
@@ -400,8 +503,8 @@
     const jsonStr = JSON.stringify(getProtocolObject());
     new QRCode(container, {
       text: jsonStr,
-      width: 240,
-      height: 240,
+      width: 220,
+      height: 220,
       correctLevel: QRCode.CorrectLevel.M
     });
     modal.style.display = "flex";
@@ -409,6 +512,67 @@
 
   function closeQrModal() {
     document.getElementById("qrcode-modal").style.display = "none";
+  }
+
+  // AI 逆向助手弹窗控制
+  function openAiModal() {
+    document.getElementById("ai-modal").style.display = "flex";
+  }
+
+  function closeAiModal(e) {
+    if (e && e.target !== document.getElementById("ai-modal")) return;
+    document.getElementById("ai-modal").style.display = "none";
+  }
+
+  function copyPrompt() {
+    const text = document.getElementById("promptText").textContent;
+    navigator.clipboard.writeText(text).then(() => {
+      alert("✅ 标准 Prompt 已成功复制到剪贴板！\n\n请直接打开 Kimi / Gemini / DeepSeek 网页或客户端，粘贴提示词并拖入您的协议手册即可。");
+    }).catch(err => {
+      alert("复制失败，请手动全选复制。");
+    });
+  }
+
+  function importAiJson() {
+    const val = document.getElementById("aiJsonInput").value.trim();
+    if (!val) {
+      alert("请先粘贴 AI 输出的 JSON 内容");
+      return;
+    }
+    try {
+      // 兼容某些大模型可能包裹了 ```json ... ```
+      let cleaned = val;
+      if (cleaned.startsWith("```")) {
+        cleaned = cleaned.replace(/^```[a-z]*\n?/i, "").replace(/\n?```$/i, "").trim();
+      }
+      const obj = JSON.parse(cleaned);
+      if (!obj.fields || !Array.isArray(obj.fields)) {
+        throw new Error("JSON 格式不符：缺少 fields 字段列表");
+      }
+
+      document.getElementById("protoName").value = obj.name || "AI 导入协议";
+      document.getElementById("protoFormat").value = obj.format || "HEX";
+      document.getElementById("protoTopic").value = obj.matchTopic || "+/+/vital";
+
+      currentFields = obj.fields.map(f => ({
+        name: f.name || "未命名",
+        id: f.identifier || f.id || "metric",
+        offset: f.offset || 0,
+        length: f.length || 1,
+        type: f.type || "uint8",
+        scale: f.scale !== undefined ? f.scale : 1,
+        unit: f.unit || "",
+        warnMax: f.warnMax !== undefined ? f.warnMax : null
+      }));
+
+      renderFields();
+      document.getElementById("ai-modal").style.display = "none";
+      document.getElementById("aiJsonInput").value = "";
+      alert(`🎉 成功载入协议【${obj.name || "AI 逆向协议"}】，共解析出 ${currentFields.length} 个物理量指标！\n可在右侧贴入 Hex 报文验证解析结果。`);
+      runTest();
+    } catch (e) {
+      alert("解析失败，请确保粘贴的是合规的标准 JSON：\n" + e.message);
+    }
   }
 
   // 初始化
