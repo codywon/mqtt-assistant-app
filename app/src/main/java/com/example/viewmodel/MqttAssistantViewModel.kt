@@ -1254,9 +1254,28 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
     }
 
     fun clearPackets() {
+        com.example.data.MemoryPacketStore.clear()
+        // 彻底排空 Channel 管道中积压或正在并发流入的未处理报文，杜绝下一批次旧数据重新灌回
+        while (incomingPacketChannel.tryReceive().isSuccess) {}
         livePackets.value = emptyList()
         selectedPacket.value = null
-        showToast("已清空实时报文日志")
+        tslParseResults.value = emptyMap()
+        packetSeqCounter.set(0L)
+        viewModelScope.launch(Dispatchers.IO) {
+            storage.clearAllPackets()
+        }
+        refreshStorageStats()
+        if (MqttBackgroundService.isRunning) {
+            val host = serverConfig.value.host
+            val brokerLabel = if (host.isNotBlank()) "${host}:${serverConfig.value.port}" else ""
+            MqttBackgroundService.updateNotification(
+                context = getApplication(),
+                brokerHost = brokerLabel,
+                count = 0L,
+                latestTopic = null
+            )
+        }
+        showToast("已清空实时报文日志与内存缓存")
     }
 
     fun togglePauseRecording() {
@@ -1646,25 +1665,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
     }
 
     fun clearPacketLogs() {
-        com.example.data.MemoryPacketStore.clear()
-        livePackets.value = emptyList()
-        selectedPacket.value = null
-        packetSeqCounter.set(0L)
-        viewModelScope.launch(Dispatchers.IO) {
-            storage.clearAllPackets()
-        }
-        refreshStorageStats()
-        if (MqttBackgroundService.isRunning) {
-            val host = serverConfig.value.host
-            val brokerLabel = if (host.isNotBlank()) "${host}:${serverConfig.value.port}" else ""
-            MqttBackgroundService.updateNotification(
-                context = getApplication(),
-                brokerHost = brokerLabel,
-                count = 0L,
-                latestTopic = null
-            )
-        }
-        showToast("本地内存报文缓存已清空")
+        clearPackets()
     }
 
     fun clearAllData() {
