@@ -937,9 +937,9 @@ private fun AiEmptyWelcomeView(
                 )
                 SuggestionCard(
                     tag = "异常巡检",
-                    title = "现场体征排查",
-                    desc = "排查心跳失联与告警",
-                    prompt = "基于内存实时流与本地私有协议库，全面排查各网关与设备的心跳失联、报错报文与异常体征数据",
+                    title = "现场工况与告警排查",
+                    desc = "排查心跳失联与越限告警",
+                    prompt = "基于内存实时流与协议解析库，全面排查各网关与设备（如断路器、电表、传感器）的心跳失联、报错报文与参数越限告警",
                     modifier = Modifier.weight(1f),
                     onClick = onPillClick
                 )

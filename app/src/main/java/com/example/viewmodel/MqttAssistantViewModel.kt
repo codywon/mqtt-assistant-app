@@ -2510,23 +2510,27 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 continue
             }
 
-            // 2. 辅助兜底：通信链路层故障或包含明确错误标志的报文
-            val isAnomaly = p.category.equals("ERROR", ignoreCase = true) ||
-                errorKeywords.any { kw -> p.payload.contains(kw, ignoreCase = true) || p.topic.contains(kw, ignoreCase = true) }
-            if (isAnomaly) {
-                val reason = when {
-                    p.payload.contains("alarm", ignoreCase = true) -> "设备上报故障标志 (alarm)"
-                    p.payload.contains("error", ignoreCase = true) -> "报文携带错误标识 (error)"
-                    p.payload.contains("fault", ignoreCase = true) -> "硬件故障状态 (fault)"
-                    p.payload.contains("crc", ignoreCase = true) -> "CRC 校验失败特征"
-                    p.category.equals("ERROR", ignoreCase = true) -> "链路标记异常分类"
-                    else -> "通信链路异常"
-                }
+            // 2. 辅助兜底：智能工业故障与异常检测（杜绝 "alarm": 0 / false 等正常遥测误报）
+            if (p.category.equals("ERROR", ignoreCase = true)) {
                 anomalies.add(
                     WatchdogAnomaly(
                         id = p.id,
                         topic = p.topic,
-                        reason = reason,
+                        reason = "链路通信标记异常 (ERROR)",
+                        timestamp = p.timestamp,
+                        rawPacket = p
+                    )
+                )
+                continue
+            }
+
+            val (isError, errorReason) = isIndustrialPayloadError(p.payload)
+            if (isError) {
+                anomalies.add(
+                    WatchdogAnomaly(
+                        id = p.id,
+                        topic = p.topic,
+                        reason = errorReason,
                         timestamp = p.timestamp,
                         rawPacket = p
                     )
@@ -2542,6 +2546,61 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
             anomalies = anomalies.take(15),
             isHealthy = anomalies.isEmpty()
         )
+    }
+
+    /**
+     * 智能工业故障与异常载荷检测（精确辨识 "alarm": 0 / false 等常规零故障遥测，杜绝工业断路器/电表误报）
+     */
+    private fun isIndustrialPayloadError(payload: String): Pair<Boolean, String> {
+        val trimmed = payload.trim()
+        if (trimmed.isBlank()) return false to ""
+
+        // 1. JSON 格式深度探测：解析真实数值，严格排除 0、false、"none"、"normal"
+        if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+            try {
+                val json = org.json.JSONObject(trimmed)
+                // 检查断路器跳闸报警 (trip)
+                if (json.has("trip")) {
+                    val tVal = json.opt("trip")
+                    if (tVal is Boolean && tVal) return true to "断路器跳闸动作报警 (trip=true)"
+                    if (tVal is Number && tVal.toInt() > 0) return true to "断路器跳闸动作报警 (trip=${tVal})"
+                }
+                // 检查告警标志 (alarm)
+                if (json.has("alarm")) {
+                    val aVal = json.opt("alarm")
+                    if (aVal is Number && aVal.toInt() > 0) return true to "设备上报主动告警 (alarm=${aVal})"
+                    if (aVal is Boolean && aVal) return true to "设备上报告警标志 (alarm=true)"
+                    if (aVal is String && aVal.isNotBlank() && !aVal.equals("0", true) && !aVal.equals("none", true) && !aVal.equals("normal", true) && !aVal.equals("false", true) && !aVal.equals("ok", true)) {
+                        return true to "设备上报告警状态: $aVal"
+                    }
+                }
+                // 检查故障标志 (fault)
+                if (json.has("fault")) {
+                    val fVal = json.opt("fault")
+                    if (fVal is Number && fVal.toInt() > 0) return true to "硬件故障代码 (fault=${fVal})"
+                    if (fVal is Boolean && fVal) return true to "硬件故障标志 (fault=true)"
+                }
+                if (json.has("error_code")) {
+                    val eVal = json.opt("error_code")
+                    if (eVal is Number && eVal.toInt() > 0) return true to "错误代码 (error_code=${eVal})"
+                }
+                // 能被标准 JSON 解析且没有任何非零告警位，说明是一切正常的遥测数据（如断路器常规电压电流）！
+                return false to ""
+            } catch (_: Exception) {
+                // 非合法 JSON，继续进行文本特征探测
+            }
+        }
+
+        // 2. 文本特征探测
+        val lower = trimmed.lowercase()
+        return when {
+            lower.contains("crc_err") || lower.contains("crc error") -> true to "CRC 校验失败特征"
+            lower.contains("\"status\":\"error\"") || lower.contains("\"status\":\"fault\"") -> true to "设备状态报错"
+            lower.contains("trip:true") || lower.contains("trip: true") -> true to "断路器跳闸报警"
+            lower.contains("offline") -> true to "设备上报离线状态"
+            lower.contains("timeout") -> true to "通信超时标志"
+            else -> false to ""
+        }
     }
 
     // --- 场景 1: 单条报文 AI 结构化透视与逆向反推 ---
