@@ -534,26 +534,34 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
             val seqNumber = packetSeqCounter.incrementAndGet()
             val seq = "#%04d".format(seqNumber)
 
-            val matchingSub = subscriptions.value.firstOrNull { sub ->
-                sub.isEnabled && MqttTopicUtil.matchesMqttTopic(sub.topic, topic)
+            val matchingSubs = subscriptions.value.filter { sub ->
+                sub.isEnabled && MqttTopicUtil.matchesMqttTopic(sub.topic.trim(), topic.trim())
             }
+            val matchingSub = matchingSubs.firstOrNull()
 
             // MQTT Retain Handling 策略智能过滤 (在客户端实现 MQTT 5.0 保留消息过滤规范)
-            if (retain && matchingSub != null) {
-                when (matchingSub.retainHandling) {
-                    2 -> {
-                        // 策略 2: 不发送/不接收保留消息 (直接过滤丢弃历史保留消息，避免历史数据刷屏)
-                        return@onMessage
-                    }
-                    1 -> {
-                        // 策略 1: 仅初次发送 (每个订阅仅允许放行首条历史保留消息，后续过滤)
-                        if (receivedInitialRetainSubIds.contains(matchingSub.id)) {
+            if (retain) {
+                // 只要命中任何一个明确配置了 "2: 不发保留" 的订阅，均优先予以丢弃过滤
+                if (matchingSubs.any { it.retainHandling == 2 }) {
+                    return@onMessage
+                }
+
+                if (matchingSub != null) {
+                    when (matchingSub.retainHandling) {
+                        2 -> {
+                            // 策略 2: 不发送/不接收保留消息 (直接过滤丢弃历史保留消息，避免历史数据刷屏)
                             return@onMessage
                         }
-                        receivedInitialRetainSubIds.add(matchingSub.id)
-                    }
-                    0 -> {
-                        // 策略 0: 建立时发送保留消息 (全量接收放行)
+                        1 -> {
+                            // 策略 1: 仅初次发送 (每个订阅仅允许放行首条历史保留消息，后续过滤)
+                            if (receivedInitialRetainSubIds.contains(matchingSub.id)) {
+                                return@onMessage
+                            }
+                            receivedInitialRetainSubIds.add(matchingSub.id)
+                        }
+                        0 -> {
+                            // 策略 0: 建立时发送保留消息 (全量接收放行)
+                        }
                     }
                 }
             }

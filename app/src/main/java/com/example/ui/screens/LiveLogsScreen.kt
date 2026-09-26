@@ -1126,7 +1126,6 @@ private fun MessageDetailsModalDialog(
 
                             // 逐个物理量网格/列表呈现 (点击支持原位微交互复制)
                             tslResult.values.forEach { v ->
-                                val isThisMetricCopied = copiedMetricKey == v.name
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
