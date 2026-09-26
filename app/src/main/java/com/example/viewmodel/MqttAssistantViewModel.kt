@@ -523,7 +523,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
     }
 
     private fun setupMqttCallbacks() {
-        MqttClientManager.onMessageReceived = { topic, qos, payloadBytes, retain ->
+        MqttClientManager.onMessageReceived = onMessage@ { topic, qos, payloadBytes, retain ->
             val timeStr = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date())
             val payloadString = try {
                 String(payloadBytes, Charsets.UTF_8)
@@ -542,12 +542,12 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 when (matchingSub.retainHandling) {
                     2 -> {
                         // 策略 2: 不发送/不接收保留消息 (直接过滤丢弃历史保留消息，避免历史数据刷屏)
-                        return@onMessageReceived
+                        return@onMessage
                     }
                     1 -> {
                         // 策略 1: 仅初次发送 (每个订阅仅允许放行首条历史保留消息，后续过滤)
                         if (receivedInitialRetainSubIds.contains(matchingSub.id)) {
-                            return@onMessageReceived
+                            return@onMessage
                         }
                         receivedInitialRetainSubIds.add(matchingSub.id)
                     }
