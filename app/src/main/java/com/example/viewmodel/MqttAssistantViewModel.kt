@@ -2647,7 +2647,10 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
             }
 
             val matchedProtocols = protocolKnowledgeList.value.filter {
-                it.topicFilter.isNotBlank() && packet.topic.contains(it.topicFilter, ignoreCase = true)
+                it.topicFilter.isNotBlank() && (
+                    MqttTopicUtil.matchesMqttTopic(it.topicFilter, packet.topic) ||
+                    packet.topic.contains(it.topicFilter, ignoreCase = true)
+                )
             }
             val protocolContext = if (matchedProtocols.isNotEmpty()) {
                 "【本地已命中私有协议规则】:\n" + matchedProtocols.joinToString("\n---\n") {
