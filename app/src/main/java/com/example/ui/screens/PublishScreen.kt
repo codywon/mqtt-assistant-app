@@ -619,7 +619,7 @@ private fun PublishConfigModalDialog(
                                 modifier = Modifier.size(28.dp)
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.DeleteOutline,
+                                    imageVector = Icons.Default.Delete,
                                     contentDescription = "删除配置",
                                     tint = Color(0xFFDC2626),
                                     modifier = Modifier.size(18.dp)
