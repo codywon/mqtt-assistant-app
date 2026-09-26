@@ -3,6 +3,7 @@ package com.example.ui.screens
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -30,6 +31,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.BorderStroke
@@ -38,6 +40,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
@@ -465,14 +468,17 @@ fun LiveLogsScreen(
             },
             onCopyTopic = {
                 clipboardManager.setPrimaryClip(ClipData.newPlainText("topic", packet.topic))
+                Toast.makeText(context, "已复制主题: ${packet.topic}", Toast.LENGTH_SHORT).show()
                 viewModel.showToast("已复制主题: ${packet.topic}")
             },
             onCopyPayload = {
                 clipboardManager.setPrimaryClip(ClipData.newPlainText("payload", packet.payload))
+                Toast.makeText(context, "已复制消息内容", Toast.LENGTH_SHORT).show()
                 viewModel.showToast("已复制消息内容")
             },
             onCopyValue = { value ->
                 clipboardManager.setPrimaryClip(ClipData.newPlainText("value", value))
+                Toast.makeText(context, "已复制: $value", Toast.LENGTH_SHORT).show()
                 viewModel.showToast("已复制: $value")
             },
             onLoadIntoPublish = {
@@ -857,6 +863,55 @@ private fun MessageDetailsModalDialog(
     // 弹窗内部默认开启 JSON 格式化排版高亮，支持一键切换原始文本
     var isFormatPretty by remember { mutableStateOf(true) }
     val maxDialogHeight = (LocalConfiguration.current.screenHeightDp * 0.85f).dp
+
+    // 弹窗内微交互反馈状态（彻底解决底层 Snackbar 被 Dialog 遮挡的问题，并提供原地瞬时反馈）
+    var isTopicCopied by remember { mutableStateOf(false) }
+    var isPayloadCopied by remember { mutableStateOf(false) }
+    var copiedMetricKey by remember { mutableStateOf<String?>(null) }
+    var inlineNotice by remember { mutableStateOf<String?>(null) }
+    val coroutineScope = rememberCoroutineScope()
+
+    fun triggerCopyTopic() {
+        onCopyTopic()
+        isTopicCopied = true
+        inlineNotice = "已复制主题至剪贴板"
+        coroutineScope.launch {
+            delay(1800)
+            isTopicCopied = false
+            if (inlineNotice == "已复制主题至剪贴板") {
+                inlineNotice = null
+            }
+        }
+    }
+
+    fun triggerCopyPayload() {
+        onCopyPayload()
+        isPayloadCopied = true
+        inlineNotice = "已复制完整消息内容"
+        coroutineScope.launch {
+            delay(1800)
+            isPayloadCopied = false
+            if (inlineNotice == "已复制完整消息内容") {
+                inlineNotice = null
+            }
+        }
+    }
+
+    fun triggerCopyValue(key: String, fullText: String) {
+        onCopyValue(fullText)
+        copiedMetricKey = key
+        inlineNotice = "已复制: $fullText"
+        coroutineScope.launch {
+            delay(1800)
+            if (copiedMetricKey == key) {
+                copiedMetricKey = null
+            }
+            if (inlineNotice == "已复制: $fullText") {
+                inlineNotice = null
+            }
+        }
+    }
+
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
@@ -882,14 +937,30 @@ private fun MessageDetailsModalDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "消息详情",
-                        style = TextStyle(
-                            fontSize = 17.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = PrimaryBlack
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "消息详情",
+                            style = TextStyle(
+                                fontSize = 17.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = PrimaryBlack
+                            )
                         )
-                    )
+                        if (packet.packetSeq.isNotEmpty()) {
+                            Text(
+                                text = "#${packet.packetSeq}",
+                                style = TextStyle(
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = OnSurfaceVariantGray
+                                )
+                            )
+                        }
+                    }
                     IconButton(
                         onClick = onDismiss,
                         modifier = Modifier.size(28.dp)
@@ -902,9 +973,47 @@ private fun MessageDetailsModalDialog(
                     }
                 }
 
+                // 弹窗内部原位复制成功提示条 (动态展开/收起，解决底层 Snackbar 遮挡痛点)
+                AnimatedVisibility(
+                    visible = inlineNotice != null,
+                    enter = fadeIn() + expandVertically(),
+                    exit = fadeOut() + shrinkVertically()
+                ) {
+                    inlineNotice?.let { notice ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 8.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color(0xFFECFDF5))
+                                .border(0.8.dp, Color(0xFFA7F3D0), RoundedCornerShape(8.dp))
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = null,
+                                tint = Color(0xFF059669),
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = notice,
+                                style = TextStyle(
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color(0xFF065F46)
+                                ),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // 2. 中间滚动区域 (weight(1f, fill = false) 紧凑包裹内容，长消息时才开启内部滚动，底端零冗余留白)
+                // 2. 中间滚动区域 (weight(1f, fill = false) 紧凑包裹内容，长消息时开启内部滚动)
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -912,48 +1021,146 @@ private fun MessageDetailsModalDialog(
                         .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    // Clean Topic Section (支持多行完整换行，整块区域点击直接复制主题)
+                    // 工业级 MQTT 主题卡片：精致层级、原位复制微交互、支持整块轻触复制与自由选中
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(SurfaceContainerLow)
-                            .clickable(onClick = onCopyTopic)
-                            .padding(horizontal = 12.dp, vertical = 10.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (isTopicCopied) Color(0xFFF0FDF4) else Color(0xFFF8FAFC))
+                            .border(
+                                width = 1.dp,
+                                color = if (isTopicCopied) Color(0xFF86EFAC) else Color(0xFFE2E8F0),
+                                shape = RoundedCornerShape(10.dp)
+                            )
+                            .clickable { triggerCopyTopic() }
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
+                        // 顶部属性条：TOPIC 徽章 + QoS 徽章 + 大小 + 原位复制胶囊按钮
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                text = "主题",
-                                style = TextStyle(
-                                    fontSize = 11.5.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = OnSurfaceVariantGray
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                // MQTT TOPIC 极客黑标
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(Color(0xFF0F172A))
+                                        .padding(horizontal = 6.dp, vertical = 2.5.dp)
+                                ) {
+                                    Text(
+                                        text = "TOPIC",
+                                        style = TextStyle(
+                                            fontFamily = FontFamily.Monospace,
+                                            fontSize = 9.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White
+                                        )
+                                    )
+                                }
+
+                                // QoS 药丸
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(Color(0xFFE2E8F0))
+                                        .padding(horizontal = 5.dp, vertical = 2.5.dp)
+                                ) {
+                                    Text(
+                                        text = "QoS ${packet.qos}",
+                                        style = TextStyle(
+                                            fontFamily = FontFamily.Monospace,
+                                            fontSize = 9.5.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = Color(0xFF475569)
+                                        )
+                                    )
+                                }
+
+                                if (packet.sizeText.isNotEmpty()) {
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .background(Color(0xFFF1F5F9))
+                                            .padding(horizontal = 5.dp, vertical = 2.5.dp)
+                                    ) {
+                                        Text(
+                                            text = packet.sizeText,
+                                            style = TextStyle(
+                                                fontFamily = FontFamily.Monospace,
+                                                fontSize = 9.5.sp,
+                                                fontWeight = FontWeight.Normal,
+                                                color = Color(0xFF64748B)
+                                            )
+                                        )
+                                    }
+                                }
+                            }
+
+                            // 独立原位复制胶囊按钮 (点击瞬间变绿 + 对勾微动效)
+                            Row(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(if (isTopicCopied) Color(0xFFDCFCE7) else Color(0xFFF1F5F9))
+                                    .border(
+                                        width = 0.8.dp,
+                                        color = if (isTopicCopied) Color(0xFF86EFAC) else Color(0xFFCBD5E1),
+                                        shape = RoundedCornerShape(6.dp)
+                                    )
+                                    .clickable { triggerCopyTopic() }
+                                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (isTopicCopied) Icons.Default.Check else Icons.Default.ContentCopy,
+                                    contentDescription = "复制主题",
+                                    tint = if (isTopicCopied) Color(0xFF15803D) else Color(0xFF475569),
+                                    modifier = Modifier.size(12.dp)
                                 )
-                            )
-                            Icon(
-                                imageVector = Icons.Default.ContentCopy,
-                                contentDescription = "复制主题",
-                                tint = OutlineGray,
-                                modifier = Modifier.size(13.dp)
+                                Text(
+                                    text = if (isTopicCopied) "已复制 ✓" else "复制主题",
+                                    style = TextStyle(
+                                        fontSize = 11.sp,
+                                        fontWeight = if (isTopicCopied) FontWeight.Bold else FontWeight.Medium,
+                                        color = if (isTopicCopied) Color(0xFF15803D) else Color(0xFF475569)
+                                    )
+                                )
+                            }
+                        }
+
+                        // 主题内容：Monospace，加粗高对比度，支持完整自然换行与自由选中
+                        SelectionContainer {
+                            Text(
+                                text = packet.topic,
+                                style = TextStyle(
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.5.sp,
+                                    lineHeight = 19.sp,
+                                    color = if (isTopicCopied) Color(0xFF166534) else PrimaryBlack
+                                )
                             )
                         }
 
-                        // 与消息卡片完全一致的多行换行主题呈现，支持任意层级主题
-                        Text(
-                            text = packet.topic,
-                            style = TextStyle(
-                                fontFamily = FontFamily.Monospace,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.5.sp,
-                                lineHeight = 18.sp,
-                                color = PrimaryBlack
+                        // 贴心微提示
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End
+                        ) {
+                            Text(
+                                text = "轻触卡片亦可一键复制",
+                                style = TextStyle(
+                                    fontSize = 10.sp,
+                                    color = Color(0xFF94A3B8)
+                                )
                             )
-                        )
+                        }
                     }
 
                     // TSL 物模型解析指标看板 (如果命中了协议)
@@ -991,14 +1198,16 @@ private fun MessageDetailsModalDialog(
                                 )
                             }
 
-                            // 逐个物理量网格/列表呈现
+                            // 逐个物理量网格/列表呈现 (点击支持原位微交互复制)
                             tslResult.values.forEach { v ->
+                                val isThisMetricCopied = copiedMetricKey == v.name
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .clip(RoundedCornerShape(4.dp))
-                                        .clickable { onCopyValue("${v.name}: ${v.displayValue}") }
-                                        .padding(horizontal = 4.dp, vertical = 3.dp),
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(if (isThisMetricCopied) Color(0xFFDCFCE7).copy(alpha = 0.6f) else Color.Transparent)
+                                        .clickable { triggerCopyValue(v.name, "${v.name}: ${v.displayValue}") }
+                                        .padding(horizontal = 6.dp, vertical = 4.dp),
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
@@ -1019,15 +1228,28 @@ private fun MessageDetailsModalDialog(
                                             )
                                         )
                                     }
-                                    Text(
-                                        text = v.displayValue,
-                                        style = TextStyle(
-                                            fontFamily = FontFamily.Monospace,
-                                            fontSize = 13.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = if (v.isWarning) Color(0xFFDC2626) else PrimaryBlack
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        if (isThisMetricCopied) {
+                                            Text(
+                                                text = "已复制 ✓",
+                                                style = TextStyle(
+                                                    fontSize = 10.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = Color(0xFF15803D)
+                                                )
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                        }
+                                        Text(
+                                            text = v.displayValue,
+                                            style = TextStyle(
+                                                fontFamily = FontFamily.Monospace,
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (v.isWarning) Color(0xFFDC2626) else PrimaryBlack
+                                            )
                                         )
-                                    )
+                                    }
                                 }
                             }
                         }
@@ -1077,19 +1299,36 @@ private fun MessageDetailsModalDialog(
                                 )
                             }
 
-                            TextButton(
-                                onClick = onCopyPayload,
-                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
-                                modifier = Modifier.height(28.dp)
+                            // 独立原位复制消息胶囊按钮
+                            Row(
+                                modifier = Modifier
+                                    .height(28.dp)
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(if (isPayloadCopied) Color(0xFFDCFCE7) else Color(0xFFF1F5F9))
+                                    .border(
+                                        width = 0.8.dp,
+                                        color = if (isPayloadCopied) Color(0xFF86EFAC) else Color(0xFFCBD5E1),
+                                        shape = RoundedCornerShape(6.dp)
+                                    )
+                                    .clickable { triggerCopyPayload() }
+                                    .padding(horizontal = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.ContentCopy,
-                                    contentDescription = null,
-                                    tint = PrimaryBlack,
-                                    modifier = Modifier.size(13.dp)
+                                    imageVector = if (isPayloadCopied) Icons.Default.Check else Icons.Default.ContentCopy,
+                                    contentDescription = "复制消息",
+                                    tint = if (isPayloadCopied) Color(0xFF15803D) else PrimaryBlack,
+                                    modifier = Modifier.size(12.dp)
                                 )
-                                Spacer(modifier = Modifier.width(3.dp))
-                                Text("复制消息", fontSize = 11.5.sp, color = PrimaryBlack, fontWeight = FontWeight.Bold)
+                                Text(
+                                    text = if (isPayloadCopied) "已复制 ✓" else "复制消息",
+                                    style = TextStyle(
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isPayloadCopied) Color(0xFF15803D) else PrimaryBlack
+                                    )
+                                )
                             }
                         }
                     }
@@ -1100,7 +1339,7 @@ private fun MessageDetailsModalDialog(
                         isJsonPretty = isFormatPretty,
                         showLineNumbers = isFormatPretty,
                         maxLines = Int.MAX_VALUE,
-                        onLineClick = onCopyValue,
+                        onLineClick = { lineText -> triggerCopyValue("代码行", lineText) },
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
