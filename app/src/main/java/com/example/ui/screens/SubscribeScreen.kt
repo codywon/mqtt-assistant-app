@@ -889,9 +889,9 @@ private fun SubscriptionConfigModalDialog(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         listOf(
-                            0 to "QoS 0 最多一次",
-                            1 to "QoS 1 至少一次",
-                            2 to "QoS 2 恰好一次"
+                            0 to "QoS 0",
+                            1 to "QoS 1",
+                            2 to "QoS 2"
                         ).forEach { (qVal, qLabel) ->
                             val selected = qos == qVal
                             Box(
@@ -906,7 +906,7 @@ private fun SubscriptionConfigModalDialog(
                                 Text(
                                     text = qLabel,
                                     style = TextStyle(
-                                        fontSize = 11.sp,
+                                        fontSize = 11.5.sp,
                                         fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
                                         color = if (selected) OnPrimaryWhite else OnSurfaceVariantGray,
                                         platformStyle = PlatformTextStyle(includeFontPadding = false)
@@ -917,27 +917,12 @@ private fun SubscriptionConfigModalDialog(
                     }
                 }
 
-                // 4. 保留消息处理机制 (Retain Handling) - 语义化解释与推荐策略
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "保留消息处理 (Retain Handling)",
-                            style = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = OnSurfaceDark)
-                        )
-                        Text(
-                            text = when (retainHandling) {
-                                2 -> "仅接收实时，忽略历史"
-                                0 -> "拉取并接收历史保留"
-                                1 -> "仅初次拉取保留"
-                                else -> ""
-                            },
-                            style = TextStyle(fontSize = 10.5.sp, color = OnSurfaceVariantGray)
-                        )
-                    }
+                // 4. 保留消息处理机制 (Retain Handling)
+                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text(
+                        text = "保留消息处理 (Retain Handling)",
+                        style = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = OnSurfaceDark)
+                    )
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -948,9 +933,9 @@ private fun SubscriptionConfigModalDialog(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         listOf(
-                            2 to "2: 不发保留 (默认)",
-                            0 to "0: 建立时发送",
-                            1 to "1: 仅初次发送"
+                            2 to "2: 不发保留",
+                            0 to "0: 建立时发",
+                            1 to "1: 初次发送"
                         ).forEach { (rVal, rLabel) ->
                             val selected = retainHandling == rVal
                             Box(
@@ -965,7 +950,7 @@ private fun SubscriptionConfigModalDialog(
                                 Text(
                                     text = rLabel,
                                     style = TextStyle(
-                                        fontSize = 10.5.sp,
+                                        fontSize = 11.sp,
                                         fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
                                         color = if (selected) OnPrimaryWhite else OnSurfaceVariantGray,
                                         platformStyle = PlatformTextStyle(includeFontPadding = false)

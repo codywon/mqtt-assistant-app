@@ -598,7 +598,7 @@ private fun PublishConfigModalDialog(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Header
+                // Header: 标题 + (编辑态删除快捷图标) + 关闭按钮
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -612,19 +612,36 @@ private fun PublishConfigModalDialog(
                             color = PrimaryBlack
                         )
                     )
-                    IconButton(
-                        onClick = onDismiss,
-                        modifier = Modifier.size(28.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "关闭",
-                            tint = OutlineGray
-                        )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (!isNew) {
+                            IconButton(
+                                onClick = onDelete,
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.DeleteOutline,
+                                    contentDescription = "删除配置",
+                                    tint = Color(0xFFDC2626),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(4.dp))
+                        }
+                        IconButton(
+                            onClick = onDismiss,
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "关闭",
+                                tint = OutlineGray,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
                     }
                 }
 
-                // Topic Input
+                // 1. 发布主题 (Topic)
                 Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -645,7 +662,7 @@ private fun PublishConfigModalDialog(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(40.dp)
+                            .height(38.dp)
                             .clip(RoundedCornerShape(8.dp))
                             .background(SurfaceContainerLow)
                             .padding(horizontal = 10.dp),
@@ -661,7 +678,16 @@ private fun PublishConfigModalDialog(
                                 color = PrimaryBlack
                             ),
                             singleLine = true,
-                            cursorBrush = SolidColor(PrimaryBlack)
+                            cursorBrush = SolidColor(PrimaryBlack),
+                            decorationBox = { innerTextField ->
+                                if (topic.isEmpty()) {
+                                    Text(
+                                        text = "如：device/control/switch",
+                                        style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = OutlineGray)
+                                    )
+                                }
+                                innerTextField()
+                            }
                         )
                         if (topic.isNotEmpty()) {
                             Icon(
@@ -676,7 +702,7 @@ private fun PublishConfigModalDialog(
                     }
                 }
 
-                // Remark / Name Input
+                // 2. 备注名称
                 Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text(
                         text = "备注名称",
@@ -685,7 +711,7 @@ private fun PublishConfigModalDialog(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(40.dp)
+                            .height(38.dp)
                             .clip(RoundedCornerShape(8.dp))
                             .background(SurfaceContainerLow)
                             .padding(horizontal = 10.dp),
@@ -704,7 +730,7 @@ private fun PublishConfigModalDialog(
                             decorationBox = { innerTextField ->
                                 if (name.isEmpty()) {
                                     Text(
-                                        text = "可选，如：开关控制 / 设备状态上报",
+                                        text = "可选，如：开关控制 / 遥测上报",
                                         style = TextStyle(fontSize = 12.sp, color = OutlineGray)
                                     )
                                 }
@@ -724,15 +750,15 @@ private fun PublishConfigModalDialog(
                     }
                 }
 
-                // QoS & Retain (严格对齐，选中卡绝对上下几何居中)
+                // 3. QoS 与 Retain 对称行
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalAlignment = Alignment.Top
                 ) {
                     // 服务质量 (QoS)
                     Column(
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1.3f),
                         verticalArrangement = Arrangement.spacedBy(3.dp)
                     ) {
                         Text(
@@ -775,11 +801,11 @@ private fun PublishConfigModalDialog(
 
                     // 保留消息 (Retain)
                     Column(
-                        modifier = Modifier.weight(0.55f),
+                        modifier = Modifier.weight(0.9f),
                         verticalArrangement = Arrangement.spacedBy(3.dp)
                     ) {
                         Text(
-                            text = "保留消息 (Retain)",
+                            text = "保留 (Retain)",
                             style = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = OnSurfaceDark)
                         )
                         Row(
@@ -817,25 +843,18 @@ private fun PublishConfigModalDialog(
                     }
                 }
 
-                // Payload Input
+                // 4. 消息载荷 (Payload)
                 Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = "消息载荷",
-                                style = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = OnSurfaceDark)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "(支持 \${timestamp}、\${uuid}、\${random(1,100)})",
-                                style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 9.5.sp, color = OutlineGray)
-                            )
-                        }
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            text = "消息载荷 (Payload)",
+                            style = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = OnSurfaceDark)
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                             TextButton(
                                 onClick = { formatJson() },
                                 contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
@@ -876,36 +895,29 @@ private fun PublishConfigModalDialog(
                                 lineHeight = 18.sp,
                                 color = PrimaryBlack
                             ),
-                            cursorBrush = SolidColor(PrimaryBlack)
+                            cursorBrush = SolidColor(PrimaryBlack),
+                            decorationBox = { innerTextField ->
+                                if (payload.isEmpty()) {
+                                    Text(
+                                        text = "输入消息载荷 (支持 JSON、文本或变量宏)",
+                                        style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = OutlineGray)
+                                    )
+                                }
+                                innerTextField()
+                            }
                         )
                     }
                 }
 
-                // Action Buttons
-                if (!isNew) {
-                    // Row 1: Auxiliary Actions (Delete & Duplicate)
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 2.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        TextButton(
-                            onClick = onDelete,
-                            colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFFDC2626)),
-                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
-                            modifier = Modifier.height(32.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Delete,
-                                contentDescription = null,
-                                modifier = Modifier.size(15.dp)
-                            )
-                            Spacer(modifier = Modifier.width(3.dp))
-                            Text("删除此配置", fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                        }
-
+                // 5. 底部流线型单行操作栏 (极简、规整、无多层堆叠)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (!isNew) {
                         OutlinedButton(
                             onClick = {
                                 val duplicated = initialPreset.copy(
@@ -920,10 +932,10 @@ private fun PublishConfigModalDialog(
                             },
                             enabled = topic.isNotBlank() && (validation?.isValid != false),
                             shape = RoundedCornerShape(8.dp),
-                            border = BorderStroke(0.8.dp, OutlineVariantLight),
+                            border = BorderStroke(0.7.dp, OutlineVariantLight),
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = PrimaryBlack),
-                            modifier = Modifier.height(32.dp),
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                            modifier = Modifier.height(36.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.CopyAll,
@@ -932,37 +944,26 @@ private fun PublishConfigModalDialog(
                                 tint = PrimaryBlack
                             )
                             Spacer(modifier = Modifier.width(3.dp))
-                            Text("另存为新配置", fontSize = 12.sp, color = PrimaryBlack, fontWeight = FontWeight.SemiBold)
+                            Text("另存副本", fontSize = 11.5.sp, color = PrimaryBlack, fontWeight = FontWeight.Medium)
                         }
                     }
-                }
 
-                // Row 2: Core Actions (Cancel, Save, Send)
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = if (!isNew) 4.dp else 6.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
                     OutlinedButton(
                         onClick = onDismiss,
                         shape = RoundedCornerShape(8.dp),
-                        border = BorderStroke(0.8.dp, OutlineVariantLight),
+                        border = BorderStroke(0.7.dp, OutlineVariantLight),
                         modifier = Modifier
                             .weight(1f)
-                            .height(38.dp),
+                            .height(36.dp),
                         contentPadding = PaddingValues(horizontal = 4.dp)
                     ) {
                         Text(
                             text = "取消",
                             style = TextStyle(
-                                fontSize = 12.5.sp,
+                                fontSize = 12.sp,
                                 color = OnSurfaceVariantGray,
                                 fontWeight = FontWeight.Medium
-                            ),
-                            maxLines = 1,
-                            softWrap = false
+                            )
                         )
                     }
 
@@ -986,15 +987,13 @@ private fun PublishConfigModalDialog(
                             disabledContentColor = OutlineGray
                         ),
                         modifier = Modifier
-                            .weight(1.3f)
-                            .height(38.dp),
+                            .weight(1.1f)
+                            .height(36.dp),
                         contentPadding = PaddingValues(horizontal = 4.dp)
                     ) {
                         Text(
-                            text = "保存配置",
-                            style = TextStyle(fontSize = 12.5.sp, fontWeight = FontWeight.Bold),
-                            maxLines = 1,
-                            softWrap = false
+                            text = "保存",
+                            style = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         )
                     }
 
@@ -1018,26 +1017,24 @@ private fun PublishConfigModalDialog(
                             disabledContentColor = OutlineGray
                         ),
                         modifier = Modifier
-                            .weight(1.4f)
-                            .height(38.dp),
+                            .weight(1.3f)
+                            .height(36.dp),
                         contentPadding = PaddingValues(horizontal = 4.dp)
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.Send,
                             contentDescription = null,
                             tint = if (topic.isNotBlank() && (validation?.isValid != false)) OnPrimaryWhite else OutlineGray,
-                            modifier = Modifier.size(13.dp)
+                            modifier = Modifier.size(12.dp)
                         )
                         Spacer(modifier = Modifier.width(3.dp))
                         Text(
-                            text = "一键发送",
+                            text = "立即发送",
                             style = TextStyle(
-                                fontSize = 12.5.sp,
+                                fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = if (topic.isNotBlank() && (validation?.isValid != false)) OnPrimaryWhite else OutlineGray
-                            ),
-                            maxLines = 1,
-                            softWrap = false
+                            )
                         )
                     }
                 }

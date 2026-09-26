@@ -1,6 +1,8 @@
 package com.example.ui.screens
 
+import android.content.Context
 import android.net.Uri
+import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -163,21 +165,24 @@ fun AiChatScreen(
 
     val context = LocalContext.current
 
-    val excelPickerLauncher = rememberLauncherForActivityResult(
+    var attachedFile by remember { mutableStateOf<AttachedFileInfo?>(null) }
+
+    val attachmentPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
         if (uri != null) {
-            viewModel.importExternalExcel(context, uri)
+            val info = getFileInfoFromUri(context, uri)
+            if (info != null) {
+                attachedFile = info
+            }
         }
     }
 
-    val launchExcelPicker = remember {
+    val launchAttachmentPicker = remember {
         {
             try {
-                excelPickerLauncher.launch(
+                attachmentPickerLauncher.launch(
                     arrayOf(
-                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        "application/vnd.ms-excel",
                         "*/*"
                     )
                 )
@@ -186,6 +191,8 @@ fun AiChatScreen(
             }
         }
     }
+
+    val launchExcelPicker = launchAttachmentPicker
     if (showProtocolDialog) {
         AiSettingsDialog(
             initialConfig = aiConfig,
@@ -590,44 +597,6 @@ fun AiChatScreen(
                                 }
                                  HorizontalDivider(color = SurfaceContainerDefault, thickness = 0.5.dp)
                                 DropdownMenuItem(
-                                    text = { Text("📂 导入外部 Excel 日志", fontSize = 13.5.sp, color = PrimaryBlack) },
-                                    leadingIcon = {
-                                        Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(18.dp), tint = PrimaryBlack)
-                                    },
-                                    onClick = {
-                                        showMoreMenu = false
-                                        launchExcelPicker()
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = {
-                                        val hasAccess = viewModel.hasAllFilesAccess(context)
-                                        Text(
-                                            if (hasAccess) "🛡️ 所有文件权限已开启" else "🛡️ 开启所有文件权限",
-                                            fontSize = 13.5.sp,
-                                            color = if (hasAccess) Color(0xFF10B981) else PrimaryBlack
-                                        )
-                                    },
-                                    leadingIcon = {
-                                        val hasAccess = viewModel.hasAllFilesAccess(context)
-                                        Icon(
-                                            Icons.Default.Security,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(18.dp),
-                                            tint = if (hasAccess) Color(0xFF10B981) else PrimaryBlack
-                                        )
-                                    },
-                                    onClick = {
-                                        showMoreMenu = false
-                                        if (viewModel.hasAllFilesAccess(context)) {
-                                            viewModel.showToast("已拥有所有文件访问权限，支持原地免拷贝直读")
-                                        } else {
-                                            showPermissionGuideDialog = true
-                                        }
-                                    }
-                                )
-                                HorizontalDivider(color = SurfaceContainerDefault, thickness = 0.5.dp)
-                                DropdownMenuItem(
                                     text = { Text("生成现场验收报告", fontSize = 13.5.sp, color = PrimaryBlack) },
                                     leadingIcon = {
                                         Icon(Icons.Default.Description, contentDescription = null, modifier = Modifier.size(18.dp), tint = PrimaryBlack)
@@ -670,9 +639,6 @@ fun AiChatScreen(
                         viewModel.sendAiMessage(suggestion)
                     },
                     onOpenSettings = { showSettingsDialog = true },
-                    onImportExcel = launchExcelPicker,
-                    onRequestPermission = { showPermissionGuideDialog = true },
-                    hasAllFilesAccess = viewModel.hasAllFilesAccess(context),
                     isConfigured = aiConfig.apiKey.isNotBlank()
                 )
             } else {
@@ -747,14 +713,84 @@ fun AiChatScreen(
                     }
                 }
 
+                // 附加文件预览胶囊 (ChatGPT / Codex 风格)
+                attachedFile?.let { file ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 6.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(SurfaceContainerLow)
+                            .border(0.6.dp, SurfaceContainerDefault, RoundedCornerShape(10.dp))
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = when (file.extension) {
+                                "pdf" -> Icons.Default.Description
+                                "xlsx", "xls", "csv" -> Icons.Default.FolderOpen
+                                else -> Icons.Default.Description
+                            },
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                            tint = PrimaryBlack
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = file.name,
+                            style = TextStyle(
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = PrimaryBlack
+                            ),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = formatFileSize(file.sizeBytes),
+                            style = TextStyle(
+                                fontSize = 10.sp,
+                                color = OnSurfaceVariantGray,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "移除附件",
+                            tint = OutlineGray,
+                            modifier = Modifier
+                                .size(14.dp)
+                                .clickable { attachedFile = null }
+                        )
+                    }
+                }
+
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(22.dp))
                         .background(SurfaceContainerLow)
-                        .padding(horizontal = 14.dp, vertical = 6.dp),
+                        .padding(horizontal = 6.dp, vertical = 5.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    // ChatGPT / Codex 风格的 [+] 附件按钮
+                    IconButton(
+                        onClick = launchAttachmentPicker,
+                        modifier = Modifier.size(34.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = "添加文件/协议/日志",
+                            tint = PrimaryBlack,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(4.dp))
+
                     BasicTextField(
                         value = inputText,
                         onValueChange = { inputText = it },
@@ -770,28 +806,49 @@ fun AiChatScreen(
                         decorationBox = { innerTextField ->
                             if (inputText.isEmpty()) {
                                 Text(
-                                    text = if (isResponding) "当前回复中，输入可排队追问..." else "询问网关报文、体征异常、Excel趋势...",
-                                    style = TextStyle(fontSize = 13.5.sp, color = OutlineGray)
+                                    text = if (attachedFile != null) {
+                                        "输入对「${attachedFile?.name}」的分析要求..."
+                                    } else if (isResponding) {
+                                        "当前回复中，输入可排队追问..."
+                                    } else {
+                                        "询问网关报文、分析协议或排查异常..."
+                                    },
+                                    style = TextStyle(fontSize = 13.5.sp, color = OutlineGray),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
                             innerTextField()
                         }
                     )
 
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
 
-                    val canSend = inputText.isNotBlank()
+                    val canSend = inputText.isNotBlank() || attachedFile != null
                     if (canSend) {
-                        // 有输入内容时，无论是否正在生成均支持发送（生成中自动进入追问队列）
+                        // 有输入内容或附加文件时支持发送
                         Box(
                             modifier = Modifier
                                 .size(32.dp)
                                 .clip(CircleShape)
                                 .background(PrimaryBlack)
                                 .clickable {
-                                    val toSend = inputText
+                                    val toSend = inputText.trim()
+                                    val currentAttachment = attachedFile
                                     inputText = ""
-                                    viewModel.sendAiMessage(toSend)
+                                    attachedFile = null
+
+                                    if (currentAttachment != null) {
+                                        viewModel.sendAiMessageWithAttachment(
+                                            context = context,
+                                            uri = currentAttachment.uri,
+                                            fileName = currentAttachment.name,
+                                            extension = currentAttachment.extension,
+                                            userPrompt = toSend
+                                        )
+                                    } else {
+                                        viewModel.sendAiMessage(toSend)
+                                    }
                                 },
                             contentAlignment = Alignment.Center
                         ) {
@@ -849,9 +906,6 @@ fun AiChatScreen(
 private fun AiEmptyWelcomeView(
     onPillClick: (String) -> Unit,
     onOpenSettings: () -> Unit,
-    onImportExcel: () -> Unit,
-    onRequestPermission: () -> Unit,
-    hasAllFilesAccess: Boolean,
     isConfigured: Boolean
 ) {
     Column(
@@ -958,18 +1012,12 @@ private fun AiEmptyWelcomeView(
                     onClick = onPillClick
                 )
                 SuggestionCard(
-                    tag = "离线归档",
-                    title = "Excel 穿透分析",
-                    desc = "直读公共 Download 归档",
-                    prompt = "查看已转储或公共 Download 目录下的 Excel 历史报文，流式分析总行数与热门主题宏观画像",
+                    tag = "协议/日志",
+                    title = "附件逆向与分析",
+                    desc = "点下方 + 号选择文档",
+                    prompt = "请告诉我如何逆向解析硬件通信协议或分析报文日志，以及输入框左侧 [+] 附件按钮的使用指南。",
                     modifier = Modifier.weight(1f),
-                    onClick = {
-                        if (!hasAllFilesAccess) {
-                            onRequestPermission()
-                        } else {
-                            onPillClick(it)
-                        }
-                    }
+                    onClick = onPillClick
                 )
             }
         }
@@ -1248,3 +1296,40 @@ private fun AiMessageBubble(
         }
     }
 }
+
+/**
+ * 仿 ChatGPT / Codex 体验的附件元数据模型
+ */
+data class AttachedFileInfo(
+    val uri: Uri,
+    val name: String,
+    val sizeBytes: Long,
+    val extension: String
+)
+
+private fun getFileInfoFromUri(context: Context, uri: Uri): AttachedFileInfo? {
+    var name = "unknown_file"
+    var size = 0L
+    try {
+        context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+            val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
+            if (cursor.moveToFirst()) {
+                if (nameIndex != -1) name = cursor.getString(nameIndex) ?: name
+                if (sizeIndex != -1) size = cursor.getLong(sizeIndex)
+            }
+        }
+    } catch (_: Exception) {}
+    val ext = name.substringAfterLast('.', "").lowercase()
+    return AttachedFileInfo(uri, name, size, ext)
+}
+
+private fun formatFileSize(bytes: Long): String {
+    if (bytes <= 0) return "0 B"
+    if (bytes < 1024) return "$bytes B"
+    val kb = bytes / 1024.0
+    if (kb < 1024) return String.format(java.util.Locale.US, "%.1f KB", kb)
+    val mb = kb / 1024.0
+    return String.format(java.util.Locale.US, "%.1f MB", mb)
+}
+

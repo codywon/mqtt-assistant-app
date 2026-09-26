@@ -2795,6 +2795,81 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
         }
     }
 
+    /**
+     * 效仿 ChatGPT / Codex 体验：支持输入框左侧 [+] 号选择 PDF 硬件协议、Excel 日志、JSON 或文本文件，随提问一并解析分析
+     */
+    fun sendAiMessageWithAttachment(
+        context: Context,
+        uri: Uri,
+        fileName: String,
+        extension: String,
+        userPrompt: String
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            when (extension.lowercase()) {
+                "xlsx", "xls" -> {
+                    val result = ArchivedExcelReader.importExcelFromUri(context, uri)
+                    result.onSuccess { file ->
+                        val summary = ArchivedExcelReader.analyzeExcelSummary(context, file.name)
+                        val rows = summary?.totalRows ?: 0
+                        val prompt = if (userPrompt.isNotBlank()) {
+                            "【已附加现场数据日志】: ${file.name} (共 $rows 条报文，时间范围: ${summary?.startTime ?: "-"} ~ ${summary?.endTime ?: "-"})\n\n用户提问与排查要求:\n$userPrompt"
+                        } else {
+                            "【已附加现场数据日志】: ${file.name} (共 $rows 条报文，时间范围: ${summary?.startTime ?: "-"} ~ ${summary?.endTime ?: "-"})\n请流式分析此日志的报文概况、各网关通信健康度与潜在异常指标。"
+                        }
+                        withContext(Dispatchers.Main) {
+                            sendAiMessage(prompt)
+                        }
+                    }.onFailure { err ->
+                        withContext(Dispatchers.Main) {
+                            showToast("日志导入失败: ${err.message}")
+                        }
+                    }
+                }
+                "pdf" -> {
+                    val textSample = try {
+                        context.contentResolver.openInputStream(uri)?.use { stream ->
+                            val bytes = stream.readBytes().take(60000).toByteArray()
+                            val chars = StringBuilder()
+                            for (b in bytes) {
+                                val c = b.toInt().toChar()
+                                if (c in ' '..'~' || c == '\n' || c == '\r' || c == '\t' || b.toInt() and 0x80 != 0) {
+                                    chars.append(c)
+                                }
+                            }
+                            chars.toString().take(10000)
+                        } ?: ""
+                    } catch (_: Exception) { "" }
+
+                    val prompt = if (userPrompt.isNotBlank()) {
+                        "【已附加硬件协议 PDF 文档】: $fileName\n$textSample\n\n用户提问与逆向要求:\n$userPrompt"
+                    } else {
+                        "【已附加硬件协议 PDF 文档】: $fileName\n$textSample\n\n请帮我深入分析该协议手册，梳理出通信报文的数据帧结构、各字段偏移量与告警阈值。"
+                    }
+                    withContext(Dispatchers.Main) {
+                        sendAiMessage(prompt)
+                    }
+                }
+                else -> {
+                    val content = try {
+                        context.contentResolver.openInputStream(uri)?.use { stream ->
+                            stream.bufferedReader(Charsets.UTF_8).use { it.readText().take(15000) }
+                        } ?: ""
+                    } catch (_: Exception) { "" }
+
+                    val prompt = if (userPrompt.isNotBlank()) {
+                        "【已附加协议/数据文件】: $fileName\n```\n$content\n```\n\n用户提问:\n$userPrompt"
+                    } else {
+                        "【已附加协议/数据文件】: $fileName\n```\n$content\n```\n请详细分析此文件内容，梳理其中的字段协议或数据特征，并指出关键指标。"
+                    }
+                    withContext(Dispatchers.Main) {
+                        sendAiMessage(prompt)
+                    }
+                }
+            }
+        }
+    }
+
     // =========================================================================
     // TSL 物模型协议库管理方法
     // =========================================================================
