@@ -288,9 +288,10 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), LiveHealthWatchdogState())
 
     init {
-        // 异步从 SQLite 加载历史最近报文，消除类构造期间主线程磁盘 I/O 阻塞
+        // 纯内存分层架构：启动时彻底清除旧版本遗留的 SQLite 实时报文，杜绝任何旧数据干扰
         viewModelScope.launch(Dispatchers.IO) {
-            val cached = storage.loadRecentPackets(300).reversed()
+            storage.clearAllPackets()
+
             var savedSessions = storage.loadAllAiSessions()
             if (savedSessions.isEmpty()) {
                 val initialSession = AiChatSession(id = "default", title = "新会话")
@@ -305,8 +306,11 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
             storage.initBuiltinTslProtocols()
             val enabledTslProtos = storage.loadEnabledTslProtocols()
 
+            // 保持内存单例为单一可信源
+            val currentMemoryPackets = com.example.data.MemoryPacketStore.getAll()
+
             withContext(Dispatchers.Main) {
-                livePackets.value = cached
+                livePackets.value = currentMemoryPackets
                 aiSessions.value = savedSessions
                 currentSessionId.value = activeSessionId
                 aiMessages.value = savedAiMsgs
