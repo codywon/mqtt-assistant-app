@@ -282,9 +282,12 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
     val packetInspectionThinking = MutableStateFlow("")
     private var packetInspectJob: Job? = null
 
-    // --- 场景 3: 现场主动巡检与异常预警雷达状态 (Proactive Watchdog) ---
-    val liveHealthWatchdogState: StateFlow<LiveHealthWatchdogState> = livePackets.map { packets ->
-        computeHealthWatchdogState(packets)
+    // --- 场景 3: 现场主动巡检与异常预警雷达状态 (深度联动 TSL 物模型越限报警) ---
+    val liveHealthWatchdogState: StateFlow<LiveHealthWatchdogState> = combine(
+        livePackets,
+        tslParseResults
+    ) { packets, parseResults ->
+        computeHealthWatchdogState(packets, parseResults)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), LiveHealthWatchdogState())
 
     init {
@@ -2462,8 +2465,11 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
         showToast("已删除该协议澄清")
     }
 
-    // --- 现场主动巡检与异常预警雷达 (Proactive Watchdog) ---
-    private fun computeHealthWatchdogState(packets: List<MqttLogPacket>): LiveHealthWatchdogState {
+    // --- 现场主动巡检与异常预警雷达 (深度融合 TSL 声明式物模型协议库) ---
+    private fun computeHealthWatchdogState(
+        packets: List<MqttLogPacket>,
+        tslResults: Map<String, com.example.model.TslParseResult>
+    ): LiveHealthWatchdogState {
         if (packets.isEmpty()) {
             return LiveHealthWatchdogState(
                 activeGatewayCount = 0,
@@ -2482,19 +2488,39 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
 
         val recentPackets = packets.takeLast(100)
         val anomalies = mutableListOf<WatchdogAnomaly>()
-        val errorKeywords = listOf("error", "alarm", "fault", "fail", "crc_err", "offline", "timeout", "warn")
+        val errorKeywords = listOf("error", "alarm", "fault", "fail", "crc_err", "offline", "timeout")
 
         for (p in recentPackets) {
+            // 1. 【首要核心】优先识别 TSL 声明式物模型真实物理指标越限 (如高压超标、体温超温、Modbus 超温等)
+            val tsl = tslResults[p.id]
+            if (tsl != null && tsl.hasWarnings) {
+                val warnDetails = tsl.values.filter { it.isWarning }
+                    .mapNotNull { it.warningMessage }
+                    .joinToString("; ")
+                val reason = "【${tsl.protocolName}】$warnDetails"
+                anomalies.add(
+                    WatchdogAnomaly(
+                        id = p.id,
+                        topic = p.topic,
+                        reason = reason,
+                        timestamp = p.timestamp,
+                        rawPacket = p
+                    )
+                )
+                continue
+            }
+
+            // 2. 辅助兜底：通信链路层故障或包含明确错误标志的报文
             val isAnomaly = p.category.equals("ERROR", ignoreCase = true) ||
                 errorKeywords.any { kw -> p.payload.contains(kw, ignoreCase = true) || p.topic.contains(kw, ignoreCase = true) }
             if (isAnomaly) {
                 val reason = when {
-                    p.payload.contains("alarm", ignoreCase = true) -> "检测到告警标志 (alarm)"
+                    p.payload.contains("alarm", ignoreCase = true) -> "设备上报故障标志 (alarm)"
                     p.payload.contains("error", ignoreCase = true) -> "报文携带错误标识 (error)"
-                    p.payload.contains("fault", ignoreCase = true) -> "设备故障状态 (fault)"
+                    p.payload.contains("fault", ignoreCase = true) -> "硬件故障状态 (fault)"
                     p.payload.contains("crc", ignoreCase = true) -> "CRC 校验失败特征"
-                    p.category.equals("ERROR", ignoreCase = true) -> "系统标记异常分类"
-                    else -> "异常体征数据"
+                    p.category.equals("ERROR", ignoreCase = true) -> "链路标记异常分类"
+                    else -> "通信链路异常"
                 }
                 anomalies.add(
                     WatchdogAnomaly(
@@ -2513,7 +2539,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
             activeGatewayCount = gateways.size,
             packetRatePerMin = rate,
             anomalyCount = anomalies.size,
-            anomalies = anomalies.take(10),
+            anomalies = anomalies.take(15),
             isHealthy = anomalies.isEmpty()
         )
     }

@@ -1663,7 +1663,7 @@ private fun LiveHealthWatchdogStrip(
                             .background(if (state.isHealthy) Color(0xFF10B981) else Color(0xFFF59E0B))
                     )
                     Text(
-                        text = if (state.isHealthy) "现场通信良好" else "发现 ${state.anomalyCount} 处体征异常",
+                        text = if (state.isHealthy) "现场指标与链路正常" else "发现 ${state.anomalyCount} 处指标越限/异常",
                         style = TextStyle(
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
@@ -1711,7 +1711,7 @@ private fun LiveHealthWatchdogStrip(
                         )
                     } else {
                         Text(
-                            text = "异常体征抓包（轻触直接调用 AI 透视分析）:",
+                            text = "越限告警与异常事件清单（轻触直接调用 AI 深度诊断）:",
                             style = TextStyle(fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold, color = PrimaryBlack)
                         )
                         Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
