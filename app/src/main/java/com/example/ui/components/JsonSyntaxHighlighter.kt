@@ -55,9 +55,9 @@ fun highlightJsonText(rawJson: String): Pair<List<String>, List<AnnotatedString>
     val trimmed = rawJson.trim()
     val formattedJson = try {
         if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
-            JSONObject(trimmed).toString(2)
+            JSONObject(trimmed).toString(2).replace("\\/", "/")
         } else if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
-            JSONArray(trimmed).toString(2)
+            JSONArray(trimmed).toString(2).replace("\\/", "/")
         } else {
             trimmed
         }

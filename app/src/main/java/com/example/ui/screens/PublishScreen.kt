@@ -572,10 +572,10 @@ private fun PublishConfigModalDialog(
         try {
             if (current.startsWith("{") && current.endsWith("}")) {
                 val obj = JSONObject(current)
-                payload = obj.toString(2)
+                payload = obj.toString(2).replace("\\/", "/")
             } else if (current.startsWith("[") && current.endsWith("]")) {
                 val array = JSONArray(current)
-                payload = array.toString(2)
+                payload = array.toString(2).replace("\\/", "/")
             }
         } catch (_: Exception) {}
     }

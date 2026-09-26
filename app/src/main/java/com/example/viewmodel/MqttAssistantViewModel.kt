@@ -933,11 +933,11 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
         try {
             if (current.startsWith("{") && current.endsWith("}")) {
                 val obj = JSONObject(current)
-                publishPayload.value = obj.toString(2)
+                publishPayload.value = obj.toString(2).replace("\\/", "/")
                 showToast("JSON 格式化成功")
             } else if (current.startsWith("[") && current.endsWith("]")) {
                 val array = JSONArray(current)
-                publishPayload.value = array.toString(2)
+                publishPayload.value = array.toString(2).replace("\\/", "/")
                 showToast("JSON 格式化成功")
             } else {
                 showToast("当前载荷非 JSON 格式")
