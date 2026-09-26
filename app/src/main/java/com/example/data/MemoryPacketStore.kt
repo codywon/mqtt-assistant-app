@@ -19,11 +19,20 @@ object MemoryPacketStore {
     private val _packetsFlow = MutableStateFlow<List<MqttLogPacket>>(emptyList())
     val packetsFlow = _packetsFlow.asStateFlow()
 
+    // 环形队列滚动覆盖计数器（记录因达到 bufferThreshold 上限而自然滑出的旧数据条数）
+    private val _overflowCount = MutableStateFlow(0L)
+    val overflowCount = _overflowCount.asStateFlow()
+
     @Synchronized
     fun addPackets(newPackets: List<MqttLogPacket>, maxCapacity: Int): List<MqttLogPacket> {
         if (newPackets.isEmpty()) return _packetsFlow.value
         val cap = maxCapacity.coerceAtLeast(100)
         _packetsFlow.update { current ->
+            val total = current.size + newPackets.size
+            if (total > cap) {
+                val dropped = total - cap
+                _overflowCount.update { it + dropped }
+            }
             (current + newPackets).takeLast(cap)
         }
         return _packetsFlow.value
@@ -33,6 +42,9 @@ object MemoryPacketStore {
     fun addPacket(packet: MqttLogPacket, maxCapacity: Int): List<MqttLogPacket> {
         val cap = maxCapacity.coerceAtLeast(100)
         _packetsFlow.update { current ->
+            if (current.size >= cap) {
+                _overflowCount.update { it + 1 }
+            }
             (current + packet).takeLast(cap)
         }
         return _packetsFlow.value
@@ -53,5 +65,6 @@ object MemoryPacketStore {
     @Synchronized
     fun clear() {
         _packetsFlow.value = emptyList()
+        _overflowCount.value = 0L
     }
 }

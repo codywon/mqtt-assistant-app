@@ -111,6 +111,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
 
     // --- Live Packet Log States (Backed by SQLite Database, Chronological Order: Newest at Bottom) ---
     val livePackets = MutableStateFlow<List<MqttLogPacket>>(emptyList())
+    val packetOverflowCount = com.example.data.MemoryPacketStore.overflowCount
     val selectedTopicFilter = MutableStateFlow("全部主题")
     val selectedPacket = MutableStateFlow<MqttLogPacket?>(null)
     val searchQuery = MutableStateFlow("")

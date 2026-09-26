@@ -98,7 +98,8 @@ data class TslField(
     val unit: String = "",              // 物理单位（如 "℃", "mmHg", "bpm"）
     val jsonPath: String = "",          // JSON 模式下的路径（如 "data.temperature"）
     val warnMin: Double? = null,        // 下限告警阈值（低于此值触发告警）
-    val warnMax: Double? = null         // 上限告警阈值（高于此值触发告警）
+    val warnMax: Double? = null,        // 上限告警阈值（高于此值触发告警）
+    val alarmBitmask: Long? = null      // 状态位掩码告警（按位与非 0 触发告警，如 0x0002 代表跳闸报警）
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
         put("identifier", identifier)
@@ -112,6 +113,7 @@ data class TslField(
         if (jsonPath.isNotBlank()) put("jsonPath", jsonPath)
         if (warnMin != null) put("warnMin", warnMin)
         if (warnMax != null) put("warnMax", warnMax)
+        if (alarmBitmask != null) put("alarmBitmask", alarmBitmask)
     }
 
     companion object {
@@ -132,6 +134,9 @@ data class TslField(
             else null,
             warnMax = if (json.has("warnMax") || json.has("warn_max"))
                 json.optDouble("warnMax", json.optDouble("warn_max", Double.NaN)).takeIf { !it.isNaN() }
+            else null,
+            alarmBitmask = if (json.has("alarmBitmask") || json.has("alarm_bitmask"))
+                json.optLong("alarmBitmask", json.optLong("alarm_bitmask", -1L)).takeIf { it >= 0 }
             else null
         )
     }

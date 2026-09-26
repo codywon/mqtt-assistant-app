@@ -400,6 +400,16 @@ object TslParseEngine {
                 warningMsg = "${field.name} $formatted 低于下限 ${formatNumber(min, field.precision)} ${field.unit}"
             }
         }
+        // 2. 状态位掩码告警 (Bitmask Alert: 当对应故障/跳闸位为 1 时触发告警)
+        field.alarmBitmask?.let { mask ->
+            val rawLong = rawValue.toLong()
+            if ((rawLong and mask) != 0L) {
+                isWarning = true
+                val hexMask = "0x" + mask.toString(16).uppercase()
+                val hexRaw = "0x" + rawLong.toString(16).uppercase()
+                warningMsg = "${field.name} 触发状态位告警 ($hexRaw & $hexMask != 0)"
+            }
+        }
 
         return TslParsedValue(
             identifier = field.identifier,

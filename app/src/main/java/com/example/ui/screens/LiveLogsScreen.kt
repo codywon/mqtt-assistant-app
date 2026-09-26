@@ -143,6 +143,7 @@ fun LiveLogsScreen(
     val excludeFilters by viewModel.excludeTopicFilters.collectAsState()
     val filteredPackets by viewModel.filteredLivePackets.collectAsState()
     val tslParseResults by viewModel.tslParseResults.collectAsState()
+    val overflowCount by viewModel.packetOverflowCount.collectAsState()
 
     var selectedDetailsPacket by remember { mutableStateOf<MqttLogPacket?>(null) }
     var isTopicFilterDialogVisible by remember { mutableStateOf(false) }
@@ -376,6 +377,7 @@ fun LiveLogsScreen(
         // 1.5 现场通信健康度雷达 (Proactive Watchdog Strip)
         LiveHealthWatchdogStrip(
             state = watchdogState,
+            overflowCount = overflowCount,
             isExpanded = isWatchdogExpanded,
             onToggleExpand = { isWatchdogExpanded = !isWatchdogExpanded },
             onInspectAnomaly = { anomaly ->
@@ -1882,6 +1884,7 @@ private fun TopicFilterRulesModalDialog(
 @Composable
 private fun LiveHealthWatchdogStrip(
     state: LiveHealthWatchdogState,
+    overflowCount: Long = 0L,
     isExpanded: Boolean,
     onToggleExpand: () -> Unit,
     onInspectAnomaly: (WatchdogAnomaly) -> Unit,
@@ -1930,10 +1933,11 @@ private fun LiveHealthWatchdogStrip(
                         )
                     )
                     Text(
-                        text = "· ${state.activeGatewayCount} 个网关 · ~${state.packetRatePerMin} pkt/min",
+                        text = "· ${state.activeGatewayCount} 个网关 · ~${state.packetRatePerMin} pkt/min" +
+                                if (overflowCount > 0) " · 缓冲已覆盖 ${overflowCount} 条" else "",
                         style = TextStyle(
                             fontSize = 11.sp,
-                            color = OnSurfaceVariantGray,
+                            color = if (overflowCount > 0) Color(0xFFD97706) else OnSurfaceVariantGray,
                             fontFamily = FontFamily.Monospace
                         )
                     )
@@ -1962,6 +1966,20 @@ private fun LiveHealthWatchdogStrip(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     HorizontalDivider(color = OutlineVariantLight, thickness = 0.5.dp)
+
+                    if (overflowCount > 0) {
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = Color(0xFFFEF3C7).copy(alpha = 0.6f),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = "⚡ 内存环形队列已稳定滚动覆盖 $overflowCount 条旧报文（保障现场高频通信零卡顿）",
+                                style = TextStyle(fontSize = 10.5.sp, color = Color(0xFFB45309), fontFamily = FontFamily.Monospace),
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
 
                     if (state.anomalies.isEmpty()) {
                         Text(

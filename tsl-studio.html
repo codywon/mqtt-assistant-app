@@ -87,6 +87,8 @@
       <button onclick="loadTemplate('vital')">🏥 体征模板</button>
       <button onclick="loadTemplate('modbus')">🏭 Modbus 模板</button>
       <button onclick="loadTemplate('json')">🌐 JSON 模板</button>
+      <button onclick="exportCHeader()">🖥️ 导出 C 头文件</button>
+      <button onclick="exportPythonScript()">🐍 导出 Python 脚本</button>
       <button class="primary" onclick="showQrModal()">📱 手机扫码导入</button>
       <button class="primary" onclick="exportJson()">💾 导出 .tsl.json</button>
     </div>
@@ -122,15 +124,16 @@
         <table id="fieldTable">
           <thead>
             <tr>
-              <th style="width: 140px;">字段名</th>
-              <th style="width: 120px;">标识符</th>
-              <th style="width: 60px;">偏移</th>
-              <th style="width: 60px;">长度</th>
-              <th style="width: 110px;">类型</th>
-              <th style="width: 65px;">倍率</th>
-              <th style="width: 60px;">单位</th>
-              <th style="width: 70px;">上限告警</th>
-              <th style="width: 40px;">操作</th>
+              <th style="width: 125px;">字段名</th>
+              <th style="width: 110px;">标识符</th>
+              <th style="width: 50px;">偏移</th>
+              <th style="width: 50px;">长度</th>
+              <th style="width: 105px;">类型</th>
+              <th style="width: 55px;">倍率</th>
+              <th style="width: 50px;">单位</th>
+              <th style="width: 65px;">上限告警</th>
+              <th style="width: 75px;">掩码告警</th>
+              <th style="width: 35px;">操作</th>
             </tr>
           </thead>
           <tbody id="fieldBody"></tbody>
@@ -224,7 +227,8 @@
       "precision": 1, // 保留小数位数 (整数填 0，一位小数填 1)
       "unit": "物理单位，如 ℃, %, V, A, mmHg, bpm，无单位留空",
       "warnMin": null, // 正常工作范围下限，超出将触发告警。无告警填 null
-      "warnMax": null  // 正常工作范围上限，超出将触发告警。无告警填 null
+      "warnMax": null, // 正常工作范围上限，超出将触发告警。无告警填 null
+      "alarmBitmask": null // 状态字故障位掩码 (如断路器故障跳闸 0x0002)，按位与非 0 触发告警。无告警填 null
     }
   ],
   "builtin": false,
@@ -286,10 +290,10 @@
       format: "HEX",
       matchTopic: "+/+/vital",
       fields: [
-        { name: "心率", id: "heart_rate", offset: 3, length: 1, type: "uint8", scale: 1, unit: "bpm", warnMax: 120 },
-        { name: "收缩压(高压)", id: "systolic", offset: 4, length: 1, type: "uint8", scale: 1, unit: "mmHg", warnMax: 140 },
-        { name: "舒张压(低压)", id: "diastolic", offset: 5, length: 1, type: "uint8", scale: 1, unit: "mmHg", warnMax: 90 },
-        { name: "体温", id: "temperature", offset: 6, length: 2, type: "uint16_be", scale: 0.1, unit: "℃", warnMax: 37.3 }
+        { name: "心率", id: "heart_rate", offset: 3, length: 1, type: "uint8", scale: 1, unit: "bpm", warnMax: 120, alarmBitmask: null },
+        { name: "收缩压(高压)", id: "systolic", offset: 4, length: 1, type: "uint8", scale: 1, unit: "mmHg", warnMax: 140, alarmBitmask: null },
+        { name: "舒张压(低压)", id: "diastolic", offset: 5, length: 1, type: "uint8", scale: 1, unit: "mmHg", warnMax: 90, alarmBitmask: null },
+        { name: "体温", id: "temperature", offset: 6, length: 2, type: "uint16_be", scale: 0.1, unit: "℃", warnMax: 37.3, alarmBitmask: null }
       ],
       sample: "AA 55 01 02 78 8C 5A 01 6D"
     },
@@ -298,20 +302,21 @@
       format: "HEX",
       matchTopic: "+/modbus/+",
       fields: [
-        { name: "从站地址", id: "slave_addr", offset: 0, length: 1, type: "uint8", scale: 1, unit: "" },
-        { name: "功能码", id: "func_code", offset: 1, length: 1, type: "uint8", scale: 1, unit: "" },
-        { name: "温度", id: "temperature", offset: 3, length: 2, type: "int16_be", scale: 0.1, unit: "℃", warnMax: 85 },
-        { name: "湿度", id: "humidity", offset: 5, length: 2, type: "uint16_be", scale: 0.1, unit: "%RH", warnMax: 95 }
+        { name: "从站地址", id: "slave_addr", offset: 0, length: 1, type: "uint8", scale: 1, unit: "", warnMax: null, alarmBitmask: null },
+        { name: "功能码", id: "func_code", offset: 1, length: 1, type: "uint8", scale: 1, unit: "", warnMax: null, alarmBitmask: null },
+        { name: "温度", id: "temperature", offset: 3, length: 2, type: "int16_be", scale: 0.1, unit: "℃", warnMax: 85, alarmBitmask: null },
+        { name: "湿度", id: "humidity", offset: 5, length: 2, type: "uint16_be", scale: 0.1, unit: "%RH", warnMax: 95, alarmBitmask: null },
+        { name: "保护状态字", id: "status_word", offset: 7, length: 2, type: "uint16_be", scale: 1, unit: "", warnMax: null, alarmBitmask: 0x0002 }
       ],
-      sample: "01 03 04 01 04 02 58 7B 4A"
+      sample: "01 03 06 01 04 02 58 00 02 7B 4A"
     },
     json: {
       name: "通用 JSON 遥测上报协议",
       format: "JSON",
       matchTopic: "+/+/telemetry",
       fields: [
-        { name: "温度", id: "temperature", offset: 0, length: 0, type: "json_number", scale: 1, unit: "℃", warnMax: 60 },
-        { name: "湿度", id: "humidity", offset: 0, length: 0, type: "json_number", scale: 1, unit: "%RH", warnMax: 95 }
+        { name: "温度", id: "temperature", offset: 0, length: 0, type: "json_number", scale: 1, unit: "℃", warnMax: 60, alarmBitmask: null },
+        { name: "湿度", id: "humidity", offset: 0, length: 0, type: "json_number", scale: 1, unit: "%RH", warnMax: 95, alarmBitmask: null }
       ],
       sample: '{"temperature": 26.5, "humidity": 68}'
     }
@@ -340,7 +345,8 @@
       type: "uint8",
       scale: 1,
       unit: "",
-      warnMax: null
+      warnMax: null,
+      alarmBitmask: null
     });
     renderFields();
     updateJsonPreview();
@@ -357,6 +363,9 @@
     tbody.innerHTML = "";
     currentFields.forEach((f, idx) => {
       const tr = document.createElement("tr");
+      const hexBitmask = (f.alarmBitmask != null && f.alarmBitmask > 0)
+        ? "0x" + f.alarmBitmask.toString(16).toUpperCase()
+        : "";
       tr.innerHTML = `
         <td><input type="text" value="${f.name}" onchange="updateField(${idx}, 'name', this.value)"></td>
         <td><input type="text" value="${f.id}" onchange="updateField(${idx}, 'id', this.value)"></td>
@@ -378,6 +387,7 @@
         <td><input type="number" step="0.01" value="${f.scale}" onchange="updateField(${idx}, 'scale', parseFloat(this.value)||1)"></td>
         <td><input type="text" value="${f.unit}" onchange="updateField(${idx}, 'unit', this.value)"></td>
         <td><input type="number" value="${f.warnMax != null ? f.warnMax : ''}" placeholder="无" onchange="updateField(${idx}, 'warnMax', this.value ? parseFloat(this.value) : null)"></td>
+        <td><input type="text" value="${hexBitmask}" placeholder="如 0x02" onchange="updateBitmask(${idx}, this.value)"></td>
         <td><button class="danger" style="padding: 2px 6px;" onclick="deleteField(${idx})">×</button></td>
       `;
       tbody.appendChild(tr);
@@ -390,22 +400,45 @@
     updateJsonPreview();
   }
 
+  function updateBitmask(idx, val) {
+    val = (val || "").trim();
+    if (!val) {
+      currentFields[idx].alarmBitmask = null;
+    } else {
+      let parsed = 0;
+      if (val.toLowerCase().startsWith("0x")) {
+        parsed = parseInt(val.slice(2), 16);
+      } else {
+        parsed = parseInt(val, 10);
+      }
+      currentFields[idx].alarmBitmask = isNaN(parsed) ? null : parsed;
+    }
+    renderFields();
+    updateJsonPreview();
+  }
+
   function getProtocolObject() {
     return {
       protocolId: "proto_" + Date.now(),
       name: document.getElementById("protoName").value.trim(),
       format: document.getElementById("protoFormat").value,
       matchTopic: document.getElementById("protoTopic").value.trim(),
-      fields: currentFields.map(f => ({
-        identifier: f.id,
-        name: f.name,
-        offset: f.offset,
-        length: f.length,
-        type: f.type,
-        scale: f.scale,
-        unit: f.unit,
-        warnMax: f.warnMax
-      })),
+      fields: currentFields.map(f => {
+        const item = {
+          identifier: f.id,
+          name: f.name,
+          offset: f.offset,
+          length: f.length,
+          type: f.type,
+          scale: f.scale,
+          unit: f.unit,
+          warnMax: f.warnMax
+        };
+        if (f.alarmBitmask != null) {
+          item.alarmBitmask = f.alarmBitmask;
+        }
+        return item;
+      }),
       builtin: false,
       enabled: true,
       createdAt: Date.now()
@@ -450,14 +483,31 @@
           }
 
           const scaled = (rawVal * f.scale).toFixed(f.scale < 1 ? 1 : 0);
-          const isWarn = f.warnMax != null && parseFloat(scaled) > f.warnMax;
+          const isWarnMax = f.warnMax != null && parseFloat(scaled) > f.warnMax;
+          let isBitmaskAlarm = false;
+          if (f.alarmBitmask != null && f.alarmBitmask > 0) {
+            if ((rawVal & f.alarmBitmask) !== 0) {
+              isBitmaskAlarm = true;
+            }
+          }
+
+          const isWarn = isWarnMax || isBitmaskAlarm;
           if (isWarn) hasAnyWarn = true;
+
+          let badgeHtml = '<span class="ok-badge">正常</span>';
+          if (isBitmaskAlarm) {
+            const hexRaw = "0x" + (rawVal >>> 0).toString(16).toUpperCase();
+            const hexMask = "0x" + f.alarmBitmask.toString(16).toUpperCase();
+            badgeHtml = `<span class="warn-badge">⚠️ 位告警 (${hexRaw}&${hexMask})</span>`;
+          } else if (isWarnMax) {
+            badgeHtml = `<span class="warn-badge">⚠️ 超过上限 ${f.warnMax}</span>`;
+          }
 
           const tr = document.createElement("tr");
           tr.innerHTML = `
             <td>${f.name}</td>
             <td class="val-cell" style="color: ${isWarn ? '#DC2626' : '#0F172A'}">${scaled} ${f.unit}</td>
-            <td>${isWarn ? '<span class="warn-badge">⚠️ 超过上限 ' + f.warnMax + '</span>' : '<span class="ok-badge">正常</span>'}</td>
+            <td>${badgeHtml}</td>
           `;
           resultBody.appendChild(tr);
         });
@@ -488,12 +538,164 @@
   function exportJson() {
     const obj = getProtocolObject();
     const str = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(obj, null, 2));
+    downloadFile(JSON.stringify(obj, null, 2), (obj.name || "protocol") + ".tsl.json", "application/json");
+  }
+
+  // 一键导出嵌入式 C 紧凑结构体头文件 (.h)
+  function exportCHeader() {
+    const proto = getProtocolObject();
+    const cleanId = (proto.name || "protocol").replace(/[^a-zA-Z0-9_]/g, "_").toUpperCase();
+    const structName = cleanId.charAt(0).toUpperCase() + cleanId.slice(1).toLowerCase() + "Packet_t";
+
+    let cContent = `/**
+ * @file ${cleanId.toLowerCase()}_model.h
+ * @brief Auto-generated by MQTT Assistant TSL Studio
+ * @note Protocol: ${proto.name} (Format: ${proto.format})
+ *       Topic: ${proto.matchTopic}
+ *       Generated: ${new Date().toISOString()}
+ */
+
+#ifndef ${cleanId}_MODEL_H_
+#define ${cleanId}_MODEL_H_
+
+#include <stdint.h>
+#include <stdbool.h>
+
+#pragma pack(push, 1)
+
+/**
+ * @brief 结构体数据帧定义 (紧凑内存排列，无编译器补齐填充)
+ */
+typedef struct {
+`;
+
+    currentFields.forEach(f => {
+      let cType = "uint8_t";
+      if (f.type === "int8") cType = "int8_t";
+      else if (f.type === "uint16_be" || f.type === "uint16_le") cType = "uint16_t";
+      else if (f.type === "int16_be" || f.type === "int16_le") cType = "int16_t";
+      else if (f.type === "uint32_be" || f.type === "uint32_le") cType = "uint32_t";
+      else if (f.type === "int32_be" || f.type === "int32_le") cType = "int32_t";
+      else if (f.type === "float32_be" || f.type === "float32_le") cType = "float";
+      else if (f.type === "ascii") cType = `char[${f.length}]`;
+
+      const commentParts = [];
+      if (f.name) commentParts.push(f.name);
+      if (f.unit) commentParts.push(`单位: ${f.unit}`);
+      if (f.scale && f.scale !== 1) commentParts.push(`缩放: x${f.scale}`);
+      if (f.warnMax != null) commentParts.push(`上限告警: ${f.warnMax}`);
+      if (f.alarmBitmask != null) commentParts.push(`掩码告警: 0x${f.alarmBitmask.toString(16).toUpperCase()}`);
+
+      const comment = commentParts.length > 0 ? ` /* ${commentParts.join(", ")} */` : "";
+      cContent += `    ${cType.padEnd(12)} ${f.id};${comment}\n`;
+    });
+
+    cContent += `} ${structName};
+
+#pragma pack(pop)
+
+#endif /* ${cleanId}_MODEL_H_ */
+`;
+
+    downloadFile(cContent, `${cleanId.toLowerCase()}_model.h`, "text/x-c");
+  }
+
+  // 一键导出 Python 解码器脚本 (.py)
+  function exportPythonScript() {
+    const proto = getProtocolObject();
+    const cleanId = (proto.name || "protocol").replace(/[^a-zA-Z0-9_]/g, "_").toLowerCase();
+
+    let pyContent = `# -*- coding: utf-8 -*-
+"""
+Auto-generated by MQTT Assistant TSL Studio
+Protocol: ${proto.name} (Format: ${proto.format})
+Topic Pattern: ${proto.matchTopic}
+Generated: ${new Date().toISOString()}
+"""
+
+import struct
+from typing import Dict, Any
+
+def parse_${cleanId}_packet(payload: bytes) -> Dict[str, Any]:
+    """
+    解析 ${proto.name} 现场报文
+    :param payload: 接收到的原始字节数组 (bytes)
+    :return: 包含各物理量实际数值与告警状态的字典
+    """
+    results = {}
+`;
+
+    if (proto.format === "JSON") {
+      pyContent += `    import json
+    data = json.loads(payload.decode('utf-8'))
+`;
+      currentFields.forEach(f => {
+        pyContent += `    results['${f.id}'] = data.get('${f.id}')\n`;
+      });
+    } else {
+      currentFields.forEach(f => {
+        let unpackCode = "";
+        let endian = f.type.endsWith("_le") ? "<" : ">";
+        if (f.type === "uint8") {
+          unpackCode = `payload[${f.offset}]`;
+        } else if (f.type === "int8") {
+          unpackCode = `struct.unpack('b', payload[${f.offset}:${f.offset + 1}])[0]`;
+        } else if (f.type.startsWith("uint16")) {
+          unpackCode = `struct.unpack('${endian}H', payload[${f.offset}:${f.offset + 2}])[0]`;
+        } else if (f.type.startsWith("int16")) {
+          unpackCode = `struct.unpack('${endian}h', payload[${f.offset}:${f.offset + 2}])[0]`;
+        } else if (f.type.startsWith("uint32")) {
+          unpackCode = `struct.unpack('${endian}I', payload[${f.offset}:${f.offset + 4}])[0]`;
+        } else if (f.type.startsWith("int32")) {
+          unpackCode = `struct.unpack('${endian}i', payload[${f.offset}:${f.offset + 4}])[0]`;
+        } else if (f.type.startsWith("float32")) {
+          unpackCode = `struct.unpack('${endian}f', payload[${f.offset}:${f.offset + 4}])[0]`;
+        } else if (f.type === "ascii") {
+          unpackCode = `payload[${f.offset}:${f.offset + f.length}].decode('ascii', errors='ignore').strip()`;
+        } else {
+          unpackCode = `payload[${f.offset}]`;
+        }
+
+        const scaleStr = (f.scale && f.scale !== 1) ? ` * ${f.scale}` : "";
+        const roundStr = f.scale && f.scale < 1 ? `round(${unpackCode}${scaleStr}, 2)` : `${unpackCode}${scaleStr}`;
+        pyContent += `    # ${f.name} (${f.unit || '无单位'})\n`;
+        pyContent += `    if len(payload) >= ${f.offset + (f.length || 1)}:\n`;
+        pyContent += `        val = ${roundStr}\n`;
+        pyContent += `        results['${f.id}'] = val\n`;
+        if (f.warnMax != null) {
+          pyContent += `        if val > ${f.warnMax}:\n`;
+          pyContent += `            results['${f.id}_warn'] = f"Exceeds max limit ${f.warnMax}"\n`;
+        }
+        if (f.alarmBitmask != null) {
+          pyContent += `        if (int(val) & 0x${f.alarmBitmask.toString(16).toUpperCase()}) != 0:\n`;
+          pyContent += `            results['${f.id}_alarm'] = "Bitmask alert (0x${f.alarmBitmask.toString(16).toUpperCase()})"\n`;
+        }
+      });
+    }
+
+    pyContent += `    return results
+
+if __name__ == '__main__':
+    # 示例报文快速自测
+    sample_hex = "${document.getElementById ? 'AA 55 01 02 78 8C 5A 01 6D' : ''}"
+    raw_bytes = bytes.fromhex(sample_hex.replace(' ', ''))
+    parsed = parse_${cleanId}_packet(raw_bytes)
+    print("Decoded Results:", parsed)
+`;
+
+    downloadFile(pyContent, `${cleanId}_decoder.py`, "text/x-python");
+  }
+
+  function downloadFile(content, fileName, mimeType) {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.setAttribute("href", str);
-    a.setAttribute("download", (obj.name || "protocol") + ".tsl.json");
+    a.href = url;
+    a.download = fileName;
     document.body.appendChild(a);
     a.click();
     a.remove();
+    URL.revokeObjectURL(url);
   }
 
   function showQrModal() {
@@ -554,16 +756,25 @@
       document.getElementById("protoFormat").value = obj.format || "HEX";
       document.getElementById("protoTopic").value = obj.matchTopic || "+/+/vital";
 
-      currentFields = obj.fields.map(f => ({
-        name: f.name || "未命名",
-        id: f.identifier || f.id || "metric",
-        offset: f.offset || 0,
-        length: f.length || 1,
-        type: f.type || "uint8",
-        scale: f.scale !== undefined ? f.scale : 1,
-        unit: f.unit || "",
-        warnMax: f.warnMax !== undefined ? f.warnMax : null
-      }));
+      currentFields = obj.fields.map(f => {
+        let mask = null;
+        if (f.alarmBitmask !== undefined && f.alarmBitmask !== null) {
+          mask = typeof f.alarmBitmask === "string" ? parseInt(f.alarmBitmask, 16) : f.alarmBitmask;
+        } else if (f.alarm_bitmask !== undefined && f.alarm_bitmask !== null) {
+          mask = typeof f.alarm_bitmask === "string" ? parseInt(f.alarm_bitmask, 16) : f.alarm_bitmask;
+        }
+        return {
+          name: f.name || "未命名",
+          id: f.identifier || f.id || "metric",
+          offset: f.offset || 0,
+          length: f.length || 1,
+          type: f.type || "uint8",
+          scale: f.scale !== undefined ? f.scale : 1,
+          unit: f.unit || "",
+          warnMax: f.warnMax !== undefined ? f.warnMax : null,
+          alarmBitmask: mask
+        };
+      });
 
       renderFields();
       document.getElementById("ai-modal").style.display = "none";
