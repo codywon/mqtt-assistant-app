@@ -92,7 +92,7 @@ class MqttStorageRepository(context: Context) {
                                 isEnabled = obj.optBoolean("isEnabled", true),
                                 dotColorHex = obj.optLong("dotColorHex", 0xFF10B981),
                                 name = obj.optString("name", ""),
-                                retainHandling = obj.optInt("retainHandling", 0)
+                                retainHandling = obj.optInt("retainHandling", 2)
                             )
                         )
                     }

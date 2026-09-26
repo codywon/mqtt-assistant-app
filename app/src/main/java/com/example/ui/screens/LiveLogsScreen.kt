@@ -487,7 +487,7 @@ fun LiveLogsScreen(
                     name = packet.topic.substringAfterLast('/'),
                     topic = packet.topic,
                     qos = packet.qos,
-                    retain = false,
+                    retain = packet.devInfo.contains("Retain", ignoreCase = true),
                     payload = packet.payload
                 )
                 viewModel.saveOrUpdatePreset(preset)
@@ -1096,6 +1096,26 @@ private fun MessageDetailsModalDialog(
                                                 fontSize = 9.5.sp,
                                                 fontWeight = FontWeight.Normal,
                                                 color = Color(0xFF64748B)
+                                            )
+                                        )
+                                    }
+                                }
+
+                                if (packet.devInfo.contains("Retain", ignoreCase = true)) {
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .background(Color(0xFFFEF3C7))
+                                            .border(0.6.dp, Color(0xFFFDE68A), RoundedCornerShape(4.dp))
+                                            .padding(horizontal = 5.dp, vertical = 2.5.dp)
+                                    ) {
+                                        Text(
+                                            text = "Retain",
+                                            style = TextStyle(
+                                                fontFamily = FontFamily.Monospace,
+                                                fontSize = 9.5.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = Color(0xFFD97706)
                                             )
                                         )
                                     }

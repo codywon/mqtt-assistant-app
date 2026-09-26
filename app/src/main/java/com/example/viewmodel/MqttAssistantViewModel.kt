@@ -160,6 +160,8 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
     val newSubTopic = MutableStateFlow("")
     val newSubQos = MutableStateFlow(0)
     val subSearchQuery = MutableStateFlow("")
+    // 跟踪各订阅已接收过初始保留消息的订阅 ID（用于 retainHandling = 1 策略）
+    private val receivedInitialRetainSubIds = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     // --- Publish State (Persistent) ---
     val publishPresets = MutableStateFlow<List<PublishPreset>>(storage.loadPublishPresets())
@@ -532,7 +534,27 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
             val seq = "#%04d".format(seqNumber)
 
             val matchingSub = subscriptions.value.firstOrNull { sub ->
-                MqttTopicUtil.matchesMqttTopic(sub.topic, topic)
+                sub.isEnabled && MqttTopicUtil.matchesMqttTopic(sub.topic, topic)
+            }
+
+            // MQTT Retain Handling 策略智能过滤 (在客户端实现 MQTT 5.0 保留消息过滤规范)
+            if (retain && matchingSub != null) {
+                when (matchingSub.retainHandling) {
+                    2 -> {
+                        // 策略 2: 不发送/不接收保留消息 (直接过滤丢弃历史保留消息，避免历史数据刷屏)
+                        return@onMessageReceived
+                    }
+                    1 -> {
+                        // 策略 1: 仅初次发送 (每个订阅仅允许放行首条历史保留消息，后续过滤)
+                        if (receivedInitialRetainSubIds.contains(matchingSub.id)) {
+                            return@onMessageReceived
+                        }
+                        receivedInitialRetainSubIds.add(matchingSub.id)
+                    }
+                    0 -> {
+                        // 策略 0: 建立时发送保留消息 (全量接收放行)
+                    }
+                }
             }
             val dotColor = matchingSub?.dotColorHex ?: 0xFF10B981
             val cat = matchingSub?.name?.ifBlank { null } ?: topic.substringBefore('/')
@@ -558,6 +580,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
             if (isConn) {
                 isManualDisconnecting = false
                 connectionState.value = MqttConnectionState.CONNECTED
+                receivedInitialRetainSubIds.clear()
                 serverConfig.update { it.copy(isConnected = true) }
                 reconnectAttempt.value = 0
                 reconnectCountdown.value = 0
@@ -1135,7 +1158,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
         qos: Int? = null,
         dotColor: Long? = null,
         name: String = "",
-        retainHandling: Int = 0
+        retainHandling: Int = 2
     ) {
         val topic = (customTopic ?: newSubTopic.value).trim()
         val targetQos = qos ?: newSubQos.value
@@ -1268,6 +1291,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
         selectedPacket.value = null
         tslParseResults.value = emptyMap()
         packetSeqCounter.set(0L)
+        receivedInitialRetainSubIds.clear()
         viewModelScope.launch(Dispatchers.IO) {
             storage.clearAllPackets()
         }

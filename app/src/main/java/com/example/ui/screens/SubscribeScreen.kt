@@ -550,26 +550,30 @@ private fun SubscriptionItemCard(
                         )
                     }
 
-                    // Retain Handling badge
-                    if (item.retainHandling > 0) {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(SurfaceContainerLow)
-                                .padding(horizontal = 5.dp, vertical = 2.dp)
-                        ) {
-                            Text(
-                                text = "R${item.retainHandling}",
-                                style = TextStyle(
-                                    fontFamily = FontFamily.Monospace,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = OnSurfaceVariantGray
-                                ),
-                                maxLines = 1,
-                                softWrap = false
-                            )
-                        }
+                    // Retain Handling 语义化清晰徽章 (直观展示是否接收历史保留消息)
+                    val (retainBadgeText, retainBg, retainFg) = when (item.retainHandling) {
+                        2 -> Triple("无保留", SurfaceContainerLow, OnSurfaceVariantGray)
+                        0 -> Triple("含保留", Color(0xFFFEF3C7), Color(0xFFD97706))
+                        1 -> Triple("初次保留", Color(0xFFEFF6FF), Color(0xFF2563EB))
+                        else -> Triple("R${item.retainHandling}", SurfaceContainerLow, OnSurfaceVariantGray)
+                    }
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(retainBg)
+                            .padding(horizontal = 5.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = retainBadgeText,
+                            style = TextStyle(
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = retainFg
+                            ),
+                            maxLines = 1,
+                            softWrap = false
+                        )
                     }
 
                     Text(
@@ -647,7 +651,7 @@ private fun SubscriptionConfigModalDialog(
     var topic by remember { mutableStateOf(initialItem?.topic ?: "") }
     var name by remember { mutableStateOf(initialItem?.name ?: "") }
     var qos by remember { mutableIntStateOf(initialItem?.qos ?: 0) }
-    var retainHandling by remember { mutableIntStateOf(initialItem?.retainHandling ?: 0) }
+    var retainHandling by remember { mutableIntStateOf(initialItem?.retainHandling ?: 2) }
     var isEnabled by remember { mutableStateOf(initialItem?.isEnabled ?: true) }
     var dotColorHex by remember {
         mutableLongStateOf(initialItem?.dotColorHex ?: 0xFF10B981)
@@ -913,12 +917,27 @@ private fun SubscriptionConfigModalDialog(
                     }
                 }
 
-                // 4. 保留消息处理机制 (Retain Handling) - 严格对齐与居中
-                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text(
-                        text = "保留消息处理机制 (Retain Handling)",
-                        style = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = OnSurfaceDark)
-                    )
+                // 4. 保留消息处理机制 (Retain Handling) - 语义化解释与推荐策略
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "保留消息处理 (Retain Handling)",
+                            style = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = OnSurfaceDark)
+                        )
+                        Text(
+                            text = when (retainHandling) {
+                                2 -> "仅接收实时，忽略历史"
+                                0 -> "拉取并接收历史保留"
+                                1 -> "仅初次拉取保留"
+                                else -> ""
+                            },
+                            style = TextStyle(fontSize = 10.5.sp, color = OnSurfaceVariantGray)
+                        )
+                    }
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -929,9 +948,9 @@ private fun SubscriptionConfigModalDialog(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         listOf(
+                            2 to "2: 不发保留 (默认)",
                             0 to "0: 建立时发送",
-                            1 to "1: 仅初次发送",
-                            2 to "2: 不发送保留"
+                            1 to "1: 仅初次发送"
                         ).forEach { (rVal, rLabel) ->
                             val selected = retainHandling == rVal
                             Box(
@@ -946,7 +965,7 @@ private fun SubscriptionConfigModalDialog(
                                 Text(
                                     text = rLabel,
                                     style = TextStyle(
-                                        fontSize = 11.sp,
+                                        fontSize = 10.5.sp,
                                         fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
                                         color = if (selected) OnPrimaryWhite else OnSurfaceVariantGray,
                                         platformStyle = PlatformTextStyle(includeFontPadding = false)

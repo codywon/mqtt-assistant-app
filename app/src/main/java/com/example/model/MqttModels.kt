@@ -73,7 +73,7 @@ data class SubscriptionItem(
     val isEnabled: Boolean,
     val dotColorHex: Long,
     val name: String = "",
-    val retainHandling: Int = 0 // 0 = 始终发送保留消息, 1 = 仅首次订阅发送, 2 = 订阅时不发送保留消息
+    val retainHandling: Int = 2 // 2 = 订阅时不发送保留消息 (默认推荐), 0 = 建立时发送保留消息, 1 = 仅首次订阅发送
 )
 
 data class MqttLogPacket(
