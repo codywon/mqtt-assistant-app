@@ -19,7 +19,10 @@ class SIAgentToolRegistry(
     val livePacketsProvider: (() -> List<MqttLogPacket>)? = null,
     val tslParseResultsProvider: (() -> Map<String, com.example.model.TslParseResult>)? = null,
     val tslProtocolsProvider: (() -> List<com.example.model.TslProtocol>)? = null,
-    val onMessagePublished: ((topic: String, qos: Int, retain: Boolean, payload: String) -> Unit)? = null
+    val onMessagePublished: ((topic: String, qos: Int, retain: Boolean, payload: String) -> Unit)? = null,
+    val onDeployRadarTrap: ((com.example.model.DynamicRadarTrap) -> Unit)? = null,
+    val onClearRadarTrap: (() -> Unit)? = null,
+    val activeRadarTrapProvider: (() -> com.example.model.DynamicRadarTrap?)? = null
 ) {
 
     companion object {
@@ -400,6 +403,143 @@ class SIAgentToolRegistry(
                 }
             )
 
+            // 工具 9: deploy_radar_interceptor (AI 实时雷达动态哨兵布控)
+            tools.put(
+                JSONObject().apply {
+                    put("type", "function")
+                    put(
+                        "function",
+                        JSONObject().apply {
+                            put("name", "deploy_radar_interceptor")
+                            put(
+                                "description",
+                                "【AI 实时雷达动态哨兵布控与拦截】根据用户的自然语言意图，调度底层实时通信雷达，对高频 MQTT 报文进行微秒级条件拦截与动态捕获。支持结合已加载的 TSL 物模型字段（如电流、电压、温度、状态字）或原始 JSON 字段，布设数值阈值（>、<、>=、<=、==、!=）、字符串匹配（contains）或状态位掩码（bitmask_and）。当用户提出‘盯住/抓取/只看/拦截满足某些条件的报文’时必须调用此工具。"
+                            )
+                            put(
+                                "parameters",
+                                JSONObject().apply {
+                                    put("type", "object")
+                                    put(
+                                        "properties",
+                                        JSONObject().apply {
+                                            put(
+                                                "topicPattern",
+                                                JSONObject().apply {
+                                                    put("type", "string")
+                                                    put("description", "目标主题通配符或路径，支持 + 与 #，如 'college/breaker/#'、'factory/+/sensor'")
+                                                }
+                                            )
+                                            put(
+                                                "conditionDesc",
+                                                JSONObject().apply {
+                                                    put("type", "string")
+                                                    put("description", "该拦截规则的人类可读中文描述，用于显示在界面顶部雷达条，例如 '断路器 A相电流 > 15A 或温度 > 65℃'")
+                                                }
+                                            )
+                                            put(
+                                                "conditions",
+                                                JSONObject().apply {
+                                                    put("type", "array")
+                                                    put("description", "字段级比较条件列表")
+                                                    put(
+                                                        "items",
+                                                        JSONObject().apply {
+                                                            put("type", "object")
+                                                            put(
+                                                                "properties",
+                                                                JSONObject().apply {
+                                                                    put("field", JSONObject().apply { put("type", "string"); put("description", "字段标识符或物模型中文名，例如 'ia'、'temp'、'status'") })
+                                                                    put("operator", JSONObject().apply { put("type", "string"); put("description", "操作符: '>', '<', '>=', '<=', '==', '!=', 'contains', 'bitmask_and'") })
+                                                                    put("targetValue", JSONObject().apply { put("type", "string"); put("description", "目标比较值，如 '15.0'、'online'、'0x0002'") })
+                                                                }
+                                                            )
+                                                            put("required", JSONArray().apply { put("field"); put("operator"); put("targetValue") })
+                                                        }
+                                                    )
+                                                }
+                                            )
+                                            put(
+                                                "matchLogic",
+                                                JSONObject().apply {
+                                                    put("type", "string")
+                                                    put("description", "多条件匹配逻辑: 'AND' (所有条件同时满足，默认) 或 'OR' (满足任一条件即可)")
+                                                }
+                                            )
+                                            put(
+                                                "action",
+                                                JSONObject().apply {
+                                                    put("type", "string")
+                                                    put("description", "拦截动作: 'FILTER_AND_HIGHLIGHT' (高亮并过滤仅展示) 或 'CAPTURE_ALERT' (抓取并触发告警)")
+                                                }
+                                            )
+                                            put(
+                                                "maxCaptureCount",
+                                                JSONObject().apply {
+                                                    put("type", "integer")
+                                                    put("description", "最大捕获条数容量，默认 10")
+                                                }
+                                            )
+                                        }
+                                    )
+                                    put("required", JSONArray().apply {
+                                        put("topicPattern")
+                                        put("conditionDesc")
+                                    })
+                                }
+                            )
+                        }
+                    )
+                }
+            )
+
+            // 工具 10: clear_radar_interceptor (撤销 AI 雷达哨兵布控)
+            tools.put(
+                JSONObject().apply {
+                    put("type", "function")
+                    put(
+                        "function",
+                        JSONObject().apply {
+                            put("name", "clear_radar_interceptor")
+                            put(
+                                "description",
+                                "【撤销 AI 雷达动态哨兵布控】当用户表示‘停止盯防’、‘取消拦截’、‘恢复全量接收’或需要撤销当前雷达布控时调用此工具。"
+                            )
+                            put(
+                                "parameters",
+                                JSONObject().apply {
+                                    put("type", "object")
+                                    put("properties", JSONObject())
+                                }
+                            )
+                        }
+                    )
+                }
+            )
+
+            // 工具 11: get_active_radar_trap (查询当前雷达哨兵状态)
+            tools.put(
+                JSONObject().apply {
+                    put("type", "function")
+                    put(
+                        "function",
+                        JSONObject().apply {
+                            put("name", "get_active_radar_trap")
+                            put(
+                                "description",
+                                "【查询当前雷达哨兵布控状态】查询当前是否有雷达哨兵正在拦截布控、已捕获了多少条报文及布控详情。"
+                            )
+                            put(
+                                "parameters",
+                                JSONObject().apply {
+                                    put("type", "object")
+                                    put("properties", JSONObject())
+                                }
+                            )
+                        }
+                    )
+                }
+            )
+
             return tools
         }
     }
@@ -725,6 +865,66 @@ class SIAgentToolRegistry(
                             }
                             resObj.toString()
                         }
+                    }
+                }
+
+                "deploy_radar_interceptor" -> {
+                    val topicPattern = args.optString("topicPattern", "#").trim()
+                    val desc = args.optString("conditionDesc", "动态拦截规则").trim()
+                    val matchLogic = args.optString("matchLogic", "AND").uppercase()
+                    val actionStr = args.optString("action", "FILTER_AND_HIGHLIGHT").uppercase()
+                    val maxCount = args.optInt("maxCaptureCount", 10).coerceIn(1, 100)
+
+                    val condsArray = args.optJSONArray("conditions") ?: JSONArray()
+                    val conds = (0 until condsArray.length()).mapNotNull { i ->
+                        val obj = condsArray.optJSONObject(i)
+                        if (obj != null) com.example.model.FieldCondition.fromJson(obj) else null
+                    }
+
+                    val action = try {
+                        com.example.model.RadarTrapAction.valueOf(actionStr)
+                    } catch (_: Exception) {
+                        com.example.model.RadarTrapAction.FILTER_AND_HIGHLIGHT
+                    }
+
+                    val trap = com.example.model.DynamicRadarTrap(
+                        topicPattern = topicPattern,
+                        conditionDesc = desc,
+                        conditions = conds,
+                        matchLogic = matchLogic,
+                        action = action,
+                        maxCaptureCount = maxCount
+                    )
+
+                    onDeployRadarTrap?.invoke(trap)
+                    JSONObject().apply {
+                        put("status", "SUCCESS")
+                        put("message", "AI 实时雷达哨兵已成功布控！底层通信流已激活微秒级条件拦截")
+                        put("trapId", trap.id)
+                        put("topicPattern", topicPattern)
+                        put("conditionDesc", desc)
+                        put("conditionsCount", conds.size)
+                        put("action", action.name)
+                        put("maxCaptureCount", maxCount)
+                    }.toString()
+                }
+
+                "clear_radar_interceptor" -> {
+                    onClearRadarTrap?.invoke()
+                    JSONObject().apply {
+                        put("status", "SUCCESS")
+                        put("message", "已成功撤销 AI 雷达哨兵布控，恢复常规全量接收与展示模式")
+                    }.toString()
+                }
+
+                "get_active_radar_trap" -> {
+                    val active = activeRadarTrapProvider?.invoke()
+                    if (active == null) {
+                        "当前未部署任何 AI 雷达哨兵布控规则。"
+                    } else {
+                        active.toJson().apply {
+                            put("status", "ACTIVE")
+                        }.toString()
                     }
                 }
 

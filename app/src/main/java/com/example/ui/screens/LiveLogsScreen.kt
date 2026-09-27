@@ -144,6 +144,8 @@ fun LiveLogsScreen(
     val filteredPackets by viewModel.filteredLivePackets.collectAsState()
     val tslParseResults by viewModel.tslParseResults.collectAsState()
     val overflowCount by viewModel.packetOverflowCount.collectAsState()
+    val activeRadarTrap by viewModel.activeRadarTrap.collectAsState()
+    val isRadarFilterOnly by viewModel.isRadarFilterOnly.collectAsState()
 
     var selectedDetailsPacket by remember { mutableStateOf<MqttLogPacket?>(null) }
     var isTopicFilterDialogVisible by remember { mutableStateOf(false) }
@@ -388,6 +390,89 @@ fun LiveLogsScreen(
             }
         )
 
+        // 1.6 AI 实时雷达哨兵动态布控胶囊条
+        if (activeRadarTrap != null) {
+            val trap = activeRadarTrap!!
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                shape = RoundedCornerShape(8.dp),
+                color = if (isRadarFilterOnly) Color(0xFFFEF3C7) else Color(0xFFEFF6FF),
+                border = BorderStroke(0.6.dp, if (isRadarFilterOnly) Color(0xFFF59E0B) else Color(0xFF3B82F6))
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(text = "🤖", fontSize = 14.sp)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "AI 哨兵布控中",
+                                style = TextStyle(
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isRadarFilterOnly) Color(0xFFB45309) else Color(0xFF1D4ED8)
+                                )
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(if (trap.capturedCount > 0) Color(0xFFDC2626) else OutlineGray)
+                                    .padding(horizontal = 4.dp, vertical = 1.dp)
+                            ) {
+                                Text(
+                                    text = "已拦截 ${trap.capturedCount} 条",
+                                    style = TextStyle(fontSize = 9.sp, color = Color.White, fontWeight = FontWeight.SemiBold)
+                                )
+                            }
+                        }
+                        Text(
+                            text = "${trap.topicPattern} · ${trap.conditionDesc}",
+                            style = TextStyle(fontSize = 10.5.sp, color = OnSurfaceVariantGray),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+
+                    // 切换仅看拦截 / 全量
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .clickable { viewModel.toggleRadarFilterOnly() }
+                            .background(if (isRadarFilterOnly) Color(0xFFF59E0B) else Color(0xFFE2E8F0))
+                            .padding(horizontal = 6.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = if (isRadarFilterOnly) "查看全部" else "仅看拦截",
+                            style = TextStyle(
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = if (isRadarFilterOnly) Color.White else PrimaryBlack
+                            )
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    // 撤销布控
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "撤销布控",
+                        tint = OnSurfaceVariantGray,
+                        modifier = Modifier
+                            .size(16.dp)
+                            .clickable { viewModel.clearRadarTrap() }
+                    )
+                }
+            }
+        }
+
         // 2. 独立滚动的消息流列表 (正向自然流序，自动向下吸底滚动与暂停自由翻阅)
         Box(
             modifier = Modifier
@@ -605,11 +690,17 @@ private fun CompactMessageCard(
     onCopyTopic: (String) -> Unit,
     onCopyPayload: (String) -> Unit
 ) {
+    val isIntercepted = packet.isRadarIntercepted
     Card(
         shape = RoundedCornerShape(10.dp),
-        colors = CardDefaults.cardColors(containerColor = SurfaceContainerLowest),
-        border = BorderStroke(0.6.dp, OutlineVariantLight),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isIntercepted) Color(0xFFFFFBEB) else SurfaceContainerLowest
+        ),
+        border = BorderStroke(
+            if (isIntercepted) 1.dp else 0.6.dp,
+            if (isIntercepted) Color(0xFFF59E0B) else OutlineVariantLight
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (isIntercepted) 1.dp else 0.dp),
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = { onCardClick(packet) })
@@ -688,6 +779,27 @@ private fun CompactMessageCard(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(5.dp)
             ) {
+                // AI 雷达拦截专属徽章
+                if (packet.isRadarIntercepted) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(Color(0xFFFEF3C7))
+                            .border(0.6.dp, Color(0xFFF59E0B), RoundedCornerShape(4.dp))
+                            .padding(horizontal = 4.5.dp, vertical = 1.dp)
+                    ) {
+                        Text(
+                            text = "🚨 AI拦截",
+                            style = TextStyle(
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 9.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFFB45309)
+                            )
+                        )
+                    }
+                }
+
                 // QoS Badge (规范名称，消除 [QO] 误解)
                 Box(
                     modifier = Modifier
@@ -936,6 +1048,24 @@ private fun MessageDetailsModalDialog(
                                     color = OnSurfaceVariantGray
                                 )
                             )
+                        }
+                        if (packet.isRadarIntercepted) {
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(Color(0xFFFEF3C7))
+                                    .border(0.6.dp, Color(0xFFF59E0B), RoundedCornerShape(4.dp))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Text(
+                                    text = "🚨 AI 哨兵拦截",
+                                    style = TextStyle(
+                                        fontSize = 10.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFFB45309)
+                                    )
+                                )
+                            }
                         }
                     }
                     IconButton(

@@ -86,7 +86,8 @@ data class MqttLogPacket(
     val devInfo: String,
     val sizeText: String,
     val category: String,
-    val dotColorHex: Long
+    val dotColorHex: Long,
+    val isRadarIntercepted: Boolean = false
 )
 
 data class TopicFilterRule(

@@ -228,3 +228,90 @@ data class TslParsedValue(
         if (stringValue != null) put("stringValue", stringValue)
     }
 }
+
+// =========================================================================
+// AI 雷达哨兵与动态拦截模型
+// =========================================================================
+
+/**
+ * 字段级动态匹配条件（由 Agent 根据自然语言意图编译生成）
+ */
+data class FieldCondition(
+    val field: String,              // 字段标识符或中文名（如 "ia", "A相电流", "temp", "status"）
+    val operator: String,           // 操作符: ">", "<", ">=", "<=", "==", "!=", "contains", "bitmask_and"
+    val targetValue: String         // 目标比较值（如 "15.0", "online", "0x0002"）
+) {
+    fun toJson(): JSONObject = JSONObject().apply {
+        put("field", field)
+        put("operator", operator)
+        put("targetValue", targetValue)
+    }
+
+    companion object {
+        fun fromJson(json: JSONObject): FieldCondition = FieldCondition(
+            field = json.optString("field", ""),
+            operator = json.optString("operator", "=="),
+            targetValue = json.optString("targetValue", "")
+        )
+    }
+}
+
+/**
+ * 雷达拦截动作枚举
+ */
+enum class RadarTrapAction {
+    FILTER_AND_HIGHLIGHT,   // 列表高亮并过滤展示
+    CAPTURE_ALERT,          // 抓取并触发声光震动提示
+    SNIFFER_TRAP            // 定量嗅探捕获（达标后自动汇总交卷）
+}
+
+/**
+ * AI 雷达动态哨兵布控对象
+ */
+data class DynamicRadarTrap(
+    val id: String = java.util.UUID.randomUUID().toString(),
+    val topicPattern: String,                  // 目标主题通配符（如 "college/breaker/#"）
+    val conditionDesc: String,                 // 人类可读意图描述（如 "断路器 A相电流 > 15A 或温度 > 65℃"）
+    val conditions: List<FieldCondition>,      // 结构化匹配条件
+    val matchLogic: String = "AND",            // 组合逻辑: "AND" 或 "OR"
+    val action: RadarTrapAction = RadarTrapAction.FILTER_AND_HIGHLIGHT,
+    val maxCaptureCount: Int = 10,             // 最大捕获容量
+    val capturedCount: Int = 0,                // 当前已捕获条数
+    val createdAt: Long = System.currentTimeMillis()
+) {
+    fun toJson(): JSONObject = JSONObject().apply {
+        put("id", id)
+        put("topicPattern", topicPattern)
+        put("conditionDesc", conditionDesc)
+        put("matchLogic", matchLogic)
+        put("action", action.name)
+        put("maxCaptureCount", maxCaptureCount)
+        put("capturedCount", capturedCount)
+        put("createdAt", createdAt)
+        put("conditions", JSONArray().apply {
+            for (c in conditions) put(c.toJson())
+        })
+    }
+
+    companion object {
+        fun fromJson(json: JSONObject): DynamicRadarTrap {
+            val condsArray = json.optJSONArray("conditions") ?: JSONArray()
+            val conds = (0 until condsArray.length()).map { i ->
+                FieldCondition.fromJson(condsArray.getJSONObject(i))
+            }
+            return DynamicRadarTrap(
+                id = json.optString("id", java.util.UUID.randomUUID().toString()),
+                topicPattern = json.optString("topicPattern", "#"),
+                conditionDesc = json.optString("conditionDesc", "未命名的雷达拦截规则"),
+                conditions = conds,
+                matchLogic = json.optString("matchLogic", "AND").uppercase(),
+                action = try {
+                    RadarTrapAction.valueOf(json.optString("action", "FILTER_AND_HIGHLIGHT").uppercase())
+                } catch (_: Exception) { RadarTrapAction.FILTER_AND_HIGHLIGHT },
+                maxCaptureCount = json.optInt("maxCaptureCount", 10),
+                capturedCount = json.optInt("capturedCount", 0),
+                createdAt = json.optLong("createdAt", System.currentTimeMillis())
+            )
+        }
+    }
+}

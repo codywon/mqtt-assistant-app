@@ -131,21 +131,29 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
     val includeTopicFilters = MutableStateFlow<List<String>>(storage.loadIncludeTopicFilters())
     val excludeTopicFilters = MutableStateFlow<List<String>>(storage.loadExcludeTopicFilters())
 
+    // --- AI 实时雷达动态哨兵布控状态 ---
+    val activeRadarTrap = MutableStateFlow<com.example.model.DynamicRadarTrap?>(null)
+    val isRadarFilterOnly = MutableStateFlow(false)
+
     // --- Production Background Filter Pipeline (150ms Debounced, Zero Main-Thread Load, 120Hz Smoothness) ---
     @OptIn(kotlinx.coroutines.FlowPreview::class)
     val filteredLivePackets: StateFlow<List<MqttLogPacket>> = combine(
         livePackets,
         logFilterQuery.debounce(150L),
         includeTopicFilters,
-        excludeTopicFilters
-    ) { packets, query, incFilters, excFilters ->
+        excludeTopicFilters,
+        isRadarFilterOnly
+    ) { packets, query, incFilters, excFilters, radarOnly ->
         val q = query.trim()
         val hasRules = incFilters.isNotEmpty() || excFilters.isNotEmpty()
-        if (q.isEmpty() && !hasRules) {
+        if (q.isEmpty() && !hasRules && !radarOnly) {
             packets
         } else {
             withContext(Dispatchers.Default) {
                 packets.filter { packet ->
+                    if (radarOnly && !packet.isRadarIntercepted) {
+                        return@filter false
+                    }
                     val matchesAllowed = !hasRules || MqttTopicUtil.isTopicAllowed(packet.topic, incFilters, excFilters)
                     val matchesQuery = q.isEmpty() ||
                             packet.topic.contains(q, ignoreCase = true) ||
@@ -263,7 +271,20 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 publishHistory.update { listOf(newHistory) + it }
                 showToast("Agent 已向 $topic 成功下发报文")
             }
-        }
+        },
+        onDeployRadarTrap = { trap ->
+            viewModelScope.launch(Dispatchers.Main) {
+                deployRadarTrap(trap)
+                showToast("🤖 AI 哨兵已布控: ${trap.conditionDesc}")
+            }
+        },
+        onClearRadarTrap = {
+            viewModelScope.launch(Dispatchers.Main) {
+                clearRadarTrap()
+                showToast("已撤销 AI 雷达哨兵布控")
+            }
+        },
+        activeRadarTrapProvider = { activeRadarTrap.value }
     )
     private val aiAgentClient = AiAgentClient(toolRegistry)
 
@@ -386,16 +407,43 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 batch.clear()
                 val maxBuffer = serverConfig.value.bufferThreshold
 
-                // 1. 纯内存高速环形存储与主线程极速发射 (零 SQLite 写入，零闪存磨损)
-                val allPackets = com.example.data.MemoryPacketStore.addPackets(currentBatch, maxBuffer)
+                // 1. TSL 物模型与 AI 哨兵雷达拦截判定
+                val protos = tslProtocols.value
+                val trap = activeRadarTrap.value
+                var newlyInterceptedCount = 0
+
+                val processedBatch = currentBatch.map { pkt ->
+                    val tslRes = if (protos.isNotEmpty()) {
+                        com.example.engine.TslParseEngine.tryParse(
+                            topic = pkt.topic,
+                            payload = pkt.payload,
+                            category = pkt.category,
+                            protocols = protos
+                        )
+                    } else null
+
+                    val isHit = if (trap != null) {
+                        val hit = com.example.engine.TslParseEngine.evaluateTrap(pkt.topic, pkt.payload, tslRes, trap)
+                        if (hit) newlyInterceptedCount++
+                        hit
+                    } else false
+
+                    if (isHit) pkt.copy(isRadarIntercepted = true) else pkt
+                }
+
+                if (newlyInterceptedCount > 0 && trap != null) {
+                    activeRadarTrap.update { it?.copy(capturedCount = it.capturedCount + newlyInterceptedCount) }
+                }
+
+                // 2. 纯内存高速环形存储与主线程极速发射 (零 SQLite 写入，零闪存磨损)
+                val allPackets = com.example.data.MemoryPacketStore.addPackets(processedBatch, maxBuffer)
                 withContext(Dispatchers.Main) {
                     livePackets.value = allPackets
 
                     // TSL 物模型引擎：实时自动解析新到达的报文（微秒级，零额外 I/O）
-                    val protos = tslProtocols.value
                     if (protos.isNotEmpty()) {
                         val newResults = tslParseResults.value.toMutableMap()
-                        for (pkt in currentBatch) {
+                        for (pkt in processedBatch) {
                             val result = com.example.engine.TslParseEngine.tryParse(
                                 topic = pkt.topic,
                                 payload = pkt.payload,
@@ -414,7 +462,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                         tslParseResults.value = newResults
                     }
 
-                    val topicCounts = currentBatch.groupBy { it.topic }
+                    val topicCounts = processedBatch.groupBy { it.topic }
                     subscriptions.update { list ->
                         list.map { sub ->
                             if (sub.isEnabled) {
@@ -1274,6 +1322,26 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
         excludeTopicFilters.value = emptyList()
         storage.saveExcludeTopicFilters(emptyList())
         showToast("已清空所有排除条件")
+    }
+
+    // ==========================================
+    // AI 实时雷达动态哨兵控制接口
+    // ==========================================
+
+    fun deployRadarTrap(trap: com.example.model.DynamicRadarTrap) {
+        activeRadarTrap.value = trap
+    }
+
+    fun clearRadarTrap() {
+        activeRadarTrap.value = null
+        isRadarFilterOnly.value = false
+        showToast("已撤销 AI 雷达哨兵布控")
+    }
+
+    fun toggleRadarFilterOnly() {
+        isRadarFilterOnly.update { !it }
+        val modeText = if (isRadarFilterOnly.value) "已切换为：仅展示 AI 雷达拦截报文" else "已恢复：全量报文流模式"
+        showToast(modeText)
     }
 
     // ==========================================

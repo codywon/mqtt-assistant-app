@@ -73,6 +73,13 @@ class AiAgentClient(
             3. 主动调用 web_search(query="检索关键词") 检索公网权威技术规范与故障手册；
             4. 检索获得规约解析后，反哺当前报文的逐字节切片逆向分析，并在分析末尾贴心询问用户：“是否需要将该协议规则沉淀入本地知识库？如需沉淀，我可立即为您保存”。
 
+            【AI 实时雷达哨兵与动态报文拦截调度 (deploy_radar_interceptor)】
+            当你收到用户监控、盯防、捕获、拦截或定向过滤高频报文的需求时（例如：“帮我盯住漏电电流大于 30mA 的断路器”、“只看 A相电流 > 15A 或温度 > 65℃ 的包”、“抓一下接下来跳闸的报文”、“拦截软版本低于 v1.0.3 的注册包”）：
+            1. 结合当前已知的 TSL 物模型字段（或常见 JSON 键名），精准推导目标主题模式（topicPattern）与字段比较条件（field, operator, targetValue）；
+            2. 立即调用 deploy_radar_interceptor 工具部署 AI 动态雷达哨兵；
+            3. 布控成功后向用户汇报布控规则与监听主题，并告知系统底层已进入微秒级条件拦截监控状态；
+            4. 当用户要求“取消拦截”、“恢复全量”或“停止盯防”时，调用 clear_radar_interceptor 撤销布控。
+
             【工业物联网现场验收交付报告规范】
             当用户要求“生成现场验收报告”、“工程排查报告”或盘点整网通信质量时：
             1. 必须调用 get_live_packets 获取当前在线网关数、各网关吞吐分布及异常告警；若涉及历史数据，联动 list_archived_excels 与 get_excel_summary；
@@ -85,6 +92,9 @@ class AiAgentClient(
                - 五、现场整改建议与验收结论（是否符合交付标准、遗留风险与处置建议）
 
             【可用工具箱】
+            - deploy_radar_interceptor: 【AI 实时雷达哨兵布控】根据自然语言意图调度底层通信雷达，设置微秒级条件拦截与动态捕获（支持物模型字段阈值、JSON属性、Bitmask等）；
+            - clear_radar_interceptor: 【撤销雷达哨兵】撤销布控规则，恢复常规全量接收与展示；
+            - get_active_radar_trap: 【查询哨兵状态】查看当前布控规则与已捕获条数；
             - get_live_packets: 【内存实时热报文检索】极速访问内存环形缓冲区。支持 mode="summary"（秒级提炼网关吞吐分布 Top 10 与在线清单）和 mode="sample"（按主题/关键词精准抽样）；
             - publish_mqtt_message: 【双向发包与Mock调试】向 Broker 指定主题直接发布消息（支持 JSON/文本或十六进制 HEX 串），实现自然语言发包与指令下发；
             - web_search: 【工业规约与技术资料联网检索】遇到未知私有硬件报文、行业标准（DL/T 645、CJ/T 188、HJ 212、JT/T 808、Modbus 等）、PLC/变频器故障代码或需要权威技术资料时，实时联网搜索；

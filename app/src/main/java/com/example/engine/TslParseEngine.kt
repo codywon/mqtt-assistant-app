@@ -482,4 +482,150 @@ object TslParseEngine {
     private fun readFloat64(bytes: ByteArray, offset: Int, order: ByteOrder): Double {
         return ByteBuffer.wrap(bytes, offset, 8).order(order).double
     }
+
+    // =========================================================================
+    // AI 动态雷达哨兵与条件拦截判定
+    // =========================================================================
+
+    /**
+     * 评估单包报文是否满足 AI 雷达哨兵 (DynamicRadarTrap) 的布控拦截条件
+     */
+    fun evaluateTrap(
+        packetTopic: String,
+        rawPayload: String,
+        tslResult: TslParseResult?,
+        trap: DynamicRadarTrap
+    ): Boolean {
+        // 1. Topic 通配符匹配
+        if (!matchTopic(packetTopic.trim(), trap.topicPattern.trim())) {
+            return false
+        }
+
+        // 若无字段级额外条件，命中 Topic 即为拦截成功
+        if (trap.conditions.isEmpty()) return true
+
+        val results = trap.conditions.map { cond ->
+            evaluateFieldCondition(rawPayload, tslResult, cond)
+        }
+
+        return if (trap.matchLogic.equals("OR", ignoreCase = true)) {
+            results.any { it }
+        } else {
+            results.all { it }
+        }
+    }
+
+    /**
+     * 单个字段条件的动态求值
+     */
+    private fun evaluateFieldCondition(
+        rawPayload: String,
+        tslResult: TslParseResult?,
+        cond: FieldCondition
+    ): Boolean {
+        val targetField = cond.field.trim()
+        val op = cond.operator.trim()
+        val targetValStr = cond.targetValue.trim()
+
+        var actualValDouble: Double? = null
+        var actualValStr: String? = null
+
+        // 1. 优先从 TslParseResult 的已解析物理量中查找
+        val matchedTslValue = tslResult?.values?.firstOrNull {
+            it.identifier.equals(targetField, ignoreCase = true) ||
+                it.name.contains(targetField, ignoreCase = true)
+        }
+
+        if (matchedTslValue != null) {
+            actualValDouble = matchedTslValue.rawValue
+            actualValStr = matchedTslValue.stringValue ?: matchedTslValue.displayValue
+        } else {
+            // 2. 若物模型未解析该字段，尝试从原始 JSON 中提取（兼容未经 TSL 映射的属性）
+            try {
+                val clean = rawPayload.trim()
+                if (clean.startsWith("{")) {
+                    val json = JSONObject(clean)
+                    if (json.has(targetField)) {
+                        actualValDouble = json.optDouble(targetField, Double.NaN).takeIf { !it.isNaN() }
+                        actualValStr = json.optString(targetField, "")
+                    } else {
+                        val keys = json.keys()
+                        while (keys.hasNext()) {
+                            val k = keys.next()
+                            if (k.equals(targetField, ignoreCase = true)) {
+                                actualValDouble = json.optDouble(k, Double.NaN).takeIf { !it.isNaN() }
+                                actualValStr = json.optString(k, "")
+                                break
+                            }
+                        }
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+
+        // 3. 执行操作符求值
+        return when (op) {
+            ">" -> {
+                val t = targetValStr.toDoubleOrNull() ?: return false
+                val a = actualValDouble ?: return false
+                a > t
+            }
+            "<" -> {
+                val t = targetValStr.toDoubleOrNull() ?: return false
+                val a = actualValDouble ?: return false
+                a < t
+            }
+            ">=" -> {
+                val t = targetValStr.toDoubleOrNull() ?: return false
+                val a = actualValDouble ?: return false
+                a >= t
+            }
+            "<=" -> {
+                val t = targetValStr.toDoubleOrNull() ?: return false
+                val a = actualValDouble ?: return false
+                a <= t
+            }
+            "==", "=" -> {
+                val tNum = targetValStr.toDoubleOrNull()
+                if (tNum != null && actualValDouble != null) {
+                    Math.abs(actualValDouble - tNum) < 0.0001
+                } else {
+                    val aStr = actualValStr ?: actualValDouble?.toString() ?: ""
+                    aStr.equals(targetValStr, ignoreCase = true)
+                }
+            }
+            "!=" -> {
+                val tNum = targetValStr.toDoubleOrNull()
+                if (tNum != null && actualValDouble != null) {
+                    Math.abs(actualValDouble - tNum) >= 0.0001
+                } else {
+                    val aStr = actualValStr ?: actualValDouble?.toString() ?: ""
+                    !aStr.equals(targetValStr, ignoreCase = true)
+                }
+            }
+            "contains" -> {
+                val aStr = actualValStr ?: actualValDouble?.toString() ?: rawPayload
+                aStr.contains(targetValStr, ignoreCase = true)
+            }
+            "bitmask_and", "&" -> {
+                val mask = parseLongSafely(targetValStr) ?: return false
+                val rawLong = actualValDouble?.toLong() ?: parseLongSafely(actualValStr ?: "") ?: return false
+                (rawLong and mask) != 0L
+            }
+            else -> false
+        }
+    }
+
+    private fun parseLongSafely(str: String): Long? {
+        val clean = str.trim()
+        return try {
+            if (clean.startsWith("0x", ignoreCase = true)) {
+                clean.substring(2).toLong(16)
+            } else {
+                clean.toLong()
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
 }
