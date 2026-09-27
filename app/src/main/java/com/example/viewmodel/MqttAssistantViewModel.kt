@@ -342,17 +342,15 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
             // 自动同步非内置的自定义 TSL 物模型镜像到协议工作台，确保用户界面即时可见
             val currentKnowledgeIds = savedProtocols.map { it.id }.toSet()
             enabledTslProtos.filter { !it.builtin }.forEach { tsl ->
-                if (!currentKnowledgeIds.contains(tsl.id)) {
-                    val fieldDesc = tsl.fields.joinToString("\n") { f ->
-                        "- ${f.name} (${f.identifier}): 类型=${f.type}${if (f.jsonPath.isNotBlank()) ", 路径=${f.jsonPath}" else ""}${if (f.unit.isNotBlank()) ", 单位=${f.unit}" else ""}"
-                    }
+                val existing = savedProtocols.find { it.id == tsl.id }
+                if (existing == null || existing.description.startsWith("【TSL 原生物模型")) {
                     val mirror = ProtocolKnowledge(
                         id = tsl.id,
                         name = tsl.name,
                         topicFilter = tsl.matchTopic,
-                        description = "【TSL 原生物模型 · ${tsl.format}】共 ${tsl.fields.size} 项指标:\n$fieldDesc",
+                        description = tsl.toJson().toString(2),
                         sampleHex = "",
-                        createdAt = System.currentTimeMillis()
+                        createdAt = existing?.createdAt ?: System.currentTimeMillis()
                     )
                     storage.saveProtocolKnowledge(mirror)
                 }
@@ -2239,14 +2237,11 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 if (result.tslProtocols.isNotEmpty()) {
                     result.tslProtocols.forEach { tsl ->
                         storage.saveTslProtocol(tsl)
-                        val fieldDesc = tsl.fields.joinToString("\n") { f ->
-                            "- ${f.name} (${f.identifier}): 类型=${f.type}${if (f.jsonPath.isNotBlank()) ", 路径=${f.jsonPath}" else ""}${if (f.unit.isNotBlank()) ", 单位=${f.unit}" else ""}"
-                        }
                         val mirrorKnowledge = ProtocolKnowledge(
                             id = tsl.id,
                             name = tsl.name,
                             topicFilter = tsl.matchTopic,
-                            description = "【TSL 原生物模型 · ${tsl.format}】共 ${tsl.fields.size} 项指标:\n$fieldDesc",
+                            description = tsl.toJson().toString(2),
                             sampleHex = "",
                             createdAt = System.currentTimeMillis()
                         )
@@ -2298,14 +2293,11 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 if (result.tslProtocols.isNotEmpty()) {
                     result.tslProtocols.forEach { tsl ->
                         storage.saveTslProtocol(tsl)
-                        val fieldDesc = tsl.fields.joinToString("\n") { f ->
-                            "- ${f.name} (${f.identifier}): 类型=${f.type}${if (f.jsonPath.isNotBlank()) ", 路径=${f.jsonPath}" else ""}${if (f.unit.isNotBlank()) ", 单位=${f.unit}" else ""}"
-                        }
                         val mirrorKnowledge = ProtocolKnowledge(
                             id = tsl.id,
                             name = tsl.name,
                             topicFilter = tsl.matchTopic,
-                            description = "【TSL 原生物模型 · ${tsl.format}】共 ${tsl.fields.size} 项指标:\n$fieldDesc",
+                            description = tsl.toJson().toString(2),
                             sampleHex = "",
                             createdAt = System.currentTimeMillis()
                         )
@@ -2603,6 +2595,23 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
         protocolKnowledgeList.value = currentList
         viewModelScope.launch(Dispatchers.IO) {
             storage.saveProtocolKnowledge(updated)
+            // 如果用户编辑或录入的内容是合法 TSL 物模型 JSON，深度联动同步到底层微秒级解析引擎
+            try {
+                val json = JSONObject(updated.description.trim())
+                if (json.has("fields")) {
+                    val tsl = com.example.model.TslProtocol.fromJson(json).copy(
+                        id = updated.id,
+                        name = updated.name.ifBlank { json.optString("name", "未命名物模型") },
+                        matchTopic = updated.topicFilter.ifBlank { json.optString("matchTopic", "") }
+                    )
+                    storage.saveTslProtocol(tsl)
+                    val updatedTsl = storage.loadEnabledTslProtocols()
+                    withContext(Dispatchers.Main) {
+                        tslProtocols.value = updatedTsl
+                        reparseAllLivePacketsWithTsl()
+                    }
+                }
+            } catch (_: Exception) { }
         }
         showToast("协议澄清已保存并注入 Agent 知识库")
     }
@@ -2620,14 +2629,11 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 if (jsonResult.tslProtocols.isNotEmpty()) {
                     jsonResult.tslProtocols.forEach { tsl ->
                         storage.saveTslProtocol(tsl)
-                        val fieldDesc = tsl.fields.joinToString("\n") { f ->
-                            "- ${f.name} (${f.identifier}): 类型=${f.type}${if (f.jsonPath.isNotBlank()) ", 路径=${f.jsonPath}" else ""}${if (f.unit.isNotBlank()) ", 单位=${f.unit}" else ""}"
-                        }
                         val mirrorKnowledge = ProtocolKnowledge(
                             id = tsl.id,
                             name = tsl.name,
                             topicFilter = tsl.matchTopic,
-                            description = "【TSL 原生物模型 · ${tsl.format}】共 ${tsl.fields.size} 项指标:\n$fieldDesc",
+                            description = tsl.toJson().toString(2),
                             sampleHex = "",
                             createdAt = System.currentTimeMillis()
                         )
@@ -3101,15 +3107,12 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
         viewModelScope.launch(Dispatchers.IO) {
             storage.saveTslProtocol(protocol)
 
-            // 自动同步一条 ProtocolKnowledge 镜像，确保在“协议规则库”工作台中立即可见与管理
-            val fieldDesc = protocol.fields.joinToString("\n") { f ->
-                "- ${f.name} (${f.identifier}): 类型=${f.type}${if (f.jsonPath.isNotBlank()) ", 路径=${f.jsonPath}" else ""}${if (f.unit.isNotBlank()) ", 单位=${f.unit}" else ""}${if (f.warnMin != null || f.warnMax != null) ", 正常区间=[${f.warnMin ?: "-∞"}, ${f.warnMax ?: "+∞"}]" else ""}"
-            }
+            // 自动同步一条 ProtocolKnowledge 镜像，以标准格式化 JSON 存储，确保工作台立即可见且可编辑原 JSON
             val mirrorKnowledge = ProtocolKnowledge(
                 id = protocol.id,
                 name = protocol.name,
                 topicFilter = protocol.matchTopic,
-                description = "【TSL 原生物模型 · ${protocol.format}】共 ${protocol.fields.size} 项指标:\n$fieldDesc",
+                description = protocol.toJson().toString(2),
                 sampleHex = "",
                 createdAt = System.currentTimeMillis()
             )
