@@ -396,44 +396,56 @@ fun LiveLogsScreen(
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                    .padding(horizontal = 16.dp, vertical = 3.dp),
                 shape = RoundedCornerShape(8.dp),
-                color = if (isRadarFilterOnly) Color(0xFFFEF3C7) else Color(0xFFEFF6FF),
-                border = BorderStroke(0.6.dp, if (isRadarFilterOnly) Color(0xFFF59E0B) else Color(0xFF3B82F6))
+                color = SurfaceContainerLowest,
+                border = BorderStroke(0.6.dp, if (isRadarFilterOnly) Color(0xFFD97706) else OutlineVariantLight)
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                        .padding(horizontal = 10.dp, vertical = 5.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(text = "🤖", fontSize = 14.sp)
-                    Spacer(modifier = Modifier.width(6.dp))
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(if (isRadarFilterOnly) Color(0xFFF59E0B) else PrimaryBlack)
+                            .padding(horizontal = 5.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = "哨兵",
+                            style = TextStyle(fontSize = 10.sp, color = OnPrimaryWhite, fontWeight = FontWeight.Bold)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(7.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                text = "AI 哨兵布控中",
+                                text = trap.topicPattern,
                                 style = TextStyle(
+                                    fontFamily = FontFamily.Monospace,
                                     fontSize = 11.5.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = if (isRadarFilterOnly) Color(0xFFB45309) else Color(0xFF1D4ED8)
-                                )
+                                    color = PrimaryBlack
+                                ),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(4.dp))
-                                    .background(if (trap.capturedCount > 0) Color(0xFFDC2626) else OutlineGray)
-                                    .padding(horizontal = 4.dp, vertical = 1.dp)
-                            ) {
+                            if (trap.capturedCount > 0) {
+                                Spacer(modifier = Modifier.width(6.dp))
                                 Text(
-                                    text = "已拦截 ${trap.capturedCount} 条",
-                                    style = TextStyle(fontSize = 9.sp, color = Color.White, fontWeight = FontWeight.SemiBold)
+                                    text = "已拦截 ${trap.capturedCount}",
+                                    style = TextStyle(
+                                        fontSize = 10.sp,
+                                        color = Color(0xFFD97706),
+                                        fontWeight = FontWeight.SemiBold
+                                    )
                                 )
                             }
                         }
                         Text(
-                            text = "${trap.topicPattern} · ${trap.conditionDesc}",
+                            text = trap.conditionDesc,
                             style = TextStyle(fontSize = 10.5.sp, color = OnSurfaceVariantGray),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
@@ -443,32 +455,35 @@ fun LiveLogsScreen(
                     // 切换仅看拦截 / 全量
                     Box(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
+                            .clip(RoundedCornerShape(5.dp))
                             .clickable { viewModel.toggleRadarFilterOnly() }
-                            .background(if (isRadarFilterOnly) Color(0xFFF59E0B) else Color(0xFFE2E8F0))
-                            .padding(horizontal = 6.dp, vertical = 4.dp)
+                            .background(if (isRadarFilterOnly) PrimaryBlack else SurfaceContainerLow)
+                            .padding(horizontal = 7.dp, vertical = 3.5.dp)
                     ) {
                         Text(
                             text = if (isRadarFilterOnly) "查看全部" else "仅看拦截",
                             style = TextStyle(
                                 fontSize = 10.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = if (isRadarFilterOnly) Color.White else PrimaryBlack
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (isRadarFilterOnly) OnPrimaryWhite else PrimaryBlack
                             )
                         )
                     }
 
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
 
                     // 撤销布控
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "撤销布控",
-                        tint = OnSurfaceVariantGray,
-                        modifier = Modifier
-                            .size(16.dp)
-                            .clickable { viewModel.clearRadarTrap() }
-                    )
+                    IconButton(
+                        onClick = { viewModel.clearRadarTrap() },
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "撤销布控",
+                            tint = OutlineGray,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
                 }
             }
         }
@@ -694,23 +709,23 @@ private fun CompactMessageCard(
     Card(
         shape = RoundedCornerShape(10.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (isIntercepted) Color(0xFFFFFBEB) else SurfaceContainerLowest
+            containerColor = SurfaceContainerLowest
         ),
         border = BorderStroke(
-            if (isIntercepted) 1.dp else 0.6.dp,
+            if (isIntercepted) 0.8.dp else 0.6.dp,
             if (isIntercepted) Color(0xFFF59E0B) else OutlineVariantLight
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = if (isIntercepted) 1.dp else 0.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = { onCardClick(packet) })
             .testTag("log_packet_${packet.id}")
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(5.dp)
+            modifier = Modifier.padding(horizontal = 11.dp, vertical = 9.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            // Row 1: Colored Dot + Topic (支持多行完整换行，点击直接复制主题) + AI Inspect & Copy Payload Buttons
+            // Row 1: Colored Dot + Topic + AI Inspect & Copy Buttons
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -773,23 +788,22 @@ private fun CompactMessageCard(
                 }
             }
 
-            // Row 2: 合并元数据 (规范明确的 QoS 等级、大小、Retain、时间戳、序号，底部释放全部空间)
+            // Row 2: 合并元数据 (极简中性胶囊)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(5.dp)
             ) {
-                // AI 雷达拦截专属徽章
+                // AI 拦截徽章 (素雅琥珀色微型胶囊)
                 if (packet.isRadarIntercepted) {
                     Box(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(4.dp))
+                            .clip(RoundedCornerShape(3.dp))
                             .background(Color(0xFFFEF3C7))
-                            .border(0.6.dp, Color(0xFFF59E0B), RoundedCornerShape(4.dp))
                             .padding(horizontal = 4.5.dp, vertical = 1.dp)
                     ) {
                         Text(
-                            text = "🚨 AI拦截",
+                            text = "AI拦截",
                             style = TextStyle(
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 9.5.sp,
@@ -800,18 +814,18 @@ private fun CompactMessageCard(
                     }
                 }
 
-                // QoS Badge (规范名称，消除 [QO] 误解)
+                // QoS Badge
                 Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(4.dp))
+                        .clip(RoundedCornerShape(3.dp))
                         .background(SurfaceContainerLow)
-                        .padding(horizontal = 5.dp, vertical = 1.5.dp)
+                        .padding(horizontal = 4.5.dp, vertical = 1.dp)
                 ) {
                     Text(
                         text = "QoS ${packet.qos}",
                         style = TextStyle(
                             fontFamily = FontFamily.Monospace,
-                            fontSize = 10.5.sp,
+                            fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
                             color = PrimaryBlack
                         )
@@ -822,15 +836,15 @@ private fun CompactMessageCard(
                 if (packet.devInfo.contains("Retain", ignoreCase = true)) {
                     Box(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(4.dp))
+                            .clip(RoundedCornerShape(3.dp))
                             .background(SurfaceContainerLow)
-                            .padding(horizontal = 4.dp, vertical = 1.5.dp)
+                            .padding(horizontal = 4.dp, vertical = 1.dp)
                     ) {
                         Text(
                             text = "Retain",
                             style = TextStyle(
                                 fontFamily = FontFamily.Monospace,
-                                fontSize = 10.sp,
+                                fontSize = 9.5.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = OnSurfaceVariantGray
                             )
@@ -841,15 +855,15 @@ private fun CompactMessageCard(
                 // Size Badge
                 Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(4.dp))
+                        .clip(RoundedCornerShape(3.dp))
                         .background(SurfaceContainerLow)
-                        .padding(horizontal = 4.dp, vertical = 1.5.dp)
+                        .padding(horizontal = 4.dp, vertical = 1.dp)
                 ) {
                     Text(
                         text = packet.sizeText,
                         style = TextStyle(
                             fontFamily = FontFamily.Monospace,
-                            fontSize = 10.sp,
+                            fontSize = 9.5.sp,
                             color = OnSurfaceVariantGray
                         )
                     )
@@ -860,8 +874,8 @@ private fun CompactMessageCard(
                     text = packet.packetSeq,
                     style = TextStyle(
                         fontFamily = FontFamily.Monospace,
-                        fontSize = 10.5.sp,
-                        color = OnSurfaceVariantGray
+                        fontSize = 10.sp,
+                        color = OutlineGray
                     )
                 )
 
@@ -870,27 +884,26 @@ private fun CompactMessageCard(
                     text = packet.timestamp,
                     style = TextStyle(
                         fontFamily = FontFamily.Monospace,
-                        fontSize = 10.5.sp,
-                        color = OnSurfaceVariantGray
+                        fontSize = 10.sp,
+                        color = OutlineGray
                     )
                 )
             }
 
-            // Row 3: 紧凑原始载荷预览 (默认不换行展开格式化，极小省空间，轻触卡片查看多行格式化与全貌)
+            // Row 3: 紧凑原始载荷预览 (去除生硬描边盒子，极简扁平呈现)
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(6.dp))
+                    .clip(RoundedCornerShape(4.dp))
                     .background(SurfaceContainerLow.copy(alpha = 0.5f))
-                    .border(0.5.dp, SurfaceContainerDefault, RoundedCornerShape(6.dp))
                     .padding(horizontal = 8.dp, vertical = 5.dp)
             ) {
                 Text(
                     text = packet.payload.ifBlank { "（空载荷）" }.replace("\n", " ").trim(),
                     style = TextStyle(
                         fontFamily = FontFamily.Monospace,
-                        fontSize = 12.sp,
-                        lineHeight = 16.sp,
+                        fontSize = 11.5.sp,
+                        lineHeight = 15.5.sp,
                         color = if (packet.payload.isBlank()) OutlineGray else PrimaryBlack
                     ),
                     maxLines = 2,
@@ -898,44 +911,55 @@ private fun CompactMessageCard(
                 )
             }
 
-            // Row 4: TSL 物模型物理量解析 (2列工整平铺，彻底防止右侧字段被挤压成单字竖排)
+            // Row 4: TSL 物模型物理量解析 (完全融入卡片整体，去除绿色贴纸感)
             if (tslResult != null && tslResult.values.isNotEmpty()) {
                 val hasWarn = tslResult.hasWarnings
-                val bgColor = if (hasWarn) Color(0xFFFEF2F2) else Color(0xFFF0FDF4)
-                val borderColor = if (hasWarn) Color(0xFFFECACA) else Color(0xFFDCFCE7)
-                val titleColor = if (hasWarn) Color(0xFFDC2626) else Color(0xFF16A34A)
 
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(bgColor)
-                        .border(0.6.dp, borderColor, RoundedCornerShape(6.dp))
-                        .padding(horizontal = 9.dp, vertical = 6.dp),
-                    verticalArrangement = Arrangement.spacedBy(5.dp)
+                        .padding(top = 2.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
+                    // 极淡细分割线
+                    HorizontalDivider(
+                        color = OutlineVariantLight.copy(alpha = 0.6f),
+                        thickness = 0.5.dp
+                    )
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = if (hasWarn) "⚠️ 告警 · ${tslResult.protocolName}" else "物模型 · ${tslResult.protocolName}",
-                            style = TextStyle(
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = titleColor
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            if (hasWarn) {
+                                Text(
+                                    text = "⚠️",
+                                    style = TextStyle(fontSize = 10.sp)
+                                )
+                            }
+                            Text(
+                                text = if (hasWarn) "越限告警 · ${tslResult.protocolName}" else "物模型 · ${tslResult.protocolName}",
+                                style = TextStyle(
+                                    fontSize = 11.sp,
+                                    fontWeight = if (hasWarn) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (hasWarn) Color(0xFFDC2626) else OnSurfaceVariantGray
+                                )
                             )
-                        )
+                        }
                         if (tslResult.values.size > 4) {
                             Text(
                                 text = "共 ${tslResult.values.size} 项指标",
-                                style = TextStyle(fontSize = 10.sp, color = OnSurfaceVariantGray)
+                                style = TextStyle(fontSize = 10.sp, color = OutlineGray)
                             )
                         }
                     }
 
-                    // 物理量 2 列对称平铺 (最多呈现前 4 项核心指标，避免垂直臃肿)
+                    // 物理量 2 列对称工整平铺
                     val displayItems = tslResult.values.take(4)
                     val itemRows = displayItems.chunked(2)
                     Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
@@ -955,7 +979,7 @@ private fun CompactMessageCard(
                                             text = "${v.name}: ",
                                             style = TextStyle(
                                                 fontSize = 11.sp,
-                                                fontWeight = FontWeight.Medium,
+                                                fontWeight = FontWeight.Normal,
                                                 color = OnSurfaceVariantGray
                                             ),
                                             maxLines = 1
@@ -1915,21 +1939,22 @@ private fun LiveHealthWatchdogStrip(
     onInspectAnomaly: (WatchdogAnomaly) -> Unit,
     onGenerateReport: () -> Unit
 ) {
+    val isMinimal = state.isHealthy && !isExpanded
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp),
-        shape = RoundedCornerShape(10.dp),
-        color = if (state.isHealthy) SurfaceContainerLowest else Color(0xFFFFFBEB),
+            .padding(horizontal = 16.dp, vertical = if (isMinimal) 1.dp else 4.dp),
+        shape = RoundedCornerShape(8.dp),
+        color = if (isMinimal) Color.Transparent else if (state.isHealthy) SurfaceContainerLowest else Color(0xFFFFFBEB),
         border = BorderStroke(
-            0.6.dp,
-            if (state.isHealthy) OutlineVariantLight else Color(0xFFFDE68A)
+            if (isMinimal) 0.dp else 0.6.dp,
+            if (isMinimal) Color.Transparent else if (state.isHealthy) OutlineVariantLight else Color(0xFFFDE68A)
         )
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 7.dp)
+                .padding(horizontal = if (isMinimal) 4.dp else 12.dp, vertical = if (isMinimal) 2.dp else 7.dp)
         ) {
             // Header Row: 状态指示点 + 网关/速率概览 + 展开按钮
             Row(
@@ -1941,28 +1966,28 @@ private fun LiveHealthWatchdogStrip(
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(7.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(8.dp)
+                            .size(6.dp)
                             .clip(CircleShape)
                             .background(if (state.isHealthy) Color(0xFF10B981) else Color(0xFFF59E0B))
                     )
                     Text(
-                        text = if (state.isHealthy) "现场指标与链路正常" else "发现 ${state.anomalyCount} 处指标越限/异常",
+                        text = if (state.isHealthy) "现场链路正常" else "发现 ${state.anomalyCount} 处指标越限/异常",
                         style = TextStyle(
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (state.isHealthy) PrimaryBlack else Color(0xFFB45309)
+                            fontSize = 11.sp,
+                            fontWeight = if (state.isHealthy) FontWeight.Normal else FontWeight.Bold,
+                            color = if (state.isHealthy) OnSurfaceVariantGray else Color(0xFFB45309)
                         )
                     )
                     Text(
-                        text = "· ${state.activeGatewayCount} 个网关 · ~${state.packetRatePerMin} pkt/min" +
-                                if (overflowCount > 0) " · 缓冲已覆盖 ${overflowCount} 条" else "",
+                        text = "· ${state.activeGatewayCount} 网关 · ~${state.packetRatePerMin} pkt/min" +
+                                if (overflowCount > 0) " · 缓冲 ${overflowCount}" else "",
                         style = TextStyle(
-                            fontSize = 11.sp,
-                            color = if (overflowCount > 0) Color(0xFFD97706) else OnSurfaceVariantGray,
+                            fontSize = 10.5.sp,
+                            color = OutlineGray,
                             fontFamily = FontFamily.Monospace
                         )
                     )
@@ -1972,8 +1997,8 @@ private fun LiveHealthWatchdogStrip(
                     Icon(
                         imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
                         contentDescription = "展开巡检雷达",
-                        tint = OnSurfaceVariantGray,
-                        modifier = Modifier.size(18.dp)
+                        tint = OutlineGray,
+                        modifier = Modifier.size(16.dp)
                     )
                 }
             }
