@@ -138,7 +138,8 @@ fun AiChatScreen(
     val aiConfig by viewModel.aiConfig.collectAsState()
     val protocols by viewModel.protocolKnowledgeList.collectAsState()
     val activeRadarTrap by viewModel.activeRadarTrap.collectAsState()
-    val isConnected by viewModel.isConnected.collectAsState()
+    val connectionState by viewModel.connectionState.collectAsState()
+    val isConnected = connectionState == com.example.model.MqttConnectionState.CONNECTED
     val livePackets by viewModel.livePackets.collectAsState()
     val tslProtocols by viewModel.tslProtocols.collectAsState()
 
