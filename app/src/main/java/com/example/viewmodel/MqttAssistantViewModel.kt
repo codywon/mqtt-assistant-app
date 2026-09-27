@@ -2682,6 +2682,10 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 
                 $protocolContext
                 
+                【排版与文本规范（严禁使用 LaTeX）】
+                - ⚠️ 严禁使用任何 LaTeX 数学格式（严禁使用 '$'、'$$'、'\times'、'\text{}'、'\approx'、'^\circ' 等）呈现公式或工程单位！
+                - 所有电工计算、数值及物理单位必须直接使用纯文本和标准 Unicode 符号（如直接写 ×, ÷, ≈, ±, ℃, V, A, W, Hz, 100% 等）输出，保障移动端清晰可读；
+                
                 【透视解析要求】
                 请严格输出以下结构化内容：
                 1. ### 1. 协议特征与类型推断
