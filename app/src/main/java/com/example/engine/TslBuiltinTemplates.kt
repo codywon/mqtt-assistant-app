@@ -21,7 +21,10 @@ object TslBuiltinTemplates {
     fun getAll(): List<TslProtocol> = listOf(
         vitalSignsSensor(),
         modbusRtuGeneric(),
-        jsonTelemetryGeneric()
+        jsonTelemetryGeneric(),
+        biolandBloodPressure(),
+        biolandBloodGlucose(),
+        biolandThermometer()
     )
 
     // =========================================================================
@@ -224,6 +227,213 @@ object TslBuiltinTemplates {
                 name = "设备状态",
                 type = TslFieldType.JSON_STRING,
                 jsonPath = "status"
+            )
+        )
+    )
+
+    // =========================================================================
+    // 4. 爱奥乐蓝牙血压计 V3.0 (Bioland BP-V3)
+    // =========================================================================
+
+    /**
+     * 测量结果帧示例：55 0E 03 0E 0B 08 0C 12 00 20 01 58 46 65
+     * 对应：2014-11-08 12:18, SYS=0x0120(288 mmHg), DIA=0x58(88 mmHg), PULSE=0x46(70 bpm)
+     */
+    private fun biolandBloodPressure(): TslProtocol = TslProtocol(
+        id = "builtin_bioland_bp_v3",
+        name = "爱奥乐蓝牙血压计 V3.0",
+        format = TslFormat.HEX,
+        matchTopic = "medical/+/blood_pressure/#",
+        builtin = true,
+        enabled = true,
+        fields = listOf(
+            TslField(
+                identifier = "systolic",
+                name = "收缩压(高压)",
+                offset = 9,
+                length = 2,
+                type = TslFieldType.UINT16_LE,
+                unit = "mmHg",
+                precision = 0,
+                warnMin = 90.0,
+                warnMax = 140.0
+            ),
+            TslField(
+                identifier = "diastolic",
+                name = "舒张压(低压)",
+                offset = 11,
+                length = 1,
+                type = TslFieldType.UINT8,
+                unit = "mmHg",
+                precision = 0,
+                warnMin = 60.0,
+                warnMax = 90.0
+            ),
+            TslField(
+                identifier = "pulse",
+                name = "脉搏心率",
+                offset = 12,
+                length = 1,
+                type = TslFieldType.UINT8,
+                unit = "bpm",
+                precision = 0,
+                warnMin = 50.0,
+                warnMax = 100.0
+            ),
+            TslField(
+                identifier = "meas_year",
+                name = "测量年份",
+                offset = 3,
+                length = 1,
+                type = TslFieldType.UINT8,
+                unit = "年",
+                precision = 0
+            ),
+            TslField(
+                identifier = "meas_month",
+                name = "测量月份",
+                offset = 4,
+                length = 1,
+                type = TslFieldType.UINT8,
+                unit = "月",
+                precision = 0
+            ),
+            TslField(
+                identifier = "meas_day",
+                name = "测量日",
+                offset = 5,
+                length = 1,
+                type = TslFieldType.UINT8,
+                unit = "日",
+                precision = 0
+            )
+        )
+    )
+
+    // =========================================================================
+    // 5. 爱奥乐蓝牙血糖仪 V3.0 (Bioland Glucose-V3)
+    // =========================================================================
+
+    /**
+     * 测量结果帧示例：55 0C 03 0E 01 01 05 19 00 C3 02 57
+     * 对应：02C3 = 707 mg/dL = 39.3 mmol/L (scale=0.0556 即除以 18)
+     */
+    private fun biolandBloodGlucose(): TslProtocol = TslProtocol(
+        id = "builtin_bioland_glucose_v3",
+        name = "爱奥乐蓝牙血糖仪 V3.0",
+        format = TslFormat.HEX,
+        matchTopic = "medical/+/glucose/#",
+        builtin = true,
+        enabled = true,
+        fields = listOf(
+            TslField(
+                identifier = "glucose_mmol",
+                name = "血糖值(mmol/L)",
+                offset = 9,
+                length = 2,
+                type = TslFieldType.UINT16_LE,
+                scale = 0.0556,
+                unit = "mmol/L",
+                precision = 1,
+                warnMin = 3.9,
+                warnMax = 6.1
+            ),
+            TslField(
+                identifier = "glucose_mgdl",
+                name = "血糖值(mg/dL)",
+                offset = 9,
+                length = 2,
+                type = TslFieldType.UINT16_LE,
+                scale = 1.0,
+                unit = "mg/dL",
+                precision = 0,
+                warnMin = 70.0,
+                warnMax = 110.0
+            ),
+            TslField(
+                identifier = "meas_year",
+                name = "测量年份",
+                offset = 3,
+                length = 1,
+                type = TslFieldType.UINT8,
+                unit = "年",
+                precision = 0
+            ),
+            TslField(
+                identifier = "meas_month",
+                name = "测量月份",
+                offset = 4,
+                length = 1,
+                type = TslFieldType.UINT8,
+                unit = "月",
+                precision = 0
+            ),
+            TslField(
+                identifier = "meas_day",
+                name = "测量日",
+                offset = 5,
+                length = 1,
+                type = TslFieldType.UINT8,
+                unit = "日",
+                precision = 0
+            )
+        )
+    )
+
+    // =========================================================================
+    // 6. 爱奥乐蓝牙红外额温枪 V3.0 (Bioland Thermometer-V3)
+    // =========================================================================
+
+    /**
+     * 测量结果帧示例：55 0C 03 0E 01 01 05 19 00 70 01 57
+     * 对应：0170 = 368 -> 36.8 ℃ (scale=0.1)
+     */
+    private fun biolandThermometer(): TslProtocol = TslProtocol(
+        id = "builtin_bioland_thermometer_v3",
+        name = "爱奥乐红外额温枪 V3.0",
+        format = TslFormat.HEX,
+        matchTopic = "medical/+/thermometer/#",
+        builtin = true,
+        enabled = true,
+        fields = listOf(
+            TslField(
+                identifier = "temperature",
+                name = "体温",
+                offset = 9,
+                length = 2,
+                type = TslFieldType.UINT16_LE,
+                scale = 0.1,
+                unit = "℃",
+                precision = 1,
+                warnMin = 36.0,
+                warnMax = 37.3
+            ),
+            TslField(
+                identifier = "meas_year",
+                name = "测量年份",
+                offset = 3,
+                length = 1,
+                type = TslFieldType.UINT8,
+                unit = "年",
+                precision = 0
+            ),
+            TslField(
+                identifier = "meas_month",
+                name = "测量月份",
+                offset = 4,
+                length = 1,
+                type = TslFieldType.UINT8,
+                unit = "月",
+                precision = 0
+            ),
+            TslField(
+                identifier = "meas_day",
+                name = "测量日",
+                offset = 5,
+                length = 1,
+                type = TslFieldType.UINT8,
+                unit = "日",
+                precision = 0
             )
         )
     )
