@@ -898,7 +898,7 @@ private fun CompactMessageCard(
                 )
             }
 
-            // Row 4: TSL 物模型物理量解析 (直观呈现工程指标与越限报警，彻底替代正则)
+            // Row 4: TSL 物模型物理量解析 (2列工整平铺，彻底防止右侧字段被挤压成单字竖排)
             if (tslResult != null && tslResult.values.isNotEmpty()) {
                 val hasWarn = tslResult.hasWarnings
                 val bgColor = if (hasWarn) Color(0xFFFEF2F2) else Color(0xFFF0FDF4)
@@ -911,8 +911,8 @@ private fun CompactMessageCard(
                         .clip(RoundedCornerShape(6.dp))
                         .background(bgColor)
                         .border(0.6.dp, borderColor, RoundedCornerShape(6.dp))
-                        .padding(horizontal = 8.dp, vertical = 5.dp),
-                    verticalArrangement = Arrangement.spacedBy(3.dp)
+                        .padding(horizontal = 9.dp, vertical = 6.dp),
+                    verticalArrangement = Arrangement.spacedBy(5.dp)
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -927,31 +927,56 @@ private fun CompactMessageCard(
                                 color = titleColor
                             )
                         )
-                    }
-
-                    // 物理量横向紧凑平铺
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        tslResult.values.take(4).forEach { v ->
-                            val valColor = if (v.isWarning) Color(0xFFDC2626) else PrimaryBlack
-                            Text(
-                                text = "${v.name}: ${v.displayValue}",
-                                style = TextStyle(
-                                    fontFamily = FontFamily.Monospace,
-                                    fontSize = 11.5.sp,
-                                    fontWeight = if (v.isWarning) FontWeight.Bold else FontWeight.Medium,
-                                    color = valColor
-                                )
-                            )
-                        }
                         if (tslResult.values.size > 4) {
                             Text(
-                                text = "+${tslResult.values.size - 4}",
+                                text = "共 ${tslResult.values.size} 项指标",
                                 style = TextStyle(fontSize = 10.sp, color = OnSurfaceVariantGray)
                             )
+                        }
+                    }
+
+                    // 物理量 2 列对称平铺 (最多呈现前 4 项核心指标，避免垂直臃肿)
+                    val displayItems = tslResult.values.take(4)
+                    val itemRows = displayItems.chunked(2)
+                    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        itemRows.forEach { pair ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                pair.forEach { v ->
+                                    val valColor = if (v.isWarning) Color(0xFFDC2626) else PrimaryBlack
+                                    Row(
+                                        modifier = Modifier.weight(1f),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.Start
+                                    ) {
+                                        Text(
+                                            text = "${v.name}: ",
+                                            style = TextStyle(
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Medium,
+                                                color = OnSurfaceVariantGray
+                                            ),
+                                            maxLines = 1
+                                        )
+                                        Text(
+                                            text = v.displayValue,
+                                            style = TextStyle(
+                                                fontFamily = FontFamily.Monospace,
+                                                fontSize = 11.5.sp,
+                                                fontWeight = if (v.isWarning) FontWeight.Bold else FontWeight.SemiBold,
+                                                color = valColor
+                                            ),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+                                if (pair.size == 1) {
+                                    Spacer(modifier = Modifier.weight(1f))
+                                }
+                            }
                         }
                     }
                 }

@@ -112,7 +112,7 @@ class SIAgentToolRegistry(
                                                 "query",
                                                 JSONObject().apply {
                                                     put("type", "string")
-                                                    put("description", "协议名称、ID或匹配的主题关键词，例如: '血压计' 或 'gateway/vital'")
+                                                    put("description", "协议名称、ID或匹配的主题关键词，例如: '断路器' 或 'sensor/+/data'")
                                                 }
                                             )
                                         }
@@ -264,14 +264,14 @@ class SIAgentToolRegistry(
                                                 "name",
                                                 JSONObject().apply {
                                                     put("type", "string")
-                                                    put("description", "协议简短名称，例如: '迈瑞血压计协议' 或 '网关心跳包'")
+                                                    put("description", "协议简短名称，例如: '智能断路器协议' 或 '温湿度传感器'")
                                                 }
                                             )
                                             put(
                                                 "topicFilter",
                                                 JSONObject().apply {
                                                     put("type", "string")
-                                                    put("description", "关联的 MQTT 主题或关键字过滤条件，如 'vital/bp'，可为空")
+                                                    put("description", "关联的 MQTT 主题或通配符过滤条件，如 'sensor/+/data' 或 'power/#'，可为空")
                                                 }
                                             )
                                             put(

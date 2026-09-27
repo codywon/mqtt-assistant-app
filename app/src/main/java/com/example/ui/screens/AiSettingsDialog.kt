@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -165,14 +167,14 @@ fun AiSettingsDialog(
             onDismissRequest = { showBatchImportDialog = false },
             title = {
                 Text(
-                    text = "批量直接粘贴协议规则",
+                    text = "粘贴导入协议规则",
                     style = TextStyle(fontSize = 15.5.sp, fontWeight = FontWeight.Bold, color = PrimaryBlack)
                 )
             },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        text = "支持粘贴导出的 JSON 协议规则/TSL物模型、微信口令(#MQTT-PROTO#:)，或自然语言协议说明（多条间可用 --- 分割）：",
+                        text = "支持粘贴导出的 JSON 协议规则/TSL物模型，或自然语言协议说明（多条间可用 --- 分割）：",
                         style = TextStyle(fontSize = 11.5.sp, color = OnSurfaceVariantGray, lineHeight = 16.sp)
                     )
                     Box(
@@ -192,7 +194,7 @@ fun AiSettingsDialog(
                             decorationBox = { inner ->
                                 if (batchImportText.isEmpty()) {
                                     Text(
-                                        text = "例如粘贴:\n导出的 JSON 文件全文、或协议口令、或:\n【体征网关血压计】topic: vital/gateway/data\n说明: 第5字节收缩压高压，第6字节舒张压低压，第7字节心率。\n---\n【温湿度传感器】topic: sensor/temp/data\n说明: 第3-4字节摄氏度温度，第5字节湿度百分比。",
+                                        text = "例如粘贴导出的 JSON 文件内容，或纯文本格式:\n【智能断路器】topic: power/breaker/+/data\n说明: 第3-4字节当前电压(0.1V)，第5-6字节当前电流(0.01A)，第7-8字节有功功率。\n---\n【温湿度传感器】topic: sensor/temp/data\n说明: 第3-4字节摄氏度温度，第5字节湿度百分比。",
                                         style = TextStyle(fontSize = 11.sp, color = OutlineGray, lineHeight = 15.sp)
                                     )
                                 }
@@ -219,22 +221,8 @@ fun AiSettingsDialog(
                 }
             },
             dismissButton = {
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    if (onImportProtocolsFromFile != null) {
-                        TextButton(
-                            onClick = {
-                                showBatchImportDialog = false
-                                launchFilePicker()
-                            }
-                        ) {
-                            Icon(Icons.Default.FolderOpen, contentDescription = null, tint = PrimaryBlack, modifier = Modifier.size(14.dp))
-                            Spacer(modifier = Modifier.width(3.dp))
-                            Text("选文件导入", fontSize = 12.sp, color = PrimaryBlack, fontWeight = FontWeight.SemiBold)
-                        }
-                    }
-                    TextButton(onClick = { showBatchImportDialog = false }) {
-                        Text("取消", color = OnSurfaceVariantGray)
-                    }
+                TextButton(onClick = { showBatchImportDialog = false }) {
+                    Text("取消", color = OnSurfaceVariantGray)
                 }
             },
             containerColor = SurfaceContainerLowest,
@@ -247,17 +235,17 @@ fun AiSettingsDialog(
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
         Card(
-            shape = RoundedCornerShape(18.dp),
+            shape = RoundedCornerShape(20.dp),
             colors = CardDefaults.cardColors(containerColor = SurfaceContainerLowest),
             elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-            border = BorderStroke(0.8.dp, OutlineVariantLight),
+            border = BorderStroke(0.9.dp, OutlineVariantLight),
             modifier = Modifier
-                .fillMaxWidth(0.94f)
-                .padding(vertical = 20.dp)
+                .fillMaxWidth(0.93f)
+                .fillMaxHeight(0.85f)
         ) {
             Column(
                 modifier = Modifier
-                    .fillMaxWidth()
+                    .fillMaxSize()
                     .padding(horizontal = 18.dp, vertical = 16.dp)
             ) {
                 // Header
@@ -342,7 +330,7 @@ fun AiSettingsDialog(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .weight(1f, fill = false)
+                        .weight(1f)
                 ) {
                     if (selectedTab == 0) {
                         // ==========================================
@@ -704,8 +692,6 @@ fun AiSettingsDialog(
                                 onBatchImport = { showBatchImportDialog = true },
                                 onImportFile = if (onImportProtocolsFromFile != null) launchFilePicker else null,
                                 onExportProtocols = onExportProtocols,
-                                onCopyProtocolsToken = onCopyProtocolsToken,
-                                onImportProtocolsFromClipboard = onImportProtocolsFromClipboard,
                                 onEdit = { editingProtocol = it },
                                 onDelete = onDeleteProtocol
                             )
@@ -790,151 +776,110 @@ private fun ProtocolListView(
     onBatchImport: () -> Unit,
     onImportFile: (() -> Unit)? = null,
     onExportProtocols: (() -> Unit)? = null,
-    onCopyProtocolsToken: (() -> Unit)? = null,
-    onImportProtocolsFromClipboard: (() -> Unit)? = null,
     onEdit: (ProtocolKnowledge) -> Unit,
     onDelete: (String) -> Unit
 ) {
     Column(
         modifier = Modifier
-            .fillMaxWidth()
+            .fillMaxSize()
             .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        // 1. 顶部操作栏：规则统计与新增主操作按钮
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = "已配置协议规则 (${protocols.size})",
-                style = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = OnSurfaceDark)
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                if (onImportFile != null) {
-                    OutlinedButton(
-                        onClick = onImportFile,
-                        shape = RoundedCornerShape(6.dp),
-                        border = BorderStroke(0.8.dp, PrimaryBlack),
-                        contentPadding = PaddingValues(horizontal = 7.dp, vertical = 0.dp),
-                        modifier = Modifier.height(28.dp)
-                    ) {
-                        Icon(Icons.Default.FileUpload, contentDescription = null, tint = PrimaryBlack, modifier = Modifier.size(12.dp))
-                        Spacer(modifier = Modifier.width(2.dp))
-                        Text("导入文件", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = PrimaryBlack)
-                    }
-                }
-                OutlinedButton(
-                    onClick = onBatchImport,
-                    shape = RoundedCornerShape(6.dp),
-                    border = BorderStroke(0.8.dp, OutlineGray),
-                    contentPadding = PaddingValues(horizontal = 7.dp, vertical = 0.dp),
-                    modifier = Modifier.height(28.dp)
-                ) {
-                    Text("直接粘贴", fontSize = 11.sp, fontWeight = FontWeight.Medium, color = PrimaryBlack)
-                }
-                Button(
-                    onClick = onAddNew,
-                    shape = RoundedCornerShape(6.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = PrimaryBlack,
-                        contentColor = OnPrimaryWhite
-                    ),
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                    modifier = Modifier.height(28.dp)
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(13.dp))
-                    Spacer(modifier = Modifier.width(2.dp))
-                    Text("新增", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                }
-            }
-        }
-
-        // 协议专属导入导出工具条
-        if (onCopyProtocolsToken != null || onImportProtocolsFromClipboard != null || onExportProtocols != null || onImportFile != null) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(SurfaceContainerLow)
-                    .padding(horizontal = 10.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+            Column {
                 Text(
-                    text = "知识库共享",
-                    style = TextStyle(fontSize = 10.5.sp, fontWeight = FontWeight.Medium, color = OnSurfaceVariantGray)
+                    text = "协议规则库 (${protocols.size})",
+                    style = TextStyle(fontSize = 13.5.sp, fontWeight = FontWeight.Bold, color = PrimaryBlack)
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    if (onImportFile != null) {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(SurfaceContainerLowest)
-                                .clickable(onClick = onImportFile)
-                                .padding(horizontal = 7.dp, vertical = 4.dp)
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.FileUpload, contentDescription = null, tint = PrimaryBlack, modifier = Modifier.size(11.dp))
-                                Spacer(modifier = Modifier.width(3.dp))
-                                Text("导入文件", fontSize = 10.5.sp, fontWeight = FontWeight.Medium, color = PrimaryBlack)
-                            }
-                        }
-                    }
-                    if (onExportProtocols != null) {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(SurfaceContainerLowest)
-                                .clickable(onClick = onExportProtocols)
-                                .padding(horizontal = 7.dp, vertical = 4.dp)
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Share, contentDescription = null, tint = PrimaryBlack, modifier = Modifier.size(11.dp))
-                                Spacer(modifier = Modifier.width(3.dp))
-                                Text("导出文件", fontSize = 10.5.sp, fontWeight = FontWeight.Medium, color = PrimaryBlack)
-                            }
-                        }
-                    }
-                    if (onCopyProtocolsToken != null) {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(SurfaceContainerLowest)
-                                .clickable(onClick = onCopyProtocolsToken)
-                                .padding(horizontal = 7.dp, vertical = 4.dp)
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.ContentCopy, contentDescription = null, tint = PrimaryBlack, modifier = Modifier.size(11.dp))
-                                Spacer(modifier = Modifier.width(3.dp))
-                                Text("复制口令", fontSize = 10.5.sp, fontWeight = FontWeight.Medium, color = PrimaryBlack)
-                            }
-                        }
-                    }
-                    if (onImportProtocolsFromClipboard != null) {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(SurfaceContainerLowest)
-                                .clickable(onClick = onImportProtocolsFromClipboard)
-                                .padding(horizontal = 7.dp, vertical = 4.dp)
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.ContentPaste, contentDescription = null, tint = PrimaryBlack, modifier = Modifier.size(11.dp))
-                                Spacer(modifier = Modifier.width(3.dp))
-                                Text("口令导入", fontSize = 10.5.sp, fontWeight = FontWeight.Medium, color = PrimaryBlack)
-                            }
-                        }
-                    }
-                }
+                Text(
+                    text = "MQTT 主题澄清与 TSL 物模型规则",
+                    style = TextStyle(fontSize = 10.5.sp, color = OnSurfaceVariantGray)
+                )
+            }
+            Button(
+                onClick = onAddNew,
+                shape = RoundedCornerShape(8.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = PrimaryBlack,
+                    contentColor = OnPrimaryWhite
+                ),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                modifier = Modifier.height(30.dp)
+            ) {
+                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(14.dp))
+                Spacer(modifier = Modifier.width(3.dp))
+                Text("新增协议", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
             }
         }
 
+        // 2. 快捷工具栏：导入 JSON | 导出备份 | 粘贴文本 (三键并排等宽，职责清晰，无任何重复)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            if (onImportFile != null) {
+                OutlinedButton(
+                    onClick = onImportFile,
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(0.9.dp, OutlineGray.copy(alpha = 0.6f)),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = PrimaryBlack),
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(32.dp)
+                ) {
+                    Icon(Icons.Default.FileUpload, contentDescription = null, tint = PrimaryBlack, modifier = Modifier.size(13.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("导入 JSON", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                }
+            }
+
+            if (onExportProtocols != null) {
+                OutlinedButton(
+                    onClick = onExportProtocols,
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(0.9.dp, OutlineGray.copy(alpha = 0.6f)),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = PrimaryBlack),
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(32.dp)
+                ) {
+                    Icon(Icons.Default.Share, contentDescription = null, tint = PrimaryBlack, modifier = Modifier.size(13.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("导出备份", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                }
+            }
+
+            OutlinedButton(
+                onClick = onBatchImport,
+                shape = RoundedCornerShape(8.dp),
+                border = BorderStroke(0.9.dp, OutlineGray.copy(alpha = 0.6f)),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = PrimaryBlack),
+                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+                modifier = Modifier
+                    .weight(1f)
+                    .height(32.dp)
+            ) {
+                Icon(Icons.Default.ContentPaste, contentDescription = null, tint = PrimaryBlack, modifier = Modifier.size(13.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("粘贴文本", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
+
+        // 3. 协议规则列表或空状态
         if (protocols.isEmpty()) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 30.dp),
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(SurfaceContainerLow.copy(alpha = 0.5f))
+                    .padding(vertical = 36.dp, horizontal = 16.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -942,53 +887,115 @@ private fun ProtocolListView(
                         imageVector = Icons.Default.MenuBook,
                         contentDescription = null,
                         tint = OutlineGray,
-                        modifier = Modifier.size(32.dp)
+                        modifier = Modifier.size(36.dp)
                     )
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "暂无协议澄清规则\n可直接点击上方「直接粘贴导入」一键贴入整段协议规则\nAgent 会自动生成精简目录，渐进式按需读取",
-                        style = TextStyle(fontSize = 11.5.sp, color = OutlineGray, lineHeight = 16.sp),
+                        text = "暂无已配置的私有协议规则",
+                        style = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = PrimaryBlack)
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "您可以直接导入已导出的 .json 规则文件\n或在上方点击「粘贴文本」/「新增协议」快速添加",
+                        style = TextStyle(fontSize = 11.sp, color = OnSurfaceVariantGray, lineHeight = 16.sp),
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center
                     )
+                    if (onImportFile != null) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Button(
+                            onClick = onImportFile,
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = PrimaryBlack,
+                                contentColor = OnPrimaryWhite
+                            ),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
+                            modifier = Modifier.height(32.dp)
+                        ) {
+                            Icon(Icons.Default.FileUpload, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("选取本地 JSON 文件导入", fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
                 }
             }
         } else {
-            for (p in protocols) {
-                Card(
-                    shape = RoundedCornerShape(10.dp),
-                    colors = CardDefaults.cardColors(containerColor = SurfaceContainerLow.copy(alpha = 0.6f)),
-                    border = BorderStroke(0.6.dp, OutlineVariantLight),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                for (p in protocols) {
+                    Card(
+                        shape = RoundedCornerShape(10.dp),
+                        colors = CardDefaults.cardColors(containerColor = SurfaceContainerLow.copy(alpha = 0.7f)),
+                        border = BorderStroke(0.6.dp, OutlineVariantLight),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            Text(
-                                text = p.name,
-                                style = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Bold, color = PrimaryBlack)
-                            )
-                            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                                IconButton(onClick = { onEdit(p) }, modifier = Modifier.size(24.dp)) {
-                                    Icon(Icons.Default.Edit, contentDescription = "编辑", tint = OnSurfaceVariantGray, modifier = Modifier.size(14.dp))
-                                }
-                                IconButton(onClick = { onDelete(p.id) }, modifier = Modifier.size(24.dp)) {
-                                    Icon(Icons.Default.Delete, contentDescription = "删除", tint = OnSurfaceVariantGray, modifier = Modifier.size(14.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = p.name,
+                                    style = TextStyle(fontSize = 13.5.sp, fontWeight = FontWeight.Bold, color = PrimaryBlack)
+                                )
+                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(26.dp)
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(SurfaceContainerLowest)
+                                            .clickable { onEdit(p) },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(Icons.Default.Edit, contentDescription = "编辑", tint = PrimaryBlack, modifier = Modifier.size(13.dp))
+                                    }
+                                    Box(
+                                        modifier = Modifier
+                                            .size(26.dp)
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(SurfaceContainerLowest)
+                                            .clickable { onDelete(p.id) },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(Icons.Default.Delete, contentDescription = "删除", tint = androidx.compose.ui.graphics.Color(0xFFDC2626), modifier = Modifier.size(13.dp))
+                                    }
                                 }
                             }
+
+                            // 主题标签 Pill
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(SurfaceContainerLowest)
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Text(
+                                    text = "Topic: ${p.topicFilter}",
+                                    style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = PrimaryBlack)
+                                )
+                            }
+
+                            // 澄清说明
+                            Text(
+                                text = p.description,
+                                style = TextStyle(fontSize = 11.5.sp, color = OnSurfaceVariantGray, lineHeight = 16.sp),
+                                maxLines = 3,
+                                overflow = TextOverflow.Ellipsis
+                            )
+
+                            // 样例 Hex (如果有)
+                            if (p.sampleHex.isNotBlank()) {
+                                Text(
+                                    text = "Hex 样例: ${p.sampleHex}",
+                                    style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 10.5.sp, color = OutlineGray),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                         }
-                        Text(
-                            text = "匹配主题: ${p.topicFilter}",
-                            style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.5.sp, color = PrimaryBlack)
-                        )
-                        Text(
-                            text = p.description,
-                            style = TextStyle(fontSize = 11.5.sp, color = OnSurfaceVariantGray, lineHeight = 15.sp),
-                            maxLines = 3,
-                            overflow = TextOverflow.Ellipsis
-                        )
                     }
                 }
             }
@@ -1021,14 +1028,14 @@ private fun ProtocolEditView(
         SettingInputField(
             label = "协议名称",
             value = name,
-            placeholder = "例如: 体征网关血压计 Hex 协议",
+            placeholder = "例如: 智能断路器 / 传感器 Hex 协议",
             onValueChange = { name = it }
         )
 
         SettingInputField(
             label = "适用 MQTT 主题 (支持通配符)",
             value = topicFilter,
-            placeholder = "例如: vital/gateway/+/data",
+            placeholder = "例如: power/breaker/+/data 或 #",
             onValueChange = { topicFilter = it }
         )
 
@@ -1054,7 +1061,7 @@ private fun ProtocolEditView(
                     decorationBox = { inner ->
                         if (description.isEmpty()) {
                             Text(
-                                text = "人话写明即可，例如:\n- 第1-2字节为固定头 AA 55\n- 第5字节是收缩压高压(mmHg)，正常90-139\n- 第6字节是舒张压低压(mmHg)，正常60-89\n- 第7字节是心率(次/分)",
+                                text = "人话写明即可，例如:\n- 第1-2字节为固定头 AA 55\n- 第3-4字节为当前电压 (单位 0.1V)\n- 第5-6字节为当前电流 (单位 0.01A)\n- 第7-8字节为有功功率 (单位 1W)",
                                 style = TextStyle(fontSize = 11.5.sp, color = OutlineGray, lineHeight = 15.sp)
                             )
                         }
@@ -1092,7 +1099,7 @@ private fun ProtocolEditView(
                             val firstLine = description.lines().firstOrNull { it.isNotBlank() }?.removePrefix("#")?.removePrefix("【")?.removeSuffix("】")?.trim() ?: "设备协议"
                             firstLine.take(15)
                         }
-                        val computedTopic = topicFilter.trim().ifBlank { "vital/gateway/#" }
+                        val computedTopic = topicFilter.trim().ifBlank { "#" }
                         onSave(
                             initial.copy(
                                 name = computedName,
