@@ -377,18 +377,21 @@ fun LiveLogsScreen(
         }
 
         // 1.5 现场通信健康度雷达 (Proactive Watchdog Strip)
-        LiveHealthWatchdogStrip(
-            state = watchdogState,
-            overflowCount = overflowCount,
-            isExpanded = isWatchdogExpanded,
-            onToggleExpand = { isWatchdogExpanded = !isWatchdogExpanded },
-            onInspectAnomaly = { anomaly ->
-                onInspectPacket(anomaly.rawPacket)
-            },
-            onGenerateReport = {
-                viewModel.generateFieldAcceptanceReport()
-            }
-        )
+        // 关键空间优化：链路正常且未展开排查时，完全不占用竖向空间（高度归零），将全部屏幕释放给消息流！
+        if (!watchdogState.isHealthy || isWatchdogExpanded) {
+            LiveHealthWatchdogStrip(
+                state = watchdogState,
+                overflowCount = overflowCount,
+                isExpanded = isWatchdogExpanded,
+                onToggleExpand = { isWatchdogExpanded = !isWatchdogExpanded },
+                onInspectAnomaly = { anomaly ->
+                    onInspectPacket(anomaly.rawPacket)
+                },
+                onGenerateReport = {
+                    viewModel.generateFieldAcceptanceReport()
+                }
+            )
+        }
 
         // 1.6 AI 实时雷达哨兵动态布控胶囊条
         if (activeRadarTrap != null) {

@@ -336,6 +336,26 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
             storage.initBuiltinTslProtocols()
             val enabledTslProtos = storage.loadEnabledTslProtocols()
 
+            // 自动同步非内置的自定义 TSL 物模型镜像到协议工作台，确保用户界面即时可见
+            val currentKnowledgeIds = savedProtocols.map { it.id }.toSet()
+            enabledTslProtos.filter { !it.builtin }.forEach { tsl ->
+                if (!currentKnowledgeIds.contains(tsl.id)) {
+                    val fieldDesc = tsl.fields.joinToString("\n") { f ->
+                        "- ${f.name} (${f.identifier}): 类型=${f.type}${if (f.jsonPath.isNotBlank()) ", 路径=${f.jsonPath}" else ""}${if (f.unit.isNotBlank()) ", 单位=${f.unit}" else ""}"
+                    }
+                    val mirror = ProtocolKnowledge(
+                        id = tsl.id,
+                        name = tsl.name,
+                        topicFilter = tsl.matchTopic,
+                        description = "【TSL 原生物模型 · ${tsl.format}】共 ${tsl.fields.size} 项指标:\n$fieldDesc",
+                        sampleHex = "",
+                        createdAt = System.currentTimeMillis()
+                    )
+                    storage.saveProtocolKnowledge(mirror)
+                }
+            }
+            val finalProtocols = storage.loadAllProtocolKnowledge()
+
             // 保持内存单例为单一可信源
             val currentMemoryPackets = com.example.data.MemoryPacketStore.getAll()
 
@@ -344,7 +364,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 aiSessions.value = savedSessions
                 currentSessionId.value = activeSessionId
                 aiMessages.value = savedAiMsgs
-                protocolKnowledgeList.value = savedProtocols
+                protocolKnowledgeList.value = finalProtocols
                 tslProtocols.value = enabledTslProtos
             }
         }
@@ -3004,9 +3024,26 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
     fun saveTslProtocol(protocol: com.example.model.TslProtocol) {
         viewModelScope.launch(Dispatchers.IO) {
             storage.saveTslProtocol(protocol)
-            val updated = storage.loadEnabledTslProtocols()
+
+            // 自动同步一条 ProtocolKnowledge 镜像，确保在“协议规则库”工作台中立即可见与管理
+            val fieldDesc = protocol.fields.joinToString("\n") { f ->
+                "- ${f.name} (${f.identifier}): 类型=${f.type}${if (f.jsonPath.isNotBlank()) ", 路径=${f.jsonPath}" else ""}${if (f.unit.isNotBlank()) ", 单位=${f.unit}" else ""}${if (f.warnMin != null || f.warnMax != null) ", 正常区间=[${f.warnMin ?: "-∞"}, ${f.warnMax ?: "+∞"}]" else ""}"
+            }
+            val mirrorKnowledge = ProtocolKnowledge(
+                id = protocol.id,
+                name = protocol.name,
+                topicFilter = protocol.matchTopic,
+                description = "【TSL 原生物模型 · ${protocol.format}】共 ${protocol.fields.size} 项指标:\n$fieldDesc",
+                sampleHex = "",
+                createdAt = System.currentTimeMillis()
+            )
+            storage.saveProtocolKnowledge(mirrorKnowledge)
+
+            val updatedTsl = storage.loadEnabledTslProtocols()
+            val updatedKnowledge = storage.loadAllProtocolKnowledge()
             withContext(Dispatchers.Main) {
-                tslProtocols.value = updated
+                tslProtocols.value = updatedTsl
+                protocolKnowledgeList.value = updatedKnowledge
                 reparseAllLivePacketsWithTsl()
                 showToast("TSL 协议【${protocol.name}】已保存并生效！")
             }
@@ -3016,9 +3053,12 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
     fun deleteTslProtocol(id: String) {
         viewModelScope.launch(Dispatchers.IO) {
             storage.deleteTslProtocol(id)
-            val updated = storage.loadEnabledTslProtocols()
+            storage.deleteProtocolKnowledge(id)
+            val updatedTsl = storage.loadEnabledTslProtocols()
+            val updatedKnowledge = storage.loadAllProtocolKnowledge()
             withContext(Dispatchers.Main) {
-                tslProtocols.value = updated
+                tslProtocols.value = updatedTsl
+                protocolKnowledgeList.value = updatedKnowledge
                 reparseAllLivePacketsWithTsl()
                 showToast("协议已删除")
             }
