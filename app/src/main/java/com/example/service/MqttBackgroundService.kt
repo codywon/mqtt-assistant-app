@@ -27,6 +27,7 @@ import com.example.model.MqttServerConfig
 import com.example.mqtt.MqttClientManager
 import com.example.receiver.AlarmPulseReceiver
 import com.example.util.AutoExportHelper
+import com.example.util.MqttTopicUtil
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -58,17 +59,38 @@ class MqttBackgroundService : Service() {
     private val backgroundMessageListener: (String, Int, ByteArray, Boolean) -> Unit = { topic, qos, payloadBytes, retain ->
         serviceScope.launch(Dispatchers.IO) {
             try {
+                // 若前台 UI 处于活跃监听状态 (MqttClientManager.isUiActive == true)，
+                // 报文已由 MqttAssistantViewModel 统一消费、匹配订阅颜色、执行 TSL 物模型解析入库并刷新通知栏。
+                // 后台服务此时绝不能再次构造硬编码默认颜色的报文插入 MemoryPacketStore，彻底根除双份重复入库与颜色错乱！
+                if (MqttClientManager.isUiActive) {
+                    return@launch
+                }
+
+                val storage = MqttStorageRepository(applicationContext)
+                val subs = storage.loadSubscriptions().filter { it.isEnabled }
+                val cleanTopic = topic.trim()
+                val matchingSub = subs.firstOrNull { MqttTopicUtil.matchesMqttTopic(it.topic.trim(), cleanTopic) }
+
+                // 遵循 MQTT 5.0 保留消息策略 (若配置了 2: 不发保留，后台也严格执行丢弃过滤)
+                if (retain && matchingSub?.retainHandling == 2) {
+                    return@launch
+                }
+
                 totalPacketCount++
                 latestMessageTopic = topic
                 refreshNotification()
 
-                // 后台无 UI 独立运行时，由服务自动将报文持久化入库 SQLite
+                // 后台无 UI 独立运行时，由服务代为自动将报文存入 MemoryPacketStore 并触发自动导出
                 val timeStr = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date())
                 val payloadString = try {
                     String(payloadBytes, Charsets.UTF_8)
                 } catch (e: Exception) {
                     payloadBytes.joinToString(" ") { "%02X".format(it) }
                 }
+
+                val dotColor = matchingSub?.dotColorHex ?: 0xFF10B981
+                val cat = matchingSub?.name?.ifBlank { null } ?: topic.substringBefore('/')
+
                 val packet = MqttLogPacket(
                     id = UUID.randomUUID().toString(),
                     topic = topic,
@@ -76,12 +98,11 @@ class MqttBackgroundService : Service() {
                     packetSeq = "#%04d".format(totalPacketCount),
                     timestamp = timeStr,
                     payload = payloadString,
-                    devInfo = if (retain) "QoS$qos · Retain" else "QoS$qos",
-                    sizeText = "${payloadBytes.size} B",
-                    category = topic.substringBefore('/'),
-                    dotColorHex = 0xFF10B981
+                    devInfo = "SUB · ${payloadBytes.size}B" + if (retain) " · Retain" else "",
+                    sizeText = "${payloadBytes.size}B",
+                    category = cat,
+                    dotColorHex = dotColor
                 )
-                val storage = MqttStorageRepository(applicationContext)
                 val bufferTh = storage.loadBufferThreshold()
                 com.example.data.MemoryPacketStore.addPacket(packet, bufferTh)
 

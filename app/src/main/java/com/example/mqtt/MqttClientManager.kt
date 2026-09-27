@@ -50,6 +50,9 @@ object MqttClientManager {
     var onMessageReceived: ((topic: String, qos: Int, payload: ByteArray, retain: Boolean) -> Unit)? = null
     var onConnectionStateChanged: ((isConnected: Boolean, cause: Throwable?) -> Unit)? = null
 
+    val isUiActive: Boolean
+        get() = onMessageReceived != null
+
     private val messageListeners = CopyOnWriteArrayList<(topic: String, qos: Int, payload: ByteArray, retain: Boolean) -> Unit>()
 
     fun addMessageListener(listener: (topic: String, qos: Int, payload: ByteArray, retain: Boolean) -> Unit) {
