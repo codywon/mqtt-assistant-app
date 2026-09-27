@@ -2139,20 +2139,25 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
     // ==========================================
 
     /**
-     * 导出协议澄清库为独立 JSON 文件并弹出系统分享
+     * 导出协议澄清库与 TSL 物模型为独立 JSON 文件并弹出系统分享
      */
     fun exportProtocolsToJson(context: Context) {
         val protocols = protocolKnowledgeList.value
-        if (protocols.isEmpty()) {
-            showToast("当前协议库为空，暂无规则可导出")
+        val tsl = tslProtocols.value
+        if (protocols.isEmpty() && tsl.isEmpty()) {
+            showToast("当前协议库与物模型均为空，暂无规则可导出")
             return
         }
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val file = ConfigBackupHelper.exportProtocolsToJson(context, protocols)
+                val file = ConfigBackupHelper.exportProtocolsToJson(context, protocols, tsl)
                 withContext(Dispatchers.Main) {
-                    showToast("协议知识库已导出为 JSON 文件")
-                    ConfigBackupHelper.shareBackupFile(context, file, "分享/保存硬件私有协议库")
+                    val countDesc = buildString {
+                        if (protocols.isNotEmpty()) append("${protocols.size} 条协议 ")
+                        if (tsl.isNotEmpty()) append("${tsl.size} 条物模型")
+                    }.trim()
+                    showToast("已成功导出 $countDesc 为 JSON 文件")
+                    ConfigBackupHelper.shareBackupFile(context, file, "分享/保存硬件协议与TSL物模型")
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
@@ -2163,16 +2168,17 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
     }
 
     /**
-     * 复制协议澄清库口令到系统剪贴板 (极速跨手机微信互传)
+     * 复制协议澄清库与 TSL 物模型口令到系统剪贴板 (极速跨手机微信互传)
      */
     fun copyProtocolsToken(context: Context) {
         val protocols = protocolKnowledgeList.value
-        if (protocols.isEmpty()) {
-            showToast("当前协议库为空，暂无可生成的口令")
+        val tsl = tslProtocols.value
+        if (protocols.isEmpty() && tsl.isEmpty()) {
+            showToast("当前协议库与物模型均为空，暂无可生成的口令")
             return
         }
         try {
-            val token = ConfigBackupHelper.exportProtocolsToToken(protocols)
+            val token = ConfigBackupHelper.exportProtocolsToToken(protocols, tsl)
             val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
             cm.setPrimaryClip(android.content.ClipData.newPlainText("MQTT-Protocols-Token", token))
             showToast("已复制协议库口令！可直接在微信发送并在另一台手机一键导入")
@@ -2182,7 +2188,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
     }
 
     /**
-     * 从剪贴板口令导入协议规则
+     * 从剪贴板口令或 JSON 导入协议规则与 TSL 物模型
      */
     fun importProtocolsFromClipboard(context: Context) {
         val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
@@ -2193,18 +2199,34 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
         }
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val list = ConfigBackupHelper.parseProtocolsFromJsonOrToken(clipText)
-                if (list.isEmpty()) {
+                val result = ConfigBackupHelper.parseProtocolsAndTslFromJsonOrToken(clipText)
+                if (result.protocols.isEmpty() && result.tslProtocols.isEmpty()) {
                     withContext(Dispatchers.Main) {
-                        showToast("未在剪贴板中识别到有效协议规则")
+                        showToast("未在剪贴板中识别到有效协议或物模型规则")
                     }
                     return@launch
                 }
-                list.forEach { storage.saveProtocolKnowledge(it) }
-                val updated = storage.loadAllProtocolKnowledge()
-                protocolKnowledgeList.value = updated
+                if (result.protocols.isNotEmpty()) {
+                    result.protocols.forEach { storage.saveProtocolKnowledge(it) }
+                    val updated = storage.loadAllProtocolKnowledge()
+                    withContext(Dispatchers.Main) {
+                        protocolKnowledgeList.value = updated
+                    }
+                }
+                if (result.tslProtocols.isNotEmpty()) {
+                    result.tslProtocols.forEach { storage.saveTslProtocol(it) }
+                    val updatedTsl = storage.loadEnabledTslProtocols()
+                    withContext(Dispatchers.Main) {
+                        tslProtocols.value = updatedTsl
+                        reparseAllLivePacketsWithTsl()
+                    }
+                }
                 withContext(Dispatchers.Main) {
-                    showToast("成功导入 ${list.size} 条硬件协议规则！")
+                    val countDesc = buildString {
+                        if (result.protocols.isNotEmpty()) append("${result.protocols.size} 条协议规则 ")
+                        if (result.tslProtocols.isNotEmpty()) append("${result.tslProtocols.size} 条 TSL 物模型")
+                    }.trim()
+                    showToast("成功导入 $countDesc！")
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
@@ -2215,7 +2237,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
     }
 
     /**
-     * 从外部文件 Uri 导入协议规则
+     * 从外部文件 Uri 导入协议规则与 TSL 物模型 (支持原生点选 .json 文件一键导入)
      */
     fun importProtocolsFromUri(context: Context, uri: Uri) {
         viewModelScope.launch(Dispatchers.IO) {
@@ -2224,18 +2246,34 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                     stream.bufferedReader(Charsets.UTF_8).readText()
                 } ?: throw IllegalArgumentException("无法读取文件内容")
 
-                val list = ConfigBackupHelper.parseProtocolsFromJsonOrToken(jsonString)
-                if (list.isEmpty()) {
+                val result = ConfigBackupHelper.parseProtocolsAndTslFromJsonOrToken(jsonString)
+                if (result.protocols.isEmpty() && result.tslProtocols.isEmpty()) {
                     withContext(Dispatchers.Main) {
-                        showToast("文件中未解析到有效协议规则")
+                        showToast("所选文件中未解析到有效协议或物模型规则")
                     }
                     return@launch
                 }
-                list.forEach { storage.saveProtocolKnowledge(it) }
-                val updated = storage.loadAllProtocolKnowledge()
-                protocolKnowledgeList.value = updated
+                if (result.protocols.isNotEmpty()) {
+                    result.protocols.forEach { storage.saveProtocolKnowledge(it) }
+                    val updated = storage.loadAllProtocolKnowledge()
+                    withContext(Dispatchers.Main) {
+                        protocolKnowledgeList.value = updated
+                    }
+                }
+                if (result.tslProtocols.isNotEmpty()) {
+                    result.tslProtocols.forEach { storage.saveTslProtocol(it) }
+                    val updatedTsl = storage.loadEnabledTslProtocols()
+                    withContext(Dispatchers.Main) {
+                        tslProtocols.value = updatedTsl
+                        reparseAllLivePacketsWithTsl()
+                    }
+                }
                 withContext(Dispatchers.Main) {
-                    showToast("成功从文件恢复 ${list.size} 条硬件协议！")
+                    val countDesc = buildString {
+                        if (result.protocols.isNotEmpty()) append("${result.protocols.size} 条协议规则 ")
+                        if (result.tslProtocols.isNotEmpty()) append("${result.tslProtocols.size} 条 TSL 物模型")
+                    }.trim()
+                    showToast("成功从文件恢复 $countDesc！")
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
@@ -2520,6 +2558,38 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
 
     fun importBatchProtocols(rawText: String) {
         if (rawText.isBlank()) return
+
+        // 1. 优先智能尝试结构化 JSON 或协议口令解析 (兼容复制的导出 JSON、物模型、口令等)
+        val jsonResult = ConfigBackupHelper.parseProtocolsAndTslFromJsonOrToken(rawText)
+        if (jsonResult.protocols.isNotEmpty() || jsonResult.tslProtocols.isNotEmpty()) {
+            viewModelScope.launch(Dispatchers.IO) {
+                if (jsonResult.protocols.isNotEmpty()) {
+                    jsonResult.protocols.forEach { storage.saveProtocolKnowledge(it) }
+                    val updated = storage.loadAllProtocolKnowledge()
+                    withContext(Dispatchers.Main) {
+                        protocolKnowledgeList.value = updated
+                    }
+                }
+                if (jsonResult.tslProtocols.isNotEmpty()) {
+                    jsonResult.tslProtocols.forEach { storage.saveTslProtocol(it) }
+                    val updatedTsl = storage.loadEnabledTslProtocols()
+                    withContext(Dispatchers.Main) {
+                        tslProtocols.value = updatedTsl
+                        reparseAllLivePacketsWithTsl()
+                    }
+                }
+                withContext(Dispatchers.Main) {
+                    val countDesc = buildString {
+                        if (jsonResult.protocols.isNotEmpty()) append("${jsonResult.protocols.size} 条协议规则 ")
+                        if (jsonResult.tslProtocols.isNotEmpty()) append("${jsonResult.tslProtocols.size} 条 TSL 物模型")
+                    }.trim()
+                    showToast("成功导入 $countDesc！")
+                }
+            }
+            return
+        }
+
+        // 2. 纯文本/Markdown 规则文本切块提取 (回退模式)
         val blocks = rawText.split(Regex("(?:\\r?\\n){2,}(?:[-=]{3,}|---|===)(?:\\r?\\n)*|(?:\\r?\\n){3,}"))
             .map { it.trim() }
             .filter { it.isNotBlank() }
@@ -2531,7 +2601,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
             if (lines.isNotEmpty()) {
                 val firstLine = lines.first().removePrefix("#").removePrefix("【").removeSuffix("】").trim()
                 val topicLine = lines.find { it.contains("topic:", ignoreCase = true) || it.contains("主题:", ignoreCase = true) }
-                val topic = topicLine?.substringAfter(":")?.trim()?.ifBlank { "vital/gateway/#" } ?: "vital/gateway/#"
+                val topic = topicLine?.substringAfter(":")?.trim()?.ifBlank { "+/+#" } ?: "+/+#"
                 val proto = ProtocolKnowledge(
                     id = java.util.UUID.randomUUID().toString(),
                     name = if (firstLine.length in 1..25) firstLine else "导入协议 ${index + 1}",
@@ -2546,7 +2616,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
         if (newProtocols.isEmpty()) {
             val single = ProtocolKnowledge(
                 name = "设备协议规则",
-                topicFilter = "vital/#",
+                topicFilter = "+/+#",
                 description = rawText.trim(),
                 createdAt = currentTime
             )

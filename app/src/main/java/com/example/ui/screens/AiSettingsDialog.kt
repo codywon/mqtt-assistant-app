@@ -1,5 +1,8 @@
 package com.example.ui.screens
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -28,6 +31,8 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.FileUpload
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Refresh
@@ -115,9 +120,26 @@ fun AiSettingsDialog(
     onExportProtocols: (() -> Unit)? = null,
     onCopyProtocolsToken: (() -> Unit)? = null,
     onImportProtocolsFromClipboard: (() -> Unit)? = null,
+    onImportProtocolsFromFile: ((Uri) -> Unit)? = null,
     onlyProtocol: Boolean = false
 ) {
     var selectedTab by remember { mutableIntStateOf(if (onlyProtocol) 1 else 0) }
+
+    // JSON 协议与物模型文件导入选择器
+    val protocolJsonPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let { onImportProtocolsFromFile?.invoke(it) }
+    }
+    val launchFilePicker = {
+        try {
+            protocolJsonPickerLauncher.launch("application/json")
+        } catch (_: Exception) {
+            try {
+                protocolJsonPickerLauncher.launch("*/*")
+            } catch (_: Exception) {}
+        }
+    }
 
     // Tab 1 state
     val coroutineScope = rememberCoroutineScope()
@@ -150,7 +172,7 @@ fun AiSettingsDialog(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        text = "直接把微信或文档中已整理好的协议描述粘贴到下方。系统会自动按协议提取标题与规则，供 Agent 渐进式按需查询（多条协议间可用 --- 分割）：",
+                        text = "支持粘贴导出的 JSON 协议规则/TSL物模型、微信口令(#MQTT-PROTO#:)，或自然语言协议说明（多条间可用 --- 分割）：",
                         style = TextStyle(fontSize = 11.5.sp, color = OnSurfaceVariantGray, lineHeight = 16.sp)
                     )
                     Box(
@@ -170,7 +192,7 @@ fun AiSettingsDialog(
                             decorationBox = { inner ->
                                 if (batchImportText.isEmpty()) {
                                     Text(
-                                        text = "例如粘贴:\n【体征网关血压计】topic: vital/gateway/data\n说明: 第5字节收缩压高压，第6字节舒张压低压，第7字节心率。\n---\n【温湿度传感器】topic: sensor/temp/data\n说明: 第3-4字节摄氏度温度，第5字节湿度百分比。",
+                                        text = "例如粘贴:\n导出的 JSON 文件全文、或协议口令、或:\n【体征网关血压计】topic: vital/gateway/data\n说明: 第5字节收缩压高压，第6字节舒张压低压，第7字节心率。\n---\n【温湿度传感器】topic: sensor/temp/data\n说明: 第3-4字节摄氏度温度，第5字节湿度百分比。",
                                         style = TextStyle(fontSize = 11.sp, color = OutlineGray, lineHeight = 15.sp)
                                     )
                                 }
@@ -197,8 +219,22 @@ fun AiSettingsDialog(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showBatchImportDialog = false }) {
-                    Text("取消", color = OnSurfaceVariantGray)
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (onImportProtocolsFromFile != null) {
+                        TextButton(
+                            onClick = {
+                                showBatchImportDialog = false
+                                launchFilePicker()
+                            }
+                        ) {
+                            Icon(Icons.Default.FolderOpen, contentDescription = null, tint = PrimaryBlack, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text("选文件导入", fontSize = 12.sp, color = PrimaryBlack, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                    TextButton(onClick = { showBatchImportDialog = false }) {
+                        Text("取消", color = OnSurfaceVariantGray)
+                    }
                 }
             },
             containerColor = SurfaceContainerLowest,
@@ -666,6 +702,7 @@ fun AiSettingsDialog(
                                 protocols = protocols,
                                 onAddNew = { isCreatingProtocol = true },
                                 onBatchImport = { showBatchImportDialog = true },
+                                onImportFile = if (onImportProtocolsFromFile != null) launchFilePicker else null,
                                 onExportProtocols = onExportProtocols,
                                 onCopyProtocolsToken = onCopyProtocolsToken,
                                 onImportProtocolsFromClipboard = onImportProtocolsFromClipboard,
@@ -751,6 +788,7 @@ private fun ProtocolListView(
     protocols: List<ProtocolKnowledge>,
     onAddNew: () -> Unit,
     onBatchImport: () -> Unit,
+    onImportFile: (() -> Unit)? = null,
     onExportProtocols: (() -> Unit)? = null,
     onCopyProtocolsToken: (() -> Unit)? = null,
     onImportProtocolsFromClipboard: (() -> Unit)? = null,
@@ -772,15 +810,28 @@ private fun ProtocolListView(
                 text = "已配置协议规则 (${protocols.size})",
                 style = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = OnSurfaceDark)
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                if (onImportFile != null) {
+                    OutlinedButton(
+                        onClick = onImportFile,
+                        shape = RoundedCornerShape(6.dp),
+                        border = BorderStroke(0.8.dp, PrimaryBlack),
+                        contentPadding = PaddingValues(horizontal = 7.dp, vertical = 0.dp),
+                        modifier = Modifier.height(28.dp)
+                    ) {
+                        Icon(Icons.Default.FileUpload, contentDescription = null, tint = PrimaryBlack, modifier = Modifier.size(12.dp))
+                        Spacer(modifier = Modifier.width(2.dp))
+                        Text("导入文件", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = PrimaryBlack)
+                    }
+                }
                 OutlinedButton(
                     onClick = onBatchImport,
                     shape = RoundedCornerShape(6.dp),
-                    border = BorderStroke(0.8.dp, PrimaryBlack),
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                    border = BorderStroke(0.8.dp, OutlineGray),
+                    contentPadding = PaddingValues(horizontal = 7.dp, vertical = 0.dp),
                     modifier = Modifier.height(28.dp)
                 ) {
-                    Text("直接粘贴导入", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = PrimaryBlack)
+                    Text("直接粘贴", fontSize = 11.sp, fontWeight = FontWeight.Medium, color = PrimaryBlack)
                 }
                 Button(
                     onClick = onAddNew,
@@ -800,7 +851,7 @@ private fun ProtocolListView(
         }
 
         // 协议专属导入导出工具条
-        if (onCopyProtocolsToken != null || onImportProtocolsFromClipboard != null || onExportProtocols != null) {
+        if (onCopyProtocolsToken != null || onImportProtocolsFromClipboard != null || onExportProtocols != null || onImportFile != null) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -815,6 +866,36 @@ private fun ProtocolListView(
                     style = TextStyle(fontSize = 10.5.sp, fontWeight = FontWeight.Medium, color = OnSurfaceVariantGray)
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (onImportFile != null) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(SurfaceContainerLowest)
+                                .clickable(onClick = onImportFile)
+                                .padding(horizontal = 7.dp, vertical = 4.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.FileUpload, contentDescription = null, tint = PrimaryBlack, modifier = Modifier.size(11.dp))
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text("导入文件", fontSize = 10.5.sp, fontWeight = FontWeight.Medium, color = PrimaryBlack)
+                            }
+                        }
+                    }
+                    if (onExportProtocols != null) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(SurfaceContainerLowest)
+                                .clickable(onClick = onExportProtocols)
+                                .padding(horizontal = 7.dp, vertical = 4.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Share, contentDescription = null, tint = PrimaryBlack, modifier = Modifier.size(11.dp))
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text("导出文件", fontSize = 10.5.sp, fontWeight = FontWeight.Medium, color = PrimaryBlack)
+                            }
+                        }
+                    }
                     if (onCopyProtocolsToken != null) {
                         Box(
                             modifier = Modifier
@@ -842,21 +923,6 @@ private fun ProtocolListView(
                                 Icon(Icons.Default.ContentPaste, contentDescription = null, tint = PrimaryBlack, modifier = Modifier.size(11.dp))
                                 Spacer(modifier = Modifier.width(3.dp))
                                 Text("口令导入", fontSize = 10.5.sp, fontWeight = FontWeight.Medium, color = PrimaryBlack)
-                            }
-                        }
-                    }
-                    if (onExportProtocols != null) {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(SurfaceContainerLowest)
-                                .clickable(onClick = onExportProtocols)
-                                .padding(horizontal = 7.dp, vertical = 4.dp)
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Share, contentDescription = null, tint = PrimaryBlack, modifier = Modifier.size(11.dp))
-                                Spacer(modifier = Modifier.width(3.dp))
-                                Text("导出文件", fontSize = 10.5.sp, fontWeight = FontWeight.Medium, color = PrimaryBlack)
                             }
                         }
                     }

@@ -9,6 +9,7 @@ import com.example.model.MqttServerConfig
 import com.example.model.ProtocolKnowledge
 import com.example.model.PublishPreset
 import com.example.model.SubscriptionItem
+import com.example.model.TslProtocol
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -424,17 +425,26 @@ object ConfigBackupHelper {
     }
 
     // ==============================================================
-    // 硬件私有协议澄清库专属导入导出 (支持独立 JSON 与紧凑口令)
+    // 硬件私有协议澄清库与 TSL 物模型专属导入导出 (支持独立 JSON 与紧凑口令)
     // ==============================================================
     const val PROTOCOL_TOKEN_PREFIX = "#MQTT-PROTO#:"
 
+    data class ParsedProtocolImportResult(
+        val protocols: List<ProtocolKnowledge> = emptyList(),
+        val tslProtocols: List<TslProtocol> = emptyList()
+    )
+
     /**
-     * 将协议库导出为独立格式化 JSON 文件
+     * 将协议库与 TSL 物模型导出为独立格式化 JSON 文件
      */
-    fun exportProtocolsToJson(context: Context, protocols: List<ProtocolKnowledge>): File {
+    fun exportProtocolsToJson(
+        context: Context,
+        protocols: List<ProtocolKnowledge>,
+        tslProtocols: List<TslProtocol> = emptyList()
+    ): File {
         val root = JSONObject().apply {
             put("type", "MQTT_PROTOCOL_KNOWLEDGE")
-            put("version", 1)
+            put("version", 2)
             put("exportedAt", SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date()))
             val arr = JSONArray()
             protocols.forEach { p ->
@@ -450,6 +460,13 @@ object ConfigBackupHelper {
                 )
             }
             put("protocols", arr)
+            if (tslProtocols.isNotEmpty()) {
+                val tslArr = JSONArray()
+                tslProtocols.forEach { tsl ->
+                    tslArr.put(tsl.toJson())
+                }
+                put("tslProtocols", tslArr)
+            }
         }
         val exportDir = File(context.cacheDir, "exports").apply { if (!exists()) mkdirs() }
         val timeTag = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
@@ -459,9 +476,12 @@ object ConfigBackupHelper {
     }
 
     /**
-     * 将协议库导出为 GZIP+Base64 极速分享口令
+     * 将协议库与 TSL 物模型导出为 GZIP+Base64 极速分享口令
      */
-    fun exportProtocolsToToken(protocols: List<ProtocolKnowledge>): String {
+    fun exportProtocolsToToken(
+        protocols: List<ProtocolKnowledge>,
+        tslProtocols: List<TslProtocol> = emptyList()
+    ): String {
         val root = JSONObject().apply {
             put("type", "MQTT_PROTOCOL_KNOWLEDGE")
             val arr = JSONArray()
@@ -476,6 +496,13 @@ object ConfigBackupHelper {
                 )
             }
             put("protocols", arr)
+            if (tslProtocols.isNotEmpty()) {
+                val tslArr = JSONArray()
+                tslProtocols.forEach { tsl ->
+                    tslArr.put(tsl.toJson())
+                }
+                put("tslProtocols", tslArr)
+            }
         }
         val byteStream = java.io.ByteArrayOutputStream()
         java.util.zip.GZIPOutputStream(byteStream).use { gzip ->
@@ -486,47 +513,112 @@ object ConfigBackupHelper {
     }
 
     /**
-     * 从独立 JSON 字符串或协议口令解析出协议规则列表
+     * 从独立 JSON 字符串（包含文件内容/文本粘贴）或协议口令解析出协议澄清规则与 TSL 物模型
+     * 具备极高容错性：兼容 JSONObject、JSONArray、口令 Base64、混合数组、带 Markdown 格式的代码块
      */
-    fun parseProtocolsFromJsonOrToken(text: String): List<ProtocolKnowledge> {
-        val trimmed = text.trim()
+    fun parseProtocolsAndTslFromJsonOrToken(text: String): ParsedProtocolImportResult {
+        var trimmed = text.trim()
+        if (trimmed.isBlank()) return ParsedProtocolImportResult()
+
+        // 剥离可能包含的 Markdown 代码块标签
+        if (trimmed.startsWith("```")) {
+            trimmed = trimmed.substringAfter("\n")
+            if (trimmed.endsWith("```")) {
+                trimmed = trimmed.substringBeforeLast("```").trim()
+            }
+        }
+
         val jsonStr = if (trimmed.startsWith(PROTOCOL_TOKEN_PREFIX)) {
-            val base64Part = trimmed.removePrefix(PROTOCOL_TOKEN_PREFIX).trim()
-            val compressedBytes = android.util.Base64.decode(base64Part, android.util.Base64.DEFAULT)
-            val byteIn = java.io.ByteArrayInputStream(compressedBytes)
-            java.util.zip.GZIPInputStream(byteIn).bufferedReader(Charsets.UTF_8).use { it.readText() }
+            try {
+                val base64Part = trimmed.removePrefix(PROTOCOL_TOKEN_PREFIX).trim()
+                val compressedBytes = android.util.Base64.decode(base64Part, android.util.Base64.DEFAULT)
+                val byteIn = java.io.ByteArrayInputStream(compressedBytes)
+                java.util.zip.GZIPInputStream(byteIn).bufferedReader(Charsets.UTF_8).use { it.readText() }
+            } catch (e: Exception) {
+                return ParsedProtocolImportResult()
+            }
         } else {
             trimmed
         }
 
-        val list = mutableListOf<ProtocolKnowledge>()
-        val root = JSONObject(jsonStr)
-        val arr = if (root.has("protocols")) {
-            root.getJSONArray("protocols")
-        } else if (root.has("protocolKnowledgeList")) {
-            root.getJSONArray("protocolKnowledgeList")
-        } else {
-            null
-        }
+        val protocols = mutableListOf<ProtocolKnowledge>()
+        val tslProtocols = mutableListOf<TslProtocol>()
 
-        if (arr != null) {
-            for (i in 0 until arr.length()) {
-                val obj = arr.getJSONObject(i)
-                val desc = obj.optString("description", "").trim()
-                if (desc.isNotBlank()) {
-                    list.add(
-                        ProtocolKnowledge(
-                            id = obj.optString("id", UUID.randomUUID().toString()),
-                            name = obj.optString("name", "未命名协议").trim().ifBlank { "未命名协议" },
-                            topicFilter = obj.optString("topicFilter", "").trim(),
-                            description = desc,
-                            sampleHex = obj.optString("sampleHex", "").trim(),
-                            createdAt = obj.optLong("createdAt", System.currentTimeMillis())
-                        )
+        fun parseSingleObject(obj: JSONObject) {
+            // 1. 优先尝试解析为 TslProtocol（判断是否有 fields 数组）
+            if (obj.has("fields")) {
+                try {
+                    tslProtocols.add(TslProtocol.fromJson(obj))
+                    return
+                } catch (_: Exception) {}
+            }
+
+            // 2. 尝试解析为 ProtocolKnowledge
+            val desc = obj.optString("description", "").trim()
+            val name = obj.optString("name", "").trim()
+            val topic = obj.optString("topicFilter", obj.optString("matchTopic", "")).trim()
+            if (desc.isNotBlank() || name.isNotBlank() || topic.isNotBlank()) {
+                protocols.add(
+                    ProtocolKnowledge(
+                        id = obj.optString("id", UUID.randomUUID().toString()),
+                        name = name.ifBlank { "未命名协议" },
+                        topicFilter = topic,
+                        description = desc.ifBlank { name },
+                        sampleHex = obj.optString("sampleHex", "").trim(),
+                        createdAt = obj.optLong("createdAt", System.currentTimeMillis())
                     )
-                }
+                )
             }
         }
-        return list
+
+        try {
+            if (jsonStr.startsWith("[")) {
+                val arr = JSONArray(jsonStr)
+                for (i in 0 until arr.length()) {
+                    val item = arr.optJSONObject(i) ?: continue
+                    parseSingleObject(item)
+                }
+            } else if (jsonStr.startsWith("{")) {
+                val root = JSONObject(jsonStr)
+
+                // 提取 tslProtocols 数组
+                if (root.has("tslProtocols")) {
+                    val tslArr = root.optJSONArray("tslProtocols")
+                    if (tslArr != null) {
+                        for (i in 0 until tslArr.length()) {
+                            val item = tslArr.optJSONObject(i) ?: continue
+                            try {
+                                tslProtocols.add(TslProtocol.fromJson(item))
+                            } catch (_: Exception) {}
+                        }
+                    }
+                }
+
+                // 提取 protocols 数组
+                val protoArr = root.optJSONArray("protocols") ?: root.optJSONArray("protocolKnowledgeList")
+                if (protoArr != null) {
+                    for (i in 0 until protoArr.length()) {
+                        val item = protoArr.optJSONObject(i) ?: continue
+                        parseSingleObject(item)
+                    }
+                }
+
+                // 如果既无 tslProtocols 也无 protocols/protocolKnowledgeList，则 root 本身可能就是单个对象
+                if (!root.has("tslProtocols") && !root.has("protocols") && !root.has("protocolKnowledgeList")) {
+                    parseSingleObject(root)
+                }
+            }
+        } catch (_: Exception) {
+            // 非合法 JSON，返回空列表供调用方走文本回退解析
+        }
+
+        return ParsedProtocolImportResult(protocols, tslProtocols)
+    }
+
+    /**
+     * 从独立 JSON 字符串或协议口令解析出协议规则列表（兼容旧接口）
+     */
+    fun parseProtocolsFromJsonOrToken(text: String): List<ProtocolKnowledge> {
+        return parseProtocolsAndTslFromJsonOrToken(text).protocols
     }
 }

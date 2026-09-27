@@ -205,6 +205,7 @@ fun AiChatScreen(
             onExportProtocols = { viewModel.exportProtocolsToJson(context) },
             onCopyProtocolsToken = { viewModel.copyProtocolsToken(context) },
             onImportProtocolsFromClipboard = { viewModel.importProtocolsFromClipboard(context) },
+            onImportProtocolsFromFile = { viewModel.importProtocolsFromUri(context, it) },
             onlyProtocol = true
         )
     }
@@ -222,6 +223,7 @@ fun AiChatScreen(
             onExportProtocols = { viewModel.exportProtocolsToJson(context) },
             onCopyProtocolsToken = { viewModel.copyProtocolsToken(context) },
             onImportProtocolsFromClipboard = { viewModel.importProtocolsFromClipboard(context) },
+            onImportProtocolsFromFile = { viewModel.importProtocolsFromUri(context, it) },
             onlyProtocol = false
         )
     }

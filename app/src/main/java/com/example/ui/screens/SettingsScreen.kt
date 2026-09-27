@@ -1220,7 +1220,8 @@ fun SettingsScreen(
             onBatchImportProtocols = { viewModel.importBatchProtocols(it) },
             onExportProtocols = { viewModel.exportProtocolsToJson(context) },
             onCopyProtocolsToken = { viewModel.copyProtocolsToken(context) },
-            onImportProtocolsFromClipboard = { viewModel.importProtocolsFromClipboard(context) }
+            onImportProtocolsFromClipboard = { viewModel.importProtocolsFromClipboard(context) },
+            onImportProtocolsFromFile = { viewModel.importProtocolsFromUri(context, it) }
         )
     }
 }
