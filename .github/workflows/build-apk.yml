@@ -102,3 +102,4 @@ jobs:
           files: output_apks/*.apk
           generate_release_notes: true
           make_latest: true
+          overwrite: true
