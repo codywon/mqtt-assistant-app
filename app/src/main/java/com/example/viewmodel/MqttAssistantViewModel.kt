@@ -339,9 +339,8 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
             storage.initBuiltinTslProtocols()
             val enabledTslProtos = storage.loadEnabledTslProtocols()
 
-            // 自动同步非内置的自定义 TSL 物模型镜像到协议工作台，确保用户界面即时可见
-            val currentKnowledgeIds = savedProtocols.map { it.id }.toSet()
-            enabledTslProtos.filter { !it.builtin }.forEach { tsl ->
+            // 自动同步所有已启用的 TSL 物模型镜像到协议工作台，确保用户界面即时可见且可查可改
+            enabledTslProtos.forEach { tsl ->
                 val existing = savedProtocols.find { it.id == tsl.id }
                 if (existing == null || existing.description.startsWith("【TSL 原生物模型")) {
                     val mirror = ProtocolKnowledge(
