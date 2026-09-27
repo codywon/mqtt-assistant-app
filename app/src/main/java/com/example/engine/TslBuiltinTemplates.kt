@@ -712,7 +712,8 @@ object TslBuiltinTemplates {
                 type = TslFieldType.JSON_NUMBER,
                 scale = 1.0,
                 precision = 2,
-                unit = "kWh"
+                unit = "kWh",
+                isKeyIndicator = true
             ),
             TslField(
                 identifier = "temperature",

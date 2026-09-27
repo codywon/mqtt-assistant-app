@@ -213,9 +213,10 @@ data class TslParseResult(
         fun scoreValue(v: TslParsedValue): Int {
             val key = "${v.identifier} ${v.name}".lowercase()
             return when {
-                key.containsAnyKeywords("target", "count", "person", "人数", "目标", "status", "state", "状态", "presence", "存在", "alarm", "告警", "fall", "跌倒", "motion") -> 40
-                key.containsAnyKeywords("energy", "kwh", "电能", "电量", "用电", "heart", "心率", "breath", "呼吸", "vital", "体征", "temp", "体温", "温度") -> 30
-                key.containsAnyKeywords("power", "功率", "voltage", "电压", "current", "电流", "humidity", "湿度", "lux", "光照", "speed", "速度", "pressure", "压力") -> 20
+                key.containsAnyKeywords("target", "count", "person", "人数", "目标", "alarm", "告警", "fall", "跌倒", "motion") -> 40
+                key.containsAnyKeywords("energy", "kwh", "电能", "电量", "用电", "heart", "心率", "breath", "呼吸", "vital", "体征", "temp", "体温", "温度") -> 35
+                key.containsAnyKeywords("power", "功率", "voltage", "电压", "current", "电流", "humidity", "湿度", "lux", "光照", "speed", "速度", "pressure", "压力") -> 25
+                key.containsAnyKeywords("status", "state", "状态", "presence", "存在", "mode", "模式") -> 15
                 key.containsAnyKeywords("rssi", "seq", "version", "版本", "bat", "电量百分比", "snr", "time") -> 5
                 else -> 10
             }

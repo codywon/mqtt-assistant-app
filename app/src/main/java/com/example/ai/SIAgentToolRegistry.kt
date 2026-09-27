@@ -23,7 +23,8 @@ class SIAgentToolRegistry(
     val onDeployRadarTrap: ((com.example.model.DynamicRadarTrap) -> Unit)? = null,
     val onClearRadarTrap: (() -> Unit)? = null,
     val activeRadarTrapProvider: (() -> com.example.model.DynamicRadarTrap?)? = null,
-    val onTslProtocolSaved: ((com.example.model.TslProtocol) -> Unit)? = null
+    val onTslProtocolSaved: ((com.example.model.TslProtocol) -> Unit)? = null,
+    val onSetTslKeyIndicator: ((protocolQuery: String, fieldQuery: String) -> String)? = null
 ) {
 
     companion object {
@@ -358,6 +359,52 @@ class SIAgentToolRegistry(
                                         put("format")
                                         put("matchTopic")
                                         put("fields")
+                                    })
+                                }
+                            )
+                        }
+                    )
+                }
+            )
+
+            // 工具 6.6: set_protocol_key_indicator (AI 动态设定报文胶囊核心指标)
+            tools.put(
+                JSONObject().apply {
+                    put("type", "function")
+                    put(
+                        "function",
+                        JSONObject().apply {
+                            put("name", "set_protocol_key_indicator")
+                            put(
+                                "description",
+                                "【设定物模型胶囊核心展示指标】当用户要求在消息卡片的小药丸胶囊上展示某个特定核心指标（例如'把断路器胶囊改成显示电量/用电量/电流'、'让雷达胶囊显示人数/目标数'、'手环胶囊显示体温'等）时调用此工具。设置后微型药丸将即时动态切换为指定字段的实时数值。"
+                            )
+                            put(
+                                "parameters",
+                                JSONObject().apply {
+                                    put("type", "object")
+                                    put(
+                                        "properties",
+                                        JSONObject().apply {
+                                            put(
+                                                "protocol",
+                                                JSONObject().apply {
+                                                    put("type", "string")
+                                                    put("description", "目标物模型协议名称、匹配主题或关键字，例如 '智能微型断路器'、'断路器' 或 'college/breaker/#'")
+                                                }
+                                            )
+                                            put(
+                                                "field",
+                                                JSONObject().apply {
+                                                    put("type", "string")
+                                                    put("description", "要设为核心展示的指标名称或标识符，例如 '累计电量'、'用电量'、'energy'、'人数'、'心率'、'电流' 等")
+                                                }
+                                            )
+                                        }
+                                    )
+                                    put("required", JSONArray().apply {
+                                        put("protocol")
+                                        put("field")
                                     })
                                 }
                             )
@@ -920,6 +967,18 @@ class SIAgentToolRegistry(
                         storage.saveTslProtocol(protocol)
                         onTslProtocolSaved?.invoke(protocol)
                         "【TSL 物模型创建成功并即时生效！】\n协议名称: $name\n报文格式: $format\n匹配主题: $matchTopic\n解析字段总数: ${fields.size} 个\n字段清单: ${fields.joinToString(", ") { "${it.name}(${it.identifier})" }}\n\n底层高速解析引擎已同步加载此协议，现场 MQTT 报文一经到达即可呈现微秒级解析指标及告警判定！"
+                    }
+                }
+
+                "set_protocol_key_indicator" -> {
+                    val protocolQuery = args.optString("protocol", "").trim()
+                    val fieldQuery = args.optString("field", "").trim()
+                    if (protocolQuery.isBlank() || fieldQuery.isBlank()) {
+                        "设定失败: 物模型协议(protocol)和展示字段(field)均不能为空"
+                    } else if (onSetTslKeyIndicator != null) {
+                        onSetTslKeyIndicator.invoke(protocolQuery, fieldQuery)
+                    } else {
+                        "系统尚未初始化物模型核心指标动态控制器"
                     }
                 }
 

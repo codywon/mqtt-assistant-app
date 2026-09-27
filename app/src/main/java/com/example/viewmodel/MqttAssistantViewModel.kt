@@ -287,6 +287,9 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
         activeRadarTrapProvider = { activeRadarTrap.value },
         onTslProtocolSaved = { protocol ->
             saveTslProtocol(protocol)
+        },
+        onSetTslKeyIndicator = { protocolQuery, fieldQuery ->
+            setTslProtocolKeyIndicator(protocolQuery, fieldQuery)
         }
     )
     private val aiAgentClient = AiAgentClient(toolRegistry)
@@ -3066,6 +3069,33 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
     // =========================================================================
     // TSL 物模型协议库管理方法
     // =========================================================================
+
+    /**
+     * 动态设置指定协议在消息卡片胶囊小药丸上展示的核心关键指标（AI 对话联动设定）
+     */
+    fun setTslProtocolKeyIndicator(protocolQuery: String, fieldQuery: String): String {
+        val protocols = storage.loadAllTslProtocols()
+        val targetProto = protocols.find { p ->
+            p.id.equals(protocolQuery, ignoreCase = true) ||
+            p.name.contains(protocolQuery, ignoreCase = true) ||
+            protocolQuery.contains(p.name, ignoreCase = true) ||
+            p.matchTopic.equals(protocolQuery, ignoreCase = true)
+        } ?: return "未找到名称或主题匹配【$protocolQuery】的 TSL 物模型协议。当前已加载协议包括: ${protocols.joinToString { it.name }}"
+
+        val targetField = targetProto.fields.find { f ->
+            f.identifier.equals(fieldQuery, ignoreCase = true) ||
+            f.name.contains(fieldQuery, ignoreCase = true) ||
+            fieldQuery.contains(f.name, ignoreCase = true)
+        } ?: return "在协议【${targetProto.name}】中未匹配到字段【$fieldQuery】。支持的字段包括: ${targetProto.fields.joinToString(", ") { "${it.name}(${it.identifier})" }}"
+
+        val updatedFields = targetProto.fields.map { f ->
+            f.copy(isKeyIndicator = (f.identifier == targetField.identifier))
+        }
+        val updatedProto = targetProto.copy(fields = updatedFields)
+
+        saveTslProtocol(updatedProto)
+        return "【核心指标设定成功】\n协议: ${targetProto.name}\n指定胶囊核心指标: ${targetField.name} (${targetField.identifier})\n物理单位: ${targetField.unit.ifBlank { "无" }}\n\n现场报文卡片的小药丸已即时联动刷新，无告警时将优先呈现该指标！"
+    }
 
     fun saveTslProtocol(protocol: com.example.model.TslProtocol) {
         viewModelScope.launch(Dispatchers.IO) {
