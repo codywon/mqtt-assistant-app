@@ -24,7 +24,8 @@ object TslBuiltinTemplates {
         jsonTelemetryGeneric(),
         biolandBloodPressure(),
         biolandBloodGlucose(),
-        biolandThermometer()
+        biolandThermometer(),
+        biolandBodyFatScale()
     )
 
     // =========================================================================
@@ -433,6 +434,83 @@ object TslBuiltinTemplates {
                 length = 1,
                 type = TslFieldType.UINT8,
                 unit = "日",
+                precision = 0
+            )
+        )
+    )
+
+    // =========================================================================
+    // 7. 蓝牙智能体脂秤广播协议 (Body Fat Scale BLE Broadcast)
+    // =========================================================================
+
+    /**
+     * 蓝牙体脂秤厂商广播帧 (15 字节，以 0xC0 开头)
+     * 官方示例：C0 CB 00 AD 13 7D 00 02 21 00 11 22 33 44 55
+     *  - C0: 识别包头
+     *  - CB: 流水号 (1~255)
+     *  - 00 AD: 体重 173 -> 17.3 kg (scale=0.1, 大端 BE)
+     *  - 13 7D: 电阻 4989 -> 498.9 Ω (scale=0.1, 大端 BE)
+     *  - 00 02: 产品 ID
+     *  - 21: 属性状态 (Bit0=1 锁定稳定数据, Bit5=1 体脂秤, Bit4-3=00 kg)
+     */
+    private fun biolandBodyFatScale(): TslProtocol = TslProtocol(
+        id = "builtin_body_fat_scale_v1",
+        name = "蓝牙智能体脂秤广播协议",
+        format = TslFormat.HEX,
+        matchTopic = "medical/+/body_scale/#",
+        builtin = true,
+        enabled = true,
+        fields = listOf(
+            TslField(
+                identifier = "weight",
+                name = "体重",
+                offset = 2,
+                length = 2,
+                type = TslFieldType.UINT16_BE,
+                scale = 0.1,
+                unit = "kg",
+                precision = 1,
+                warnMin = 20.0,
+                warnMax = 150.0
+            ),
+            TslField(
+                identifier = "impedance",
+                name = "人体阻抗",
+                offset = 4,
+                length = 2,
+                type = TslFieldType.UINT16_BE,
+                scale = 0.1,
+                unit = "Ω",
+                precision = 1,
+                warnMin = 200.0,
+                warnMax = 1200.0
+            ),
+            TslField(
+                identifier = "is_locked",
+                name = "锁定标志(稳定完成)",
+                offset = 8,
+                length = 1,
+                type = TslFieldType.UINT8,
+                scale = 1.0,
+                precision = 0,
+                alarmBitmask = 0x01L
+            ),
+            TslField(
+                identifier = "seq",
+                name = "流水号",
+                offset = 1,
+                length = 1,
+                type = TslFieldType.UINT8,
+                scale = 1.0,
+                precision = 0
+            ),
+            TslField(
+                identifier = "product_id",
+                name = "产品ID",
+                offset = 6,
+                length = 2,
+                type = TslFieldType.UINT16_BE,
+                scale = 1.0,
                 precision = 0
             )
         )
