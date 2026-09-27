@@ -148,11 +148,13 @@ class AiAgentClient(
             return@withContext
         }
 
-        // 渐进式按需协议索引（仅注入协议名称索引目录，仅消耗 ~20 Tokens，按需由工具加载完整规则）
-        val protocols = toolRegistry.storage.loadAllProtocolKnowledge()
-        val protocolSummary = if (protocols.isNotEmpty()) {
-            val names = protocols.joinToString(", ") { it.name }
-            "\n\n【当前已挂载私有协议索引】: $names。如需具体规则，请调用 get_protocol_clarification 工具获取。"
+        // 渐进式按需协议索引（仅注入极轻量协议名称目录，仅消耗 ~20-50 Tokens，按需由工具精准加载完整规则）
+        val tslProtos = toolRegistry.storage.loadEnabledTslProtocols()
+        val kbProtos = toolRegistry.storage.loadAllProtocolKnowledge()
+        val allNames = (tslProtos.map { "TSL-${it.name}" } + kbProtos.map { it.name }).distinct()
+        val protocolSummary = if (allNames.isNotEmpty()) {
+            val names = allNames.joinToString(", ")
+            "\n\n【当前已挂载私有/TSL协议索引目录】: $names。如需具体字段规则，请调用 get_protocol_clarification 工具按需加载。"
         } else {
             ""
         }

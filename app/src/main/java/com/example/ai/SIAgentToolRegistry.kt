@@ -717,33 +717,64 @@ class SIAgentToolRegistry(
                     var query = args.optString("query", "").trim()
                     if (query.isBlank()) query = args.optString("topic", "").trim()
                     if (query.isBlank()) query = args.optString("name", "").trim()
-                    val allProtocols = storage.loadAllProtocolKnowledge()
-                    if (allProtocols.isEmpty()) {
-                        return "暂未录入任何私有协议澄清规则。用户可在「AI 设置 - 协议澄清」中直接粘贴录入。"
+                    val allKb = storage.loadAllProtocolKnowledge()
+                    val allTsl = storage.loadAllTslProtocols()
+                    if (allKb.isEmpty() && allTsl.isEmpty()) {
+                        return "暂未录入任何私有协议或 TSL 物模型规则。用户可在「设置 - TSL 物模型管理」或直接在对话中发送协议规约让我一键创建。"
                     }
-                    val matched = if (query.isNotBlank()) {
-                        allProtocols.filter {
+
+                    val array = JSONArray()
+
+                    // 1. 检索 TSL 原生声明式物模型
+                    val matchedTsl = if (query.isNotBlank()) {
+                        allTsl.filter {
+                            it.name.contains(query, ignoreCase = true) ||
+                                it.matchTopic.contains(query, ignoreCase = true) ||
+                                it.fields.any { f -> f.name.contains(query, ignoreCase = true) || f.identifier.contains(query, ignoreCase = true) }
+                        }
+                    } else {
+                        allTsl
+                    }
+                    for (p in matchedTsl) {
+                        array.put(
+                            JSONObject().apply {
+                                put("type", "TSL物模型")
+                                put("name", p.name)
+                                put("format", p.format.name)
+                                put("matchTopic", p.matchTopic)
+                                put("enabled", p.enabled)
+                                put("fields", JSONArray().apply {
+                                    for (f in p.fields) put(f.toJson())
+                                })
+                            }
+                        )
+                    }
+
+                    // 2. 检索 ProtocolKnowledge 自然语言协议知识库
+                    val matchedKb = if (query.isNotBlank()) {
+                        allKb.filter {
                             it.name.contains(query, ignoreCase = true) ||
                                 it.topicFilter.contains(query, ignoreCase = true) ||
                                 it.description.contains(query, ignoreCase = true)
                         }
                     } else {
-                        allProtocols
+                        allKb
                     }
-                    if (matched.isEmpty()) {
-                        val available = allProtocols.joinToString(", ") { it.name }
-                        return "未找到匹配 '$query' 的硬件协议规则。当前已录入的协议有: $available"
-                    }
-                    val array = JSONArray()
-                    for (p in matched) {
+                    for (p in matchedKb) {
                         array.put(
                             JSONObject().apply {
+                                put("type", "私有协议澄清")
                                 put("name", p.name)
                                 put("topicFilter", p.topicFilter)
                                 put("description", p.description)
                                 put("sampleHex", p.sampleHex)
                             }
                         )
+                    }
+
+                    if (array.length() == 0) {
+                        val available = (allTsl.map { it.name } + allKb.map { it.name }).distinct().joinToString(", ")
+                        return "未找到匹配 '$query' 的硬件协议规则。当前系统内已注册的协议有: $available"
                     }
                     array.toString()
                 }
