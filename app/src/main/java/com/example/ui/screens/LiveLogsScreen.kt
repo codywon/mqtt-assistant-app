@@ -864,6 +864,8 @@ private fun CompactMessageCard(
                         val isWarn = keyIndicator.isWarning
                         Box(
                             modifier = Modifier
+                                .weight(1f, fill = false)
+                                .widthIn(max = 145.dp)
                                 .clip(RoundedCornerShape(3.dp))
                                 .clickable { isTslExpanded = !isTslExpanded }
                                 .background(if (isWarn) Color(0xFFFEE2E2) else SurfaceContainerLow)
@@ -883,7 +885,8 @@ private fun CompactMessageCard(
                                     color = if (isWarn) Color(0xFFDC2626) else PrimaryBlack
                                 ),
                                 maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
+                                overflow = TextOverflow.Ellipsis,
+                                softWrap = false
                             )
                         }
                     }

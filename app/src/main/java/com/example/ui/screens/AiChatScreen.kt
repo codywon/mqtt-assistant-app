@@ -138,6 +138,9 @@ fun AiChatScreen(
     val aiConfig by viewModel.aiConfig.collectAsState()
     val protocols by viewModel.protocolKnowledgeList.collectAsState()
     val activeRadarTrap by viewModel.activeRadarTrap.collectAsState()
+    val isConnected by viewModel.isConnected.collectAsState()
+    val livePackets by viewModel.livePackets.collectAsState()
+    val tslProtocols by viewModel.tslProtocols.collectAsState()
 
     val sessions by viewModel.aiSessions.collectAsState()
     val currentSessionId by viewModel.currentSessionId.collectAsState()
@@ -762,6 +765,9 @@ fun AiChatScreen(
             if (messages.isEmpty()) {
                 // Empty Welcome View with Suggestion Pills
                 AiEmptyWelcomeView(
+                    isConnected = isConnected,
+                    gatewayCount = livePackets.map { it.topic.substringBefore("/") }.distinct().size,
+                    tslCount = tslProtocols.size,
                     onPillClick = { suggestion ->
                         viewModel.sendAiMessage(suggestion)
                     },
@@ -1027,14 +1033,54 @@ fun AiChatScreen(
 }
 
 /**
- * 欢迎空态卡片与 4 大业务引导胶囊
+ * 欢迎空态视图：借鉴 Gemini / Claude 极简工业质感
+ * 包含：现场轻态势微徽标 + 四大高能生产力动作胶囊（Action Chips）
  */
+private data class AiActionChipItem(
+    val icon: String,
+    val title: String,
+    val hint: String,
+    val prompt: String
+)
+
 @Composable
 private fun AiEmptyWelcomeView(
+    isConnected: Boolean,
+    gatewayCount: Int,
+    tslCount: Int,
     onPillClick: (String) -> Unit,
     onOpenSettings: () -> Unit,
     isConfigured: Boolean
 ) {
+    val actionChips = remember {
+        listOf(
+            AiActionChipItem(
+                icon = "⚡",
+                title = "报文逆向建库",
+                hint = "提取最新帧创建 TSL 物模型",
+                prompt = "请分析当前内存中最新收到的数据报文（如雷达、断路器或传感器数据），逆向推导各字段定义、数据类型与业务状态字典，并直接调用 save_tsl_protocol 为我创建并激活 TSL 物模型！"
+            ),
+            AiActionChipItem(
+                icon = "🎯",
+                title = "部署雷达哨兵",
+                hint = "微秒级拦截异常与关键事件",
+                prompt = "请帮我部署 AI 雷达哨兵，重点对现场关键事件进行条件拦截布控（如检测到有人/离床、设备告警越限或状态突变），过滤常规冗余包，一旦命中立即拦截捕获并汇报。"
+            ),
+            AiActionChipItem(
+                icon = "🔍",
+                title = "现场极速体检",
+                hint = "秒级诊断网关失联与越限",
+                prompt = "请调用工具检索当前内存实时数据流，检查各网关通信吞吐、是否有设备离线失联、以及是否存在 TSL 物模型越限报警或异常数据，给出极速体检结论。"
+            ),
+            AiActionChipItem(
+                icon = "💊",
+                title = "定制胶囊指标",
+                hint = "设定雷达人数/电量核心药丸",
+                prompt = "请列出当前已解析协议的核心指标设置情况，并帮我指定消息卡片上微型药丸胶囊的展示字段（如雷达显示人数、断路器显示电量等）。"
+            )
+        )
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -1045,14 +1091,14 @@ private fun AiEmptyWelcomeView(
     ) {
         Box(
             modifier = Modifier
-                .size(54.dp)
+                .size(52.dp)
                 .clip(CircleShape)
                 .background(PrimaryBlack.copy(alpha = 0.05f)),
             contentAlignment = Alignment.Center
         ) {
             Box(
                 modifier = Modifier
-                    .size(38.dp)
+                    .size(36.dp)
                     .clip(CircleShape)
                     .background(PrimaryBlack),
                 contentAlignment = Alignment.Center
@@ -1061,25 +1107,59 @@ private fun AiEmptyWelcomeView(
                     imageVector = Icons.Default.AutoAwesome,
                     contentDescription = null,
                     tint = OnPrimaryWhite,
-                    modifier = Modifier.size(19.dp)
+                    modifier = Modifier.size(18.dp)
                 )
             }
         }
 
-        Spacer(modifier = Modifier.height(14.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
         Text(
             text = "有什么我可以帮您分析的？",
-            style = TextStyle(fontSize = 17.5.sp, fontWeight = FontWeight.Bold, color = PrimaryBlack, letterSpacing = (-0.2).sp)
+            style = TextStyle(fontSize = 17.sp, fontWeight = FontWeight.Bold, color = PrimaryBlack, letterSpacing = (-0.2).sp)
         )
 
-        Spacer(modifier = Modifier.height(4.dp))
+        Spacer(modifier = Modifier.height(3.dp))
 
         Text(
-            text = "内嵌 SI 智能体 · 检索本地 SQLite · 解码硬件私有协议 · 穿透归档 Excel",
-            style = TextStyle(fontSize = 11.5.sp, color = OnSurfaceVariantGray, lineHeight = 16.sp),
+            text = "工业物模型逆向 · AI 条件拦截哨兵 · 现场通信质检",
+            style = TextStyle(fontSize = 11.5.sp, color = OnSurfaceVariantGray),
             textAlign = androidx.compose.ui.text.style.TextAlign.Center
         )
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        // 现场轻态势微徽标（大厂级状态透视）
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier
+                .clip(RoundedCornerShape(20.dp))
+                .background(SurfaceContainerLow)
+                .border(0.6.dp, OutlineVariantLight, RoundedCornerShape(20.dp))
+                .padding(horizontal = 10.dp, vertical = 4.5.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(6.5.dp)
+                    .clip(CircleShape)
+                    .background(if (isConnected) Color(0xFF10B981) else Color(0xFF9CA3AF))
+            )
+            Text(
+                text = if (isConnected) "现场链路已连接" else "未连接 Broker",
+                style = TextStyle(fontSize = 10.5.sp, fontWeight = FontWeight.SemiBold, color = PrimaryBlack)
+            )
+            Text(text = "·", style = TextStyle(fontSize = 10.5.sp, color = OutlineGray))
+            Text(
+                text = "${if (gatewayCount > 0) gatewayCount else 1} 台网关在线",
+                style = TextStyle(fontSize = 10.5.sp, color = OnSurfaceVariantGray)
+            )
+            Text(text = "·", style = TextStyle(fontSize = 10.5.sp, color = OutlineGray))
+            Text(
+                text = "$tslCount 套物模型生效",
+                style = TextStyle(fontSize = 10.5.sp, color = OnSurfaceVariantGray)
+            )
+        }
 
         if (!isConfigured) {
             Spacer(modifier = Modifier.height(10.dp))
@@ -1097,52 +1177,39 @@ private fun AiEmptyWelcomeView(
             }
         }
 
-        Spacer(modifier = Modifier.height(26.dp))
+        Spacer(modifier = Modifier.height(20.dp))
 
-        // 2x2 高级极简场景建议卡片网格
+        // 四大高能生产力动作胶囊（Action Chips: 紧凑双排，轻量高效）
         Column(
             modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                SuggestionCard(
-                    tag = "工程交付",
-                    title = "现场验收工程报告",
-                    desc = "一键生成通信验收报告",
-                    prompt = "请全面盘点当前 MQTT Broker 采集到的所有网关数据、内存实时流与通信质量，生成一份标准的《MQTT 工业物联网现场验收与排查工程报告》。请调用工具查询真实数据，报告必须包含：1. 现场工程概况；2. 网关与设备在线清单及吞吐；3. 通信质量与连通性评估；4. 业务指标与私有协议解码审计；5. 整改建议与交付验收结论。",
+                AiActionChip(
+                    item = actionChips[0],
                     modifier = Modifier.weight(1f),
                     onClick = onPillClick
                 )
-                SuggestionCard(
-                    tag = "异常巡检",
-                    title = "现场工况与告警排查",
-                    desc = "排查心跳失联与越限告警",
-                    prompt = "基于内存实时流与协议解析库，全面排查各网关与设备（如断路器、电表、传感器）的心跳失联、报错报文与参数越限告警",
+                AiActionChip(
+                    item = actionChips[1],
                     modifier = Modifier.weight(1f),
                     onClick = onPillClick
                 )
             }
-
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                SuggestionCard(
-                    tag = "双向联调",
-                    title = "自然语言 Mock 发包",
-                    desc = "AI 构造心跳并一键下发",
-                    prompt = "帮我构造一条心跳上报 Mock 报文，并调用 publish_mqtt_message 直接发布到当前网关主题",
+                AiActionChip(
+                    item = actionChips[2],
                     modifier = Modifier.weight(1f),
                     onClick = onPillClick
                 )
-                SuggestionCard(
-                    tag = "协议/日志",
-                    title = "附件逆向与分析",
-                    desc = "点下方 + 号选择文档",
-                    prompt = "请告诉我如何逆向解析硬件通信协议或分析报文日志，以及输入框左侧 [+] 附件按钮的使用指南。",
+                AiActionChip(
+                    item = actionChips[3],
                     modifier = Modifier.weight(1f),
                     onClick = onPillClick
                 )
@@ -1152,57 +1219,45 @@ private fun AiEmptyWelcomeView(
 }
 
 @Composable
-private fun SuggestionCard(
-    tag: String,
-    title: String,
-    desc: String,
-    prompt: String,
+private fun AiActionChip(
+    item: AiActionChipItem,
     modifier: Modifier = Modifier,
     onClick: (String) -> Unit
 ) {
-    Card(
-        shape = RoundedCornerShape(13.dp),
-        colors = CardDefaults.cardColors(containerColor = SurfaceContainerLowest),
-        border = BorderStroke(0.7.dp, OutlineVariantLight),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.5.dp),
-        modifier = modifier.clickable { onClick(prompt) }
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(SurfaceContainerLowest)
+            .border(0.7.dp, OutlineVariantLight, RoundedCornerShape(10.dp))
+            .clickable { onClick(item.prompt) }
+            .padding(horizontal = 10.dp, vertical = 8.5.dp)
     ) {
-        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 11.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(4.dp))
-                        .background(SurfaceContainerLow)
-                        .padding(horizontal = 5.dp, vertical = 2.dp)
-                ) {
-                    Text(
-                        text = tag,
-                        style = TextStyle(fontSize = 9.5.sp, fontWeight = FontWeight.SemiBold, color = OnSurfaceVariantGray)
-                    )
-                }
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text(text = item.icon, fontSize = 13.sp)
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "↗",
-                    style = TextStyle(fontSize = 12.sp, color = OutlineGray, fontWeight = FontWeight.Bold)
+                    text = item.title,
+                    style = TextStyle(
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = PrimaryBlack
+                    ),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = item.hint,
+                    style = TextStyle(
+                        fontSize = 9.5.sp,
+                        color = OnSurfaceVariantGray
+                    ),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
-            Spacer(modifier = Modifier.height(7.dp))
-            Text(
-                text = title,
-                style = TextStyle(fontSize = 12.5.sp, fontWeight = FontWeight.Bold, color = PrimaryBlack),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = desc,
-                style = TextStyle(fontSize = 10.5.sp, color = OnSurfaceVariantGray),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
         }
     }
 }
