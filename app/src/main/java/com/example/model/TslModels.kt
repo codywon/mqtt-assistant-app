@@ -99,7 +99,8 @@ data class TslField(
     val jsonPath: String = "",          // JSON 模式下的路径（如 "data.temperature"）
     val warnMin: Double? = null,        // 下限告警阈值（低于此值触发告警）
     val warnMax: Double? = null,        // 上限告警阈值（高于此值触发告警）
-    val alarmBitmask: Long? = null      // 状态位掩码告警（按位与非 0 触发告警，如 0x0002 代表跳闸报警）
+    val alarmBitmask: Long? = null,     // 状态位掩码告警（按位与非 0 触发告警，如 0x0002 代表跳闸报警）
+    val isKeyIndicator: Boolean = false // 是否显式声明为该协议的核心指标（微型药丸最高权重展现）
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
         put("identifier", identifier)
@@ -114,6 +115,7 @@ data class TslField(
         if (warnMin != null) put("warnMin", warnMin)
         if (warnMax != null) put("warnMax", warnMax)
         if (alarmBitmask != null) put("alarmBitmask", alarmBitmask)
+        if (isKeyIndicator) put("isKeyIndicator", true)
     }
 
     companion object {
@@ -137,7 +139,8 @@ data class TslField(
             else null,
             alarmBitmask = if (json.has("alarmBitmask") || json.has("alarm_bitmask"))
                 json.optLong("alarmBitmask", json.optLong("alarm_bitmask", -1L)).takeIf { it >= 0 }
-            else null
+            else null,
+            isKeyIndicator = json.optBoolean("isKeyIndicator", json.optBoolean("is_key_indicator", false))
         )
     }
 }
@@ -184,6 +187,44 @@ data class TslParseResult(
     val warningCount: Int               // 告警数量
 ) {
     /**
+     * 体系化提取核心关键指标（微型药丸专用）
+     * 遵循工业级三层决策仲裁，绝无业务级硬编码：
+     * 1. 【告警优先仲裁 (Alarm Override)】: 只要有指标越限或报警，100% 优先透出首个告警指标；
+     * 2. 【显式声明仲裁 (Explicit Declaration)】: 显式标记 isKeyIndicator 的字段优先；
+     * 3. 【语义权重仲裁 (Semantic Weighting)】: 依据工业物理量通用特征词根打分：
+     *    - 权重 40: 存在/安防/计数/状态 (count, target, person, status, state, presence, alarm, fall, motion)
+     *    - 权重 30: 能耗/累计做功/核心体征 (energy, kwh, heart, breath, vital, temp)
+     *    - 权重 20: 主动物理测量量 (power, voltage, current, humidity, speed, pressure, lux)
+     *    - 权重 5:  辅助诊断与次要参数 (rssi, seq, version, bat, snr, timestamp)
+     * 4. 【首项兜底 (Fallback)】: 相同权重或无法区分时按物模型定义的第 1 个指标呈现。
+     */
+    fun findKeyIndicator(): TslParsedValue? {
+        if (values.isEmpty()) return null
+
+        // 1. 告警最高优先级（任何异常都无条件优先在药丸呈现）
+        val alarmValue = values.firstOrNull { it.isWarning }
+        if (alarmValue != null) return alarmValue
+
+        // 2. 显式标记为核心关键指标的字段优先
+        val explicitKey = values.firstOrNull { it.isKeyIndicator }
+        if (explicitKey != null) return explicitKey
+
+        // 3. 通用工业语义特征自适应打分
+        fun scoreValue(v: TslParsedValue): Int {
+            val key = "${v.identifier} ${v.name}".lowercase()
+            return when {
+                key.containsAnyKeywords("target", "count", "person", "人数", "目标", "status", "state", "状态", "presence", "存在", "alarm", "告警", "fall", "跌倒", "motion") -> 40
+                key.containsAnyKeywords("energy", "kwh", "电能", "电量", "用电", "heart", "心率", "breath", "呼吸", "vital", "体征", "temp", "体温", "温度") -> 30
+                key.containsAnyKeywords("power", "功率", "voltage", "电压", "current", "电流", "humidity", "湿度", "lux", "光照", "speed", "速度", "pressure", "压力") -> 20
+                key.containsAnyKeywords("rssi", "seq", "version", "版本", "bat", "电量百分比", "snr", "time") -> 5
+                else -> 10
+            }
+        }
+
+        return values.maxByOrNull { scoreValue(it) } ?: values.first()
+    }
+
+    /**
      * 生成简洁的物理量摘要文本（如 "心率:78bpm 高压:125mmHg ⚠ 体温:38.2℃"）
      */
     fun toSummaryText(): String = values.joinToString("  ") { v ->
@@ -204,6 +245,8 @@ data class TslParseResult(
     }
 }
 
+private fun String.containsAnyKeywords(vararg keywords: String): Boolean = keywords.any { this.contains(it) }
+
 /**
  * 单个解析出的物理量值
  */
@@ -215,7 +258,8 @@ data class TslParsedValue(
     val unit: String,                   // 物理单位
     val isWarning: Boolean,             // 是否越限告警
     val warningMessage: String? = null, // 告警详情（如 "收缩压 158 超过上限 140 mmHg"）
-    val stringValue: String? = null     // 字符串类型字段的原始文本（ASCII / JSON_STRING）
+    val stringValue: String? = null,    // 字符串类型字段的原始文本（ASCII / JSON_STRING）
+    val isKeyIndicator: Boolean = false // 是否显式声明为该协议的核心指标
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
         put("id", identifier)
@@ -226,6 +270,7 @@ data class TslParsedValue(
         put("warning", isWarning)
         if (warningMessage != null) put("warningMsg", warningMessage)
         if (stringValue != null) put("stringValue", stringValue)
+        if (isKeyIndicator) put("isKeyIndicator", true)
     }
 }
 

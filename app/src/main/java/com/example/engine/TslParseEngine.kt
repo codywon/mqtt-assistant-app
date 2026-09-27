@@ -208,7 +208,8 @@ object TslParseEngine {
                     displayValue = str,
                     unit = field.unit,
                     isWarning = false,
-                    stringValue = str
+                    stringValue = str,
+                    isKeyIndicator = field.isKeyIndicator
                 )
             }
 
@@ -233,7 +234,8 @@ object TslParseEngine {
                     rawValue = bitVal.toDouble(),
                     displayValue = if (bitVal == 1) "ON" else "OFF",
                     unit = field.unit,
-                    isWarning = false
+                    isWarning = false,
+                    isKeyIndicator = field.isKeyIndicator
                 )
             }
 
@@ -292,7 +294,8 @@ object TslParseEngine {
                     displayValue = strVal,
                     unit = field.unit,
                     isWarning = false,
-                    stringValue = strVal
+                    stringValue = strVal,
+                    isKeyIndicator = field.isKeyIndicator
                 )
             }
             TslFieldType.JSON_BOOL -> {
@@ -308,7 +311,8 @@ object TslParseEngine {
                     rawValue = if (boolVal) 1.0 else 0.0,
                     displayValue = if (boolVal) "ON" else "OFF",
                     unit = field.unit,
-                    isWarning = false
+                    isWarning = false,
+                    isKeyIndicator = field.isKeyIndicator
                 )
             }
             // 对于 HEX 类型的字段也尝试以数值方式提取（兼容混合定义）
@@ -440,7 +444,8 @@ object TslParseEngine {
             displayValue = displayText,
             unit = field.unit,
             isWarning = isWarning,
-            warningMessage = warningMsg
+            warningMessage = warningMsg,
+            isKeyIndicator = field.isKeyIndicator
         )
     }
 

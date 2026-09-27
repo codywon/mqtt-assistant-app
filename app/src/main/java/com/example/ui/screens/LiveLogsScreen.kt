@@ -64,6 +64,8 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Speed
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -376,22 +378,6 @@ fun LiveLogsScreen(
             }
         }
 
-        // 1.5 现场通信健康度雷达 (Proactive Watchdog Strip)
-        // 关键空间优化：链路正常且未展开排查时，完全不占用竖向空间（高度归零），将全部屏幕释放给消息流！
-        if (!watchdogState.isHealthy || isWatchdogExpanded) {
-            LiveHealthWatchdogStrip(
-                state = watchdogState,
-                overflowCount = overflowCount,
-                isExpanded = isWatchdogExpanded,
-                onToggleExpand = { isWatchdogExpanded = !isWatchdogExpanded },
-                onInspectAnomaly = { anomaly ->
-                    onInspectPacket(anomaly.rawPacket)
-                },
-                onGenerateReport = {
-                    viewModel.generateFieldAcceptanceReport()
-                }
-            )
-        }
 
         // 1.6 AI 实时雷达哨兵动态布控胶囊条
         if (activeRadarTrap != null) {
@@ -724,11 +710,13 @@ private fun CompactMessageCard(
             .clickable(onClick = { onCardClick(packet) })
             .testTag("log_packet_${packet.id}")
     ) {
+        var isTslExpanded by rememberSaveable(packet.id) { mutableStateOf(false) }
+
         Column(
             modifier = Modifier.padding(horizontal = 11.dp, vertical = 9.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            // Row 1: Colored Dot + Topic + AI Inspect & Copy Buttons
+            // Row 1: Colored Dot + Topic + TSL Speed & AI Inspect & Copy Buttons
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -766,6 +754,20 @@ private fun CompactMessageCard(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
+                    // TSL 声明式物模型指标微仪表图标 (仅命中物模型时呈现，告警时变红，点击展开/折叠)
+                    if (tslResult != null && tslResult.values.isNotEmpty()) {
+                        IconButton(
+                            onClick = { isTslExpanded = !isTslExpanded },
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Speed,
+                                contentDescription = if (isTslExpanded) "收起物模型指标" else "展开物模型指标",
+                                tint = if (tslResult.hasWarnings) Color(0xFFDC2626) else if (isTslExpanded) PrimaryBlack else OnSurfaceVariantGray,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
                     IconButton(
                         onClick = { onInspectWithAi(packet) },
                         modifier = Modifier.size(24.dp)
@@ -855,6 +857,38 @@ private fun CompactMessageCard(
                     }
                 }
 
+                // 核心指标微型药丸 (Micro-pill): 体系化无硬编码提取 (告警优先 > 显式核心 > 工业物理量通用特征矩阵)
+                if (tslResult != null && tslResult.values.isNotEmpty()) {
+                    val keyIndicator = tslResult.findKeyIndicator()
+                    if (keyIndicator != null) {
+                        val isWarn = keyIndicator.isWarning
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(3.dp))
+                                .clickable { isTslExpanded = !isTslExpanded }
+                                .background(if (isWarn) Color(0xFFFEE2E2) else SurfaceContainerLow)
+                                .border(
+                                    0.5.dp,
+                                    if (isWarn) Color(0xFFEF4444) else OutlineVariantLight,
+                                    RoundedCornerShape(3.dp)
+                                )
+                                .padding(horizontal = 4.5.dp, vertical = 1.dp)
+                        ) {
+                            Text(
+                                text = "${if (isWarn) "⚠️ " else "⚡ "}${keyIndicator.name} ${keyIndicator.displayValue}",
+                                style = TextStyle(
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 9.5.sp,
+                                    fontWeight = if (isWarn) FontWeight.Bold else FontWeight.SemiBold,
+                                    color = if (isWarn) Color(0xFFDC2626) else PrimaryBlack
+                                ),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+
                 // Size Badge
                 Box(
                     modifier = Modifier
@@ -914,8 +948,8 @@ private fun CompactMessageCard(
                 )
             }
 
-            // Row 4: TSL 物模型物理量解析 (完全融入卡片整体，去除绿色贴纸感)
-            if (tslResult != null && tslResult.values.isNotEmpty()) {
+            // Row 4: TSL 物模型物理量解析 (默认折叠，按需展开，彻底释放垂直空间)
+            if (isTslExpanded && tslResult != null && tslResult.values.isNotEmpty()) {
                 val hasWarn = tslResult.hasWarnings
 
                 Column(
