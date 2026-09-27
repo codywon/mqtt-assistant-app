@@ -25,7 +25,9 @@ object TslBuiltinTemplates {
         biolandBloodPressure(),
         biolandBloodGlucose(),
         biolandThermometer(),
-        biolandBodyFatScale()
+        biolandBodyFatScale(),
+        lepuPc60Continuous(),
+        lepuPc60SpotCheck()
     )
 
     // =========================================================================
@@ -510,6 +512,144 @@ object TslBuiltinTemplates {
                 offset = 6,
                 length = 2,
                 type = TslFieldType.UINT16_BE,
+                scale = 1.0,
+                precision = 0
+            )
+        )
+    )
+
+    // =========================================================================
+    // 8. 乐普 PC-60 连续实时监测协议 (Continuous Pulse Oximeter)
+    // =========================================================================
+
+    /**
+     * 连续实时参数包 (13 字节)
+     * 示例：AA 55 0F 08 01 63 58 00 5C 00 C0 67
+     *  - AA 55: 帧头
+     *  - 0F 08 01: 实时参数类型
+     *  - 63: SpO2 = 99 %
+     *  - 58 00: PR = 88 bpm (小端序 UINT16_LE)
+     *  - 5C 00: PI = 92 -> 9.2 % (scale=0.1, 小端序 UINT16_LE)
+     *  - 00: Status (Bit1 探头脱落告警, Bit2 寻脉状态)
+     *  - C0: Battery (Bit7~6 电量等级)
+     */
+    private fun lepuPc60Continuous(): TslProtocol = TslProtocol(
+        id = "builtin_lepu_pc60_continuous_v1",
+        name = "乐普血氧仪 PC-60 连续实时监测协议",
+        format = TslFormat.HEX,
+        matchTopic = "medical/+/oximeter/continuous/#",
+        builtin = true,
+        enabled = true,
+        fields = listOf(
+            TslField(
+                identifier = "spo2",
+                name = "血氧饱和度",
+                offset = 5,
+                length = 1,
+                type = TslFieldType.UINT8,
+                scale = 1.0,
+                precision = 0,
+                unit = "%",
+                warnMin = 90.0,
+                warnMax = 100.0
+            ),
+            TslField(
+                identifier = "pr",
+                name = "脉率心率",
+                offset = 6,
+                length = 2,
+                type = TslFieldType.UINT16_LE,
+                scale = 1.0,
+                precision = 0,
+                unit = "bpm",
+                warnMin = 50.0,
+                warnMax = 120.0
+            ),
+            TslField(
+                identifier = "pi",
+                name = "血流灌注指数(PI)",
+                offset = 8,
+                length = 2,
+                type = TslFieldType.UINT16_LE,
+                scale = 0.1,
+                precision = 1,
+                unit = "%",
+                warnMin = 0.5,
+                warnMax = 20.0
+            ),
+            TslField(
+                identifier = "probe_off",
+                name = "探头脱落告警",
+                offset = 10,
+                length = 1,
+                type = TslFieldType.UINT8,
+                scale = 1.0,
+                precision = 0,
+                alarmBitmask = 0x02L
+            ),
+            TslField(
+                identifier = "battery_raw",
+                name = "电池电量字节",
+                offset = 11,
+                length = 1,
+                type = TslFieldType.UINT8,
+                scale = 1.0,
+                precision = 0
+            )
+        )
+    )
+
+    // =========================================================================
+    // 9. 乐普 PC-60 单次点测结果协议 (Spot-Check Result)
+    // =========================================================================
+
+    /**
+     * 点测结果播报包 (10 字节)
+     * 示例：AA 55 0F 06 21 01 03 62 58 FB
+     *  - AA 55: 帧头
+     *  - 21: 点测状态包
+     *  - 03: 步骤 3 测量完成播报血氧
+     *  - 62: SpO2 = 98 %
+     *  - 58: PR = 88 bpm
+     */
+    private fun lepuPc60SpotCheck(): TslProtocol = TslProtocol(
+        id = "builtin_lepu_pc60_spot_check_v1",
+        name = "乐普血氧仪 PC-60 单次点测结果协议",
+        format = TslFormat.HEX,
+        matchTopic = "medical/+/oximeter/spot/#",
+        builtin = true,
+        enabled = true,
+        fields = listOf(
+            TslField(
+                identifier = "spo2",
+                name = "血氧饱和度",
+                offset = 7,
+                length = 1,
+                type = TslFieldType.UINT8,
+                scale = 1.0,
+                precision = 0,
+                unit = "%",
+                warnMin = 90.0,
+                warnMax = 100.0
+            ),
+            TslField(
+                identifier = "pr",
+                name = "脉率心率",
+                offset = 8,
+                length = 1,
+                type = TslFieldType.UINT8,
+                scale = 1.0,
+                precision = 0,
+                unit = "bpm",
+                warnMin = 50.0,
+                warnMax = 120.0
+            ),
+            TslField(
+                identifier = "step",
+                name = "点测步骤",
+                offset = 6,
+                length = 1,
+                type = TslFieldType.UINT8,
                 scale = 1.0,
                 precision = 0
             )
