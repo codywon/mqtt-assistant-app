@@ -22,7 +22,8 @@ class SIAgentToolRegistry(
     val onMessagePublished: ((topic: String, qos: Int, retain: Boolean, payload: String) -> Unit)? = null,
     val onDeployRadarTrap: ((com.example.model.DynamicRadarTrap) -> Unit)? = null,
     val onClearRadarTrap: (() -> Unit)? = null,
-    val activeRadarTrapProvider: (() -> com.example.model.DynamicRadarTrap?)? = null
+    val activeRadarTrapProvider: (() -> com.example.model.DynamicRadarTrap?)? = null,
+    val onTslProtocolSaved: ((com.example.model.TslProtocol) -> Unit)? = null
 ) {
 
     companion object {
@@ -292,6 +293,71 @@ class SIAgentToolRegistry(
                                     put("required", JSONArray().apply {
                                         put("name")
                                         put("description")
+                                    })
+                                }
+                            )
+                        }
+                    )
+                }
+            )
+
+            // 工具 6.5: save_tsl_protocol (AI 自动化创建原生 TSL 物模型协议)
+            tools.put(
+                JSONObject().apply {
+                    put("type", "function")
+                    put(
+                        "function",
+                        JSONObject().apply {
+                            put("name", "save_tsl_protocol")
+                            put(
+                                "description",
+                                "【TSL 物模型一键自动创建与生效】当用户上传协议文档、提供硬件协议规约，或要求为某种硬件设备创建/注册 TSL 物模型解析协议时调用此工具。模型将直接持久化到应用底层，并立即驱动高速微秒级解析引擎生效，无需用户手动复制粘贴。"
+                            )
+                            put(
+                                "parameters",
+                                JSONObject().apply {
+                                    put("type", "object")
+                                    put(
+                                        "properties",
+                                        JSONObject().apply {
+                                            put(
+                                                "name",
+                                                JSONObject().apply {
+                                                    put("type", "string")
+                                                    put("description", "物模型协议名称，如 '爱奥乐血压计V3.0' 或 '智能微型断路器'")
+                                                }
+                                            )
+                                            put(
+                                                "format",
+                                                JSONObject().apply {
+                                                    put("type", "string")
+                                                    put("description", "报文格式，可选 'HEX' (十六进制字节流) 或 'JSON' (结构化文本)")
+                                                }
+                                            )
+                                            put(
+                                                "matchTopic",
+                                                JSONObject().apply {
+                                                    put("type", "string")
+                                                    put("description", "匹配的 MQTT Topic 模式，支持 + 和 # 通配符，如 'medical/+/bp/#' 或 'college/breaker/#'")
+                                                }
+                                            )
+                                            put(
+                                                "fields",
+                                                JSONObject().apply {
+                                                    put("type", "array")
+                                                    put("description", "解析字段列表数组。每个元素对象包含: identifier(英文标识符), name(名称), offset(HEX字节偏移从0起), length(字节长度), type(类型如uint8, uint16_be, uint16_le, json_number, json_string), scale(缩放系数如0.1), precision(小数位精度), unit(物理单位如V, A, mmHg, bpm), jsonPath(JSON模式路径如breakers[0].voltage), warnMin(告警下限), warnMax(告警上限), alarmBitmask(状态掩码)")
+                                                    put("items", JSONObject().apply {
+                                                        put("type", "object")
+                                                    })
+                                                }
+                                            )
+                                        }
+                                    )
+                                    put("required", JSONArray().apply {
+                                        put("name")
+                                        put("format")
+                                        put("matchTopic")
+                                        put("fields")
                                     })
                                 }
                             )
@@ -788,6 +854,41 @@ class SIAgentToolRegistry(
                         )
                         storage.saveProtocolKnowledge(item)
                         "协议规则【$name】已成功沉淀并持久化至应用知识库！后续涉及相关主题或设备时将自动应用该解析规则。"
+                    }
+                }
+
+                "save_tsl_protocol" -> {
+                    val name = args.optString("name", "").trim()
+                    val formatStr = args.optString("format", "HEX").trim()
+                    val matchTopic = args.optString("matchTopic", "").trim()
+                    val fieldsArray = args.optJSONArray("fields") ?: JSONArray()
+
+                    if (name.isBlank() || matchTopic.isBlank()) {
+                        "创建 TSL 物模型失败: 协议名称(name)和匹配主题(matchTopic)不能为空"
+                    } else if (fieldsArray.length() == 0) {
+                        "创建 TSL 物模型失败: 字段列表(fields)不能为空"
+                    } else {
+                        val format = try {
+                            com.example.model.TslFormat.valueOf(formatStr.uppercase())
+                        } catch (_: Exception) {
+                            com.example.model.TslFormat.HEX
+                        }
+                        val fields = mutableListOf<com.example.model.TslField>()
+                        for (i in 0 until fieldsArray.length()) {
+                            val fJson = fieldsArray.getJSONObject(i)
+                            fields.add(com.example.model.TslField.fromJson(fJson))
+                        }
+                        val protocol = com.example.model.TslProtocol(
+                            name = name,
+                            format = format,
+                            matchTopic = matchTopic,
+                            fields = fields,
+                            builtin = false,
+                            enabled = true
+                        )
+                        storage.saveTslProtocol(protocol)
+                        onTslProtocolSaved?.invoke(protocol)
+                        "【TSL 物模型创建成功并即时生效！】\n协议名称: $name\n报文格式: $format\n匹配主题: $matchTopic\n解析字段总数: ${fields.size} 个\n字段清单: ${fields.joinToString(", ") { "${it.name}(${it.identifier})" }}\n\n底层高速解析引擎已同步加载此协议，现场 MQTT 报文一经到达即可呈现微秒级解析指标及告警判定！"
                     }
                 }
 

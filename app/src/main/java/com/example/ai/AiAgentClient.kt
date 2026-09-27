@@ -80,6 +80,13 @@ class AiAgentClient(
             3. 布控成功后向用户汇报布控规则与监听主题，并告知系统底层已进入微秒级条件拦截监控状态；
             4. 当用户要求“取消拦截”、“恢复全量”或“停止盯防”时，调用 clear_radar_interceptor 撤销布控。
 
+            【TSL 物模型智能逆向与自动建库 (save_tsl_protocol)】
+            当用户在对话中发送/上传了硬件通信协议（如协议文本、表格、样例文档），或者用户提出“把这个协议做成/创建为 TSL 物模型”时：
+            1. 深入分析协议报文结构（判断是 HEX 字节流还是 JSON，提取字段英文标识符 identifier、中文名称 name、字节偏移 offset、长度 length、数据类型 type 如 uint8/uint16_be/uint16_le/json_number、缩放系数 scale 如 0.1、物理单位 unit、告警阈值 warnMin/warnMax、状态掩码 alarmBitmask、JSON路径 jsonPath）；
+            2. 明确设备上报的 MQTT 主题（如用户已说明或可根据设备类型推导通配主题如 medical/+/bp/# 或 college/breaker/#）；
+            3. 主动调用 save_tsl_protocol 工具直接在应用物模型数据库中创建并激活此 TSL 协议，实现零配置一键解析生效！
+            4. 创建完成后，向用户结构化展示生成的物模型字段清单，并告知现场报文已进入微秒级实时解析与越限告警状态。
+
             【工业物联网现场验收交付报告规范】
             当用户要求“生成现场验收报告”、“工程排查报告”或盘点整网通信质量时：
             1. 必须调用 get_live_packets 获取当前在线网关数、各网关吞吐分布及异常告警；若涉及历史数据，联动 list_archived_excels 与 get_excel_summary；
@@ -92,6 +99,7 @@ class AiAgentClient(
                - 五、现场整改建议与验收结论（是否符合交付标准、遗留风险与处置建议）
 
             【可用工具箱】
+            - save_tsl_protocol: 【TSL 物模型一键自动建库与生效】根据协议规约直接在底层数据库创建并激活原生 TSL 声明式物模型，立即生效微秒级实时解析与越限告警，免除用户手动复制粘贴；
             - deploy_radar_interceptor: 【AI 实时雷达哨兵布控】根据自然语言意图调度底层通信雷达，设置微秒级条件拦截与动态捕获（支持物模型字段阈值、JSON属性、Bitmask等）；
             - clear_radar_interceptor: 【撤销雷达哨兵】撤销布控规则，恢复常规全量接收与展示；
             - get_active_radar_trap: 【查询哨兵状态】查看当前布控规则与已捕获条数；

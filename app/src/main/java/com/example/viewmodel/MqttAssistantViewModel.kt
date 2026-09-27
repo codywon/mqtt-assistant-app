@@ -284,7 +284,10 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 showToast("已撤销 AI 雷达哨兵布控")
             }
         },
-        activeRadarTrapProvider = { activeRadarTrap.value }
+        activeRadarTrapProvider = { activeRadarTrap.value },
+        onTslProtocolSaved = { protocol ->
+            saveTslProtocol(protocol)
+        }
     )
     private val aiAgentClient = AiAgentClient(toolRegistry)
 
