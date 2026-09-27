@@ -137,6 +137,7 @@ fun AiChatScreen(
     val thinkingText by viewModel.currentAiThinkingText.collectAsState()
     val aiConfig by viewModel.aiConfig.collectAsState()
     val protocols by viewModel.protocolKnowledgeList.collectAsState()
+    val activeRadarTrap by viewModel.activeRadarTrap.collectAsState()
 
     val sessions by viewModel.aiSessions.collectAsState()
     val currentSessionId by viewModel.currentSessionId.collectAsState()
@@ -618,11 +619,135 @@ fun AiChatScreen(
                                         showProtocolDialog = true
                                     }
                                 )
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            text = if (activeRadarTrap != null) "雷达哨兵 (运行中)" else "雷达哨兵 (未布控)",
+                                            fontSize = 13.5.sp,
+                                            color = if (activeRadarTrap != null) Color(0xFF1D4ED8) else PrimaryBlack
+                                        )
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            Icons.Default.Security,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(18.dp),
+                                            tint = if (activeRadarTrap != null) Color(0xFF1D4ED8) else PrimaryBlack
+                                        )
+                                    },
+                                    onClick = {
+                                        showMoreMenu = false
+                                        if (activeRadarTrap != null) {
+                                            viewModel.sendAiMessage("请详细汇报当前雷达哨兵的布控规则、拦截目标和捕获战报")
+                                        } else {
+                                            viewModel.showToast("当前未部署雷达哨兵，可对 AI 说'帮我盯住xx主题的xx异常'进行布控")
+                                        }
+                                    }
+                                )
                             }
                         }
                     }
                 }
                 HorizontalDivider(color = SurfaceContainerDefault, thickness = 0.5.dp)
+            }
+        }
+
+        // ==========================================
+        // 1.5 AI 实时雷达哨兵布控状态常驻条 (与通信层保持绝对同频，彻底解决用户“忘了让它监测什么”)
+        // ==========================================
+        AnimatedVisibility(
+            visible = activeRadarTrap != null,
+            enter = fadeIn() + expandVertically(),
+            exit = fadeOut() + shrinkVertically()
+        ) {
+            val trap = activeRadarTrap
+            if (trap != null) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 6.dp),
+                    shape = RoundedCornerShape(8.dp),
+                    color = Color(0xFFEFF6FF),
+                    border = BorderStroke(0.6.dp, Color(0xFF3B82F6))
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(text = "🤖", fontSize = 14.sp)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "雷达哨兵运行中",
+                                    style = TextStyle(
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF1D4ED8)
+                                    )
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(if (trap.capturedCount > 0) Color(0xFFDC2626) else OutlineGray)
+                                        .padding(horizontal = 4.dp, vertical = 1.dp)
+                                ) {
+                                    Text(
+                                        text = "已拦截 ${trap.capturedCount} 条",
+                                        style = TextStyle(fontSize = 9.sp, color = Color.White, fontWeight = FontWeight.SemiBold)
+                                    )
+                                }
+                            }
+                            Text(
+                                text = "${trap.topicPattern} · ${trap.conditionDesc}",
+                                style = TextStyle(fontSize = 11.sp, color = OnSurfaceDark),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+
+                        // 快捷让 AI 汇报战报
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .clickable {
+                                    viewModel.sendAiMessage("请汇报当前雷达哨兵拦截的报文情况与异常分析")
+                                }
+                                .background(Color(0xFFDBEAFE))
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = "分析战报",
+                                style = TextStyle(
+                                    fontSize = 10.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color(0xFF1D4ED8)
+                                )
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(6.dp))
+
+                        // 撤销布控按钮
+                        Box(
+                            modifier = Modifier
+                                .size(24.dp)
+                                .clip(RoundedCornerShape(4.dp))
+                                .clickable { viewModel.clearRadarTrap() },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "停止雷达哨兵",
+                                tint = OnSurfaceVariantGray,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                }
             }
         }
 

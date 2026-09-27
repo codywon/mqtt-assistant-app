@@ -416,7 +416,7 @@ fun AiSettingsDialog(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
-                                        text = "模型名称 (Model ID)",
+                                        text = "模型名称",
                                         style = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = OnSurfaceDark)
                                     )
                                     Box {
@@ -579,11 +579,11 @@ fun AiSettingsDialog(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
-                                        text = "模型上下文窗口 (Context Window)",
+                                        text = "模型上下文窗口",
                                         style = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = OnSurfaceDark)
                                     )
                                     Text(
-                                        text = "超 70% 自动记忆压缩",
+                                        text = "超 70% 自动压缩",
                                         style = TextStyle(fontSize = 11.sp, color = Color(0xFF10B981), fontWeight = FontWeight.Medium)
                                     )
                                 }
@@ -626,7 +626,7 @@ fun AiSettingsDialog(
 
                                 // 手工自由输入框 (支持 1M, 2M 或任意数值)
                                 SettingInputField(
-                                    label = "自定义上下文 Tokens (支持手工输入任意数值)",
+                                    label = "自定义上下文 Tokens",
                                     value = customContextWindowText,
                                     placeholder = "如: 1048576 (1M) 或 2097152 (2M)",
                                     onValueChange = { input ->
@@ -1033,7 +1033,7 @@ private fun ProtocolEditView(
         )
 
         SettingInputField(
-            label = "适用 MQTT 主题 (支持通配符)",
+            label = "适用 MQTT 主题",
             value = topicFilter,
             placeholder = "例如: power/breaker/+/data 或 #",
             onValueChange = { topicFilter = it }
@@ -1041,7 +1041,7 @@ private fun ProtocolEditView(
 
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(
-                text = "协议澄清描述 (人话讲解各字节物理含义)",
+                text = "协议澄清描述",
                 style = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = OnSurfaceDark)
             )
             Box(
@@ -1072,7 +1072,7 @@ private fun ProtocolEditView(
         }
 
         SettingInputField(
-            label = "样例 Hex 报文 (可选)",
+            label = "样例 Hex 报文",
             value = sampleHex,
             placeholder = "例如: AA 55 01 02 88 50 4B 00",
             onValueChange = { sampleHex = it }
