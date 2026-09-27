@@ -97,15 +97,10 @@ fun MarkdownRenderer(
 ) {
     if (content.isBlank()) return
 
-    // 智能将 LaTeX 数学与工程单位语法平滑转译为移动端清晰易读的 Unicode 符号
-    val sanitizedContent = remember(content) {
-        LatexSanitizer.cleanLatexMath(content)
-    }
-
-    val document = remember(sanitizedContent) {
+    val document = remember(content) {
         val extensions = listOf(TablesExtension.create())
         val parser = Parser.builder().extensions(extensions).build()
-        parser.parse(sanitizedContent)
+        parser.parse(content)
     }
 
     Column(
@@ -290,7 +285,7 @@ private fun appendInlineChildren(parent: Node, builder: AnnotatedString.Builder,
     while (child != null) {
         when (child) {
             is MdText -> {
-                builder.append(child.literal)
+                LatexMathParser.appendTextWithMath(child.literal, builder, isUser)
             }
 
             is StrongEmphasis -> {
@@ -551,108 +546,5 @@ private fun CodeBlockCard(code: String, language: String) {
                     .padding(10.dp)
             )
         }
-    }
-}
-
-/**
- * 工业级 LaTeX 数学与工程单位纯净化转写引擎：
- * 将大模型由于数理推理习惯吐出的 LaTeX 语法（如 $...$, \times, \text{V}, \approx, ^\circ\text{C}, P_{\text{calc}} 等）
- * 智能平滑转换为移动端最优雅、直观、高可读性的标准 Unicode 符号与工程文本。
- */
-object LatexSanitizer {
-    private val textCommandRegex = Regex("""\\(?:text|mathrm|mathbf|mathit)\{([^}]+)\}""")
-    private val subscriptRegex = Regex("""_\{([^}]+)\}""")
-    private val degreeCRegex = Regex("""\^\\circ\\text\{C\}|\^\\circ\s*C|\^\{\\circ\}\s*(?:\\text\{C\}|C)""")
-    private val degreeRegex = Regex("""\^\\circ|\^\{\\circ\}|\\degree""")
-    private val mathEnvRegex = Regex("""\$\$([\s\S]*?)\$\$|\$([^\$\n]+?)\$""")
-    private val spacingRegex = Regex("""\\[,;:!]""")
-
-    fun cleanLatexMath(input: String): String {
-        if (!input.contains("$") && !input.contains("\\")) {
-            return input
-        }
-
-        // 保护以 ``` 包裹的代码块不被篡改
-        val parts = input.split("```")
-        if (parts.size > 1) {
-            val sb = java.lang.StringBuilder()
-            for (i in parts.indices) {
-                if (i % 2 == 1) {
-                    // 处于代码块内，保持原样
-                    sb.append("```").append(parts[i]).append("```")
-                } else {
-                    // 处于正文，清洗 LaTeX 语法
-                    sb.append(cleanSingleTextSegment(parts[i]))
-                }
-            }
-            return sb.toString()
-        }
-
-        return cleanSingleTextSegment(input)
-    }
-
-    private fun cleanSingleTextSegment(text: String): String {
-        var result = text
-            // 摄氏度与度数
-            .replace(degreeCRegex, " ℃")
-            .replace(degreeRegex, "°")
-            // 运算符与关系符
-            .replace("\\times", " × ")
-            .replace("\\approx", " ≈ ")
-            .replace("\\pm", " ± ")
-            .replace("\\mp", " ∓ ")
-            .replace("\\cdot", " · ")
-            .replace("\\div", " ÷ ")
-            .replace("\\leq", " ≤ ")
-            .replace("\\le", " ≤ ")
-            .replace("\\geq", " ≥ ")
-            .replace("\\ge", " ≥ ")
-            .replace("\\neq", " ≠ ")
-            .replace("\\sim", " ~ ")
-            .replace("\\infty", " ∞ ")
-            // 希腊字母与常用函数/单位
-            .replace("\\Omega", " Ω")
-            .replace("\\omega", " ω")
-            .replace("\\mu", " μ")
-            .replace("\\micro", " μ")
-            .replace("\\Delta", " Δ")
-            .replace("\\delta", " δ")
-            .replace("\\phi", " φ")
-            .replace("\\theta", " θ")
-            .replace("\\alpha", " α")
-            .replace("\\beta", " β")
-            .replace("\\gamma", " γ")
-            .replace("\\cos", "cos")
-            .replace("\\sin", "sin")
-            .replace("\\tan", "tan")
-            .replace("\\ln", "ln")
-            .replace("\\log", "log")
-            // 消除 LaTeX 间距符 \, \: \; \!
-            .replace(spacingRegex, " ")
-
-        // 提取 \text{...} 里面的文本
-        result = textCommandRegex.replace(result) { match ->
-            " " + match.groupValues[1]
-        }
-
-        // 处理下标 _{...} 变成 (xxx)
-        result = subscriptRegex.replace(result) { match ->
-            "(${match.groupValues[1]})"
-        }
-
-        // 处理数学模式包裹符 $...$ 和 $$...$$
-        result = mathEnvRegex.replace(result) { match ->
-            val inner = match.groupValues[1].ifEmpty { match.groupValues[2] }
-            inner.trim().replace(Regex("""\s+"""), " ")
-        }
-
-        // 消除连带出现的微小格式瑕疵（例如连续多个空格、标点前误留空格）
-        result = result.replace(Regex("""[ ]{2,}"""), " ")
-            .replace(" .", ".")
-            .replace(" ,", ",")
-            .replace(" %", "%")
-            .replace("℃.", " ℃")
-
-        return result
     }
 }
