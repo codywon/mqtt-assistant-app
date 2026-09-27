@@ -1218,7 +1218,7 @@ private fun MessageDetailsModalDialog(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = if (hasWarn) "⚠️ 越限告警 · ${tslResult.protocolName}" else "物模型解析 · ${tslResult.protocolName}",
+                                    text = if (hasWarn) "⚠️ ${tslResult.protocolName}" else tslResult.protocolName,
                                     style = TextStyle(
                                         fontSize = 12.5.sp,
                                         fontWeight = FontWeight.Bold,
@@ -1230,12 +1230,23 @@ private fun MessageDetailsModalDialog(
                                         .weight(1f, fill = false)
                                         .padding(end = 8.dp)
                                 )
-                                Text(
-                                    text = "共 ${tslResult.values.size} 项指标",
-                                    style = TextStyle(fontSize = 11.sp, color = OnSurfaceVariantGray),
-                                    maxLines = 1,
-                                    softWrap = false
-                                )
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(if (hasWarn) Color(0xFFFEE2E2) else Color(0xFFDCFCE7))
+                                        .padding(horizontal = 5.dp, vertical = 1.5.dp)
+                                ) {
+                                    Text(
+                                        text = "${tslResult.values.size} 项",
+                                        style = TextStyle(
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = if (hasWarn) Color(0xFFDC2626) else Color(0xFF166534)
+                                        ),
+                                        maxLines = 1,
+                                        softWrap = false
+                                    )
+                                }
                             }
 
                             // 逐个物理量网格/列表呈现 (点击支持原位微交互复制)
