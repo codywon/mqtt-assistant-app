@@ -322,18 +322,39 @@ object TslParseEngine {
         }
     }
 
-    /**
-     * 按点分路径递归解析嵌套 JSON 值
-     * 如 "data.sensors.temperature" -> json["data"]["sensors"]["temperature"]
-     */
     private fun resolveJsonPath(json: JSONObject, path: String): Any? {
-        val parts = path.split(".")
+        if (path.isBlank()) return null
+
+        // 1. 将 a[0].b 统一转换为 a.0.b
+        val normalized = path.replace("[", ".").replace("]", "")
+        val parts = normalized.split(".").filter { it.isNotEmpty() }
+        if (parts.isEmpty()) return null
+
         var current: Any = json
         for (part in parts) {
             current = when (current) {
                 is JSONObject -> {
-                    if (!current.has(part)) return null
-                    current.get(part)
+                    if (current.has(part)) {
+                        current.get(part)
+                    } else {
+                        // 友好回退：若直接查找断路器属性（如 "voltage"）而未写全前缀，
+                        // 且顶层存在 "breakers" / "data" / "items" 数组，尝试从首个元素读取
+                        val fallbackArray = current.optJSONArray("breakers")
+                            ?: current.optJSONArray("data")
+                            ?: current.optJSONArray("items")
+                        if (fallbackArray != null && fallbackArray.length() > 0) {
+                            val firstObj = fallbackArray.optJSONObject(0)
+                            if (firstObj != null && firstObj.has(part)) {
+                                firstObj.get(part)
+                            } else return null
+                        } else return null
+                    }
+                }
+                is JSONArray -> {
+                    val index = part.toIntOrNull() ?: return null
+                    if (index in 0 until current.length()) {
+                        current.get(index)
+                    } else return null
                 }
                 else -> return null
             }

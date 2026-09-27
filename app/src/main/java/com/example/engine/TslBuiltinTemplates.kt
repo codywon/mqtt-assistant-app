@@ -27,7 +27,8 @@ object TslBuiltinTemplates {
         biolandThermometer(),
         biolandBodyFatScale(),
         lepuPc60Continuous(),
-        lepuPc60SpotCheck()
+        lepuPc60SpotCheck(),
+        smartBreakerGateway()
     )
 
     // =========================================================================
@@ -652,6 +653,110 @@ object TslBuiltinTemplates {
                 type = TslFieldType.UINT8,
                 scale = 1.0,
                 precision = 0
+            )
+        )
+    )
+
+    // =========================================================================
+    // 10. 智能微断/断路器网关遥测协议 (Smart Breaker Gateway JSON)
+    // =========================================================================
+
+    /**
+     * 智能断路器多功能网关遥测协议 (JSON 格式)
+     * 支持上报：电压 (V)、电流 (A)、有功功率 (W)、累计电能 (kWh)、频率 (Hz)、功率因数、触头温度 (℃)、合分闸状态等
+     * 匹配 Topic：college/breaker/# (或 power/+/breaker/#)
+     */
+    private fun smartBreakerGateway(): TslProtocol = TslProtocol(
+        id = "builtin_smart_breaker_gateway_v1",
+        name = "智能微型断路器遥测协议",
+        format = TslFormat.JSON,
+        matchTopic = "college/breaker/#",
+        builtin = true,
+        enabled = true,
+        fields = listOf(
+            TslField(
+                identifier = "voltage",
+                name = "线路电压",
+                jsonPath = "breakers[0].voltage",
+                type = TslFieldType.JSON_NUMBER,
+                scale = 1.0,
+                precision = 1,
+                unit = "V",
+                warnMin = 198.0,
+                warnMax = 253.0
+            ),
+            TslField(
+                identifier = "current",
+                name = "负载电流",
+                jsonPath = "breakers[0].current",
+                type = TslFieldType.JSON_NUMBER,
+                scale = 1.0,
+                precision = 2,
+                unit = "A",
+                warnMax = 32.0
+            ),
+            TslField(
+                identifier = "power",
+                name = "有功功率",
+                jsonPath = "breakers[0].power",
+                type = TslFieldType.JSON_NUMBER,
+                scale = 1.0,
+                precision = 0,
+                unit = "W",
+                warnMax = 7000.0
+            ),
+            TslField(
+                identifier = "energy",
+                name = "累计电量",
+                jsonPath = "breakers[0].energy",
+                type = TslFieldType.JSON_NUMBER,
+                scale = 1.0,
+                precision = 2,
+                unit = "kWh"
+            ),
+            TslField(
+                identifier = "temperature",
+                name = "触头温度",
+                jsonPath = "breakers[0].temperature",
+                type = TslFieldType.JSON_NUMBER,
+                scale = 1.0,
+                precision = 1,
+                unit = "℃",
+                warnMax = 70.0
+            ),
+            TslField(
+                identifier = "frequency",
+                name = "电网频率",
+                jsonPath = "breakers[0].frequency",
+                type = TslFieldType.JSON_NUMBER,
+                scale = 1.0,
+                precision = 1,
+                unit = "Hz"
+            ),
+            TslField(
+                identifier = "power_factor",
+                name = "功率因数",
+                jsonPath = "breakers[0].power_factor",
+                type = TslFieldType.JSON_NUMBER,
+                scale = 1.0,
+                precision = 2,
+                unit = ""
+            ),
+            TslField(
+                identifier = "status",
+                name = "开关状态",
+                jsonPath = "breakers[0].status",
+                type = TslFieldType.JSON_STRING,
+                unit = ""
+            ),
+            TslField(
+                identifier = "wifi_rssi",
+                name = "WiFi信号",
+                jsonPath = "wifi_rssi",
+                type = TslFieldType.JSON_NUMBER,
+                scale = 1.0,
+                precision = 0,
+                unit = "dBm"
             )
         )
     )
