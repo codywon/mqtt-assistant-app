@@ -2234,14 +2234,30 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                     }
                 }
                 if (result.tslProtocols.isNotEmpty()) {
-                    result.tslProtocols.forEach { storage.saveTslProtocol(it) }
+                    result.tslProtocols.forEach { tsl ->
+                        storage.saveTslProtocol(tsl)
+                        val fieldDesc = tsl.fields.joinToString("\n") { f ->
+                            "- ${f.name} (${f.identifier}): 类型=${f.type}${if (f.jsonPath.isNotBlank()) ", 路径=${f.jsonPath}" else ""}${if (f.unit.isNotBlank()) ", 单位=${f.unit}" else ""}"
+                        }
+                        val mirrorKnowledge = ProtocolKnowledge(
+                            id = tsl.id,
+                            name = tsl.name,
+                            topicFilter = tsl.matchTopic,
+                            description = "【TSL 原生物模型 · ${tsl.format}】共 ${tsl.fields.size} 项指标:\n$fieldDesc",
+                            sampleHex = "",
+                            createdAt = System.currentTimeMillis()
+                        )
+                        storage.saveProtocolKnowledge(mirrorKnowledge)
+                    }
                     val updatedTsl = storage.loadEnabledTslProtocols()
                     withContext(Dispatchers.Main) {
                         tslProtocols.value = updatedTsl
                         reparseAllLivePacketsWithTsl()
                     }
                 }
+                val updatedKnowledge = storage.loadAllProtocolKnowledge()
                 withContext(Dispatchers.Main) {
+                    protocolKnowledgeList.value = updatedKnowledge
                     val countDesc = buildString {
                         if (result.protocols.isNotEmpty()) append("${result.protocols.size} 条协议规则 ")
                         if (result.tslProtocols.isNotEmpty()) append("${result.tslProtocols.size} 条 TSL 物模型")
@@ -2275,20 +2291,32 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 }
                 if (result.protocols.isNotEmpty()) {
                     result.protocols.forEach { storage.saveProtocolKnowledge(it) }
-                    val updated = storage.loadAllProtocolKnowledge()
-                    withContext(Dispatchers.Main) {
-                        protocolKnowledgeList.value = updated
-                    }
                 }
                 if (result.tslProtocols.isNotEmpty()) {
-                    result.tslProtocols.forEach { storage.saveTslProtocol(it) }
+                    result.tslProtocols.forEach { tsl ->
+                        storage.saveTslProtocol(tsl)
+                        val fieldDesc = tsl.fields.joinToString("\n") { f ->
+                            "- ${f.name} (${f.identifier}): 类型=${f.type}${if (f.jsonPath.isNotBlank()) ", 路径=${f.jsonPath}" else ""}${if (f.unit.isNotBlank()) ", 单位=${f.unit}" else ""}"
+                        }
+                        val mirrorKnowledge = ProtocolKnowledge(
+                            id = tsl.id,
+                            name = tsl.name,
+                            topicFilter = tsl.matchTopic,
+                            description = "【TSL 原生物模型 · ${tsl.format}】共 ${tsl.fields.size} 项指标:\n$fieldDesc",
+                            sampleHex = "",
+                            createdAt = System.currentTimeMillis()
+                        )
+                        storage.saveProtocolKnowledge(mirrorKnowledge)
+                    }
                     val updatedTsl = storage.loadEnabledTslProtocols()
                     withContext(Dispatchers.Main) {
                         tslProtocols.value = updatedTsl
                         reparseAllLivePacketsWithTsl()
                     }
                 }
+                val updatedKnowledge = storage.loadAllProtocolKnowledge()
                 withContext(Dispatchers.Main) {
+                    protocolKnowledgeList.value = updatedKnowledge
                     val countDesc = buildString {
                         if (result.protocols.isNotEmpty()) append("${result.protocols.size} 条协议规则 ")
                         if (result.tslProtocols.isNotEmpty()) append("${result.tslProtocols.size} 条 TSL 物模型")
@@ -2585,20 +2613,32 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
             viewModelScope.launch(Dispatchers.IO) {
                 if (jsonResult.protocols.isNotEmpty()) {
                     jsonResult.protocols.forEach { storage.saveProtocolKnowledge(it) }
-                    val updated = storage.loadAllProtocolKnowledge()
-                    withContext(Dispatchers.Main) {
-                        protocolKnowledgeList.value = updated
-                    }
                 }
                 if (jsonResult.tslProtocols.isNotEmpty()) {
-                    jsonResult.tslProtocols.forEach { storage.saveTslProtocol(it) }
+                    jsonResult.tslProtocols.forEach { tsl ->
+                        storage.saveTslProtocol(tsl)
+                        val fieldDesc = tsl.fields.joinToString("\n") { f ->
+                            "- ${f.name} (${f.identifier}): 类型=${f.type}${if (f.jsonPath.isNotBlank()) ", 路径=${f.jsonPath}" else ""}${if (f.unit.isNotBlank()) ", 单位=${f.unit}" else ""}"
+                        }
+                        val mirrorKnowledge = ProtocolKnowledge(
+                            id = tsl.id,
+                            name = tsl.name,
+                            topicFilter = tsl.matchTopic,
+                            description = "【TSL 原生物模型 · ${tsl.format}】共 ${tsl.fields.size} 项指标:\n$fieldDesc",
+                            sampleHex = "",
+                            createdAt = System.currentTimeMillis()
+                        )
+                        storage.saveProtocolKnowledge(mirrorKnowledge)
+                    }
                     val updatedTsl = storage.loadEnabledTslProtocols()
                     withContext(Dispatchers.Main) {
                         tslProtocols.value = updatedTsl
                         reparseAllLivePacketsWithTsl()
                     }
                 }
+                val updatedKnowledge = storage.loadAllProtocolKnowledge()
                 withContext(Dispatchers.Main) {
+                    protocolKnowledgeList.value = updatedKnowledge
                     val countDesc = buildString {
                         if (jsonResult.protocols.isNotEmpty()) append("${jsonResult.protocols.size} 条协议规则 ")
                         if (jsonResult.tslProtocols.isNotEmpty()) append("${jsonResult.tslProtocols.size} 条 TSL 物模型")
@@ -2655,8 +2695,14 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
         protocolKnowledgeList.update { list -> list.filter { it.id != id } }
         viewModelScope.launch(Dispatchers.IO) {
             storage.deleteProtocolKnowledge(id)
+            storage.deleteTslProtocol(id)
+            val updatedTsl = storage.loadEnabledTslProtocols()
+            withContext(Dispatchers.Main) {
+                tslProtocols.value = updatedTsl
+                reparseAllLivePacketsWithTsl()
+            }
         }
-        showToast("已删除该协议澄清")
+        showToast("已删除该协议规则")
     }
 
     // --- 现场主动巡检与异常预警雷达 (深度融合 TSL 声明式物模型协议库) ---
