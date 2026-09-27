@@ -381,7 +381,7 @@ class AiAgentClient(
                 val safeAnswer = if (rawAnswer.isNotEmpty() && rawAnswer != "null") {
                     rawAnswer
                 } else {
-                    generateFallbackClarification(lastUserPrompt, step > 1)
+                    generateDynamicFallback(lastUserPrompt)
                 }
                 onComplete(safeAnswer, fullAccumulatedReasoning.toString())
                 return@withContext
