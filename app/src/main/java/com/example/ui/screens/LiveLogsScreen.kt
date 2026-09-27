@@ -710,13 +710,11 @@ private fun CompactMessageCard(
             .clickable(onClick = { onCardClick(packet) })
             .testTag("log_packet_${packet.id}")
     ) {
-        var isTslExpanded by rememberSaveable(packet.id) { mutableStateOf(false) }
-
         Column(
             modifier = Modifier.padding(horizontal = 11.dp, vertical = 9.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            // Row 1: Colored Dot + Topic + TSL Speed & AI Inspect & Copy Buttons
+            // Row 1: Colored Dot + Topic + AI Inspect & Copy Buttons
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -754,20 +752,6 @@ private fun CompactMessageCard(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
-                    // TSL 声明式物模型指标微仪表图标 (仅命中物模型时呈现，告警时变红，点击展开/折叠)
-                    if (tslResult != null && tslResult.values.isNotEmpty()) {
-                        IconButton(
-                            onClick = { isTslExpanded = !isTslExpanded },
-                            modifier = Modifier.size(24.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Speed,
-                                contentDescription = if (isTslExpanded) "收起物模型指标" else "展开物模型指标",
-                                tint = if (tslResult.hasWarnings) Color(0xFFDC2626) else if (isTslExpanded) PrimaryBlack else OnSurfaceVariantGray,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-                    }
                     IconButton(
                         onClick = { onInspectWithAi(packet) },
                         modifier = Modifier.size(24.dp)
@@ -867,7 +851,6 @@ private fun CompactMessageCard(
                                 .weight(1f, fill = false)
                                 .widthIn(max = 145.dp)
                                 .clip(RoundedCornerShape(3.dp))
-                                .clickable { isTslExpanded = !isTslExpanded }
                                 .background(if (isWarn) Color(0xFFFEE2E2) else SurfaceContainerLow)
                                 .border(
                                     0.5.dp,
@@ -949,108 +932,6 @@ private fun CompactMessageCard(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
-            }
-
-            // Row 4: TSL 物模型物理量解析 (默认折叠，按需展开，彻底释放垂直空间)
-            if (isTslExpanded && tslResult != null && tslResult.values.isNotEmpty()) {
-                val hasWarn = tslResult.hasWarnings
-
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 2.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    // 极淡细分割线
-                    HorizontalDivider(
-                        color = OutlineVariantLight.copy(alpha = 0.6f),
-                        thickness = 0.5.dp
-                    )
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            modifier = Modifier
-                                .weight(1f, fill = false)
-                                .padding(end = 6.dp)
-                        ) {
-                            if (hasWarn) {
-                                Text(
-                                    text = "⚠️",
-                                    style = TextStyle(fontSize = 10.sp)
-                                )
-                            }
-                            Text(
-                                text = if (hasWarn) "越限告警 · ${tslResult.protocolName}" else "物模型 · ${tslResult.protocolName}",
-                                style = TextStyle(
-                                    fontSize = 11.sp,
-                                    fontWeight = if (hasWarn) FontWeight.Bold else FontWeight.Medium,
-                                    color = if (hasWarn) Color(0xFFDC2626) else OnSurfaceVariantGray
-                                ),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                        if (tslResult.values.size > 4) {
-                            Text(
-                                text = "共 ${tslResult.values.size} 项指标",
-                                style = TextStyle(fontSize = 10.sp, color = OutlineGray),
-                                maxLines = 1,
-                                softWrap = false
-                            )
-                        }
-                    }
-
-                    // 物理量 2 列对称工整平铺
-                    val displayItems = tslResult.values.take(4)
-                    val itemRows = displayItems.chunked(2)
-                    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                        itemRows.forEach { pair ->
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                pair.forEach { v ->
-                                    val valColor = if (v.isWarning) Color(0xFFDC2626) else PrimaryBlack
-                                    Row(
-                                        modifier = Modifier.weight(1f),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.Start
-                                    ) {
-                                        Text(
-                                            text = "${v.name}: ",
-                                            style = TextStyle(
-                                                fontSize = 11.sp,
-                                                fontWeight = FontWeight.Normal,
-                                                color = OnSurfaceVariantGray
-                                            ),
-                                            maxLines = 1
-                                        )
-                                        Text(
-                                            text = v.displayValue,
-                                            style = TextStyle(
-                                                fontFamily = FontFamily.Monospace,
-                                                fontSize = 11.5.sp,
-                                                fontWeight = if (v.isWarning) FontWeight.Bold else FontWeight.SemiBold,
-                                                color = valColor
-                                            ),
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    }
-                                }
-                                if (pair.size == 1) {
-                                    Spacer(modifier = Modifier.weight(1f))
-                                }
-                            }
-                        }
-                    }
-                }
             }
         }
     }
