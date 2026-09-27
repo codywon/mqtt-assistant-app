@@ -148,13 +148,21 @@ class AiAgentClient(
             return@withContext
         }
 
-        // 渐进式按需协议索引（仅注入极轻量协议名称目录，仅消耗 ~20-50 Tokens，按需由工具精准加载完整规则）
+        // 渐进式按需协议索引（注入真实已启用的协议名称与其真实绑定主题，彻底消除模型对主题的盲猜和捏造幻觉）
         val tslProtos = toolRegistry.storage.loadEnabledTslProtocols()
         val kbProtos = toolRegistry.storage.loadAllProtocolKnowledge()
-        val allNames = (tslProtos.map { "TSL-${it.name}" } + kbProtos.map { it.name }).distinct()
-        val protocolSummary = if (allNames.isNotEmpty()) {
-            val names = allNames.joinToString(", ")
-            "\n\n【当前已挂载私有/TSL协议索引目录】: $names。如需具体字段规则，请调用 get_protocol_clarification 工具按需加载。"
+
+        val protocolSummary = if (tslProtos.isNotEmpty() || kbProtos.isNotEmpty()) {
+            val sb = StringBuilder("\n\n【系统当前已启用的真实硬件协议与绑定主题目录 (优先级最高，严禁捏造虚假主题)】:\n")
+            for (p in tslProtos) {
+                val sampleFields = p.fields.take(5).joinToString(", ") { "${it.name}(${it.identifier})" }
+                sb.append("- TSL物模型【${p.name}】: 绑定主题模式=`${p.matchTopic}`, 格式=${p.format}, 监控物理量=[$sampleFields]\n")
+            }
+            for (k in kbProtos) {
+                sb.append("- 私有规约【${k.name}】: 绑定主题模式=`${k.topicFilter.ifBlank { "未指定" }}`\n")
+            }
+            sb.append("⚠️ 铁律：当用户要求监控、盯防或排查某设备时，必须优先匹配上述真实存在的绑定主题与字段标识，严禁向用户询问或推荐不存在的主题！若需完整字段解码规则与阈值，随时调用 get_protocol_clarification 工具按需加载。")
+            sb.toString()
         } else {
             ""
         }
@@ -442,42 +450,67 @@ class AiAgentClient(
         val safeAnswer = if (rawAnswer.isNotEmpty() && rawAnswer != "null") {
             rawAnswer
         } else {
-            generateFallbackClarification(lastUserPrompt, true)
+            // 优先检查最后一次执行的 Tool Observation（如雷达已成功布控、或发包已成功，直接呈现真实执行结果）
+            val lastToolObservation = run {
+                var found: String? = null
+                for (i in (messagesArray.length() - 1) downTo 0) {
+                    val m = messagesArray.optJSONObject(i)
+                    if (m != null && m.optString("role") == "tool") {
+                        val content = m.optString("content", "")
+                        if (content.isNotBlank()) {
+                            found = content
+                            break
+                        }
+                    }
+                }
+                found
+            }
+
+            if (!lastToolObservation.isNullOrBlank()) {
+                lastToolObservation
+            } else {
+                generateDynamicFallback(lastUserPrompt)
+            }
         }
         onComplete(safeAnswer, fullAccumulatedReasoning.toString())
     }
 
     /**
-     * 当模型未输出终答正文、或检索无果需求模糊时的智能澄清与追问说明，杜绝空回答兜底！
+     * 基于本地真实数据库动态生成智能诊断与精准引导，杜绝硬编码假主题与虚假回答！
      */
-    private fun generateFallbackClarification(userPrompt: String, hadToolActions: Boolean): String {
-        val isVitalRelated = userPrompt.contains("体征") || userPrompt.contains("血压") || userPrompt.contains("心率")
-        return if (isVitalRelated) {
-            """
-            ### 🔍 体征数据排查说明
-            
-            已为您在实时数据流与协议库中完成检索：
-            1. **协议规则检查**：当前系统暂未检索到体征相关的私有解码规则；
-            2. **报文排查结果**：暂未在最新报文中识别到体征异常数据。
-            
-            👉 **为了帮您精准筛查，请提供关键信息**：
-            - 设备上报的主题（Topic）是什么？例如 `vital/gateway/#` 或 `sensor/vital`？
-            - 硬件上报的 Hex 报文是否有字段定义（如心率在第几字节）？
-            
-            *(💡 提示：您可直接在对话框中将协议说明发送给我，我会自动将其沉淀入库并为您即时解码！)*
-            """.trimIndent()
-        } else if (hadToolActions) {
-            """
-            ### 📊 工业设备与工况排查说明
-            
-            已完成现场实时数据流与协议库的排查，当前未发现明确的故障报警或参数越限。
-            
-            👉 **为了帮您进一步诊断，请提供关键信息**：
-            - 您希望重点排查的具体设备主题（Topic）是什么？（如断路器 `breaker/#`、PLC `modbus/#` 等）
-            - 该设备是否已配置 TSL 物模型？若未配置，您可直接将说明书截图或字段说明发在对话框中，我将为您自动逆向解码！
-            """.trimIndent()
+    private fun generateDynamicFallback(userPrompt: String): String {
+        val enabledTsl = toolRegistry.storage.loadEnabledTslProtocols()
+        val allKb = toolRegistry.storage.loadAllProtocolKnowledge()
+
+        val sb = StringBuilder()
+        sb.append("### 🔍 现场通信与硬件协议诊断说明\n\n")
+
+        if (enabledTsl.isNotEmpty() || allKb.isNotEmpty()) {
+            sb.append("已检索当前系统数据库，您已配置并启用的真实设备协议及主题如下：\n\n")
+            for (tsl in enabledTsl) {
+                val fieldNames = tsl.fields.take(6).joinToString(", ") { "${it.name}(${it.identifier})" }
+                sb.append("- **TSL物模型【${tsl.name}】**：\n")
+                sb.append("  - 真实绑定主题: `${tsl.matchTopic}`\n")
+                sb.append("  - 监控物理量: $fieldNames\n")
+            }
+            for (kb in allKb) {
+                sb.append("- **私有规约【${kb.name}】**")
+                if (kb.topicFilter.isNotBlank()) sb.append("（主题: `${kb.topicFilter}`）")
+                sb.append("\n")
+            }
+            sb.append("\n👉 **您可以直接指定具体设备，对我说**：\n")
+            val sampleTsl = enabledTsl.firstOrNull()
+            if (sampleTsl != null) {
+                val sampleField = sampleTsl.fields.firstOrNull { it.warnMax != null || it.warnMin != null } ?: sampleTsl.fields.firstOrNull()
+                val fieldDesc = sampleField?.name ?: "指标"
+                sb.append("- “帮我盯住【${sampleTsl.name}】的 $fieldDesc 异常”（我将立即基于真实主题部署微秒级雷达哨兵）\n")
+                sb.append("- “排查主题 `${sampleTsl.matchTopic}` 的最新报文”\n")
+            }
         } else {
-            "您好！我是 SI 工业物联网数据分析专家。请告诉我您想查询的网关报文、设备工况遥测（如断路器、电表、PLC、传感器）或私有协议规则。"
+            sb.append("当前系统暂未录入任何 TSL 物模型或私有解码规则。\n\n")
+            sb.append("👉 **您可以随时直接将协议说明发送给我**，我将调用专属工具为您自动创建并激活 TSL 物模型！")
         }
+
+        return sb.toString()
     }
 }
