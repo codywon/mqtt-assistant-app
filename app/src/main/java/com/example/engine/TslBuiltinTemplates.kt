@@ -28,7 +28,8 @@ object TslBuiltinTemplates {
         biolandBodyFatScale(),
         lepuPc60Continuous(),
         lepuPc60SpotCheck(),
-        smartBreakerGateway()
+        smartBreakerGateway(),
+        millimeterWaveRadar()
     )
 
     // =========================================================================
@@ -758,6 +759,70 @@ object TslBuiltinTemplates {
                 scale = 1.0,
                 precision = 0,
                 unit = "dBm"
+            )
+        )
+    )
+
+    /**
+     * 毫米波人体体征雷达物模型协议（JSON 格式）
+     * 自动提取：监测人数（药丸核心指标）、在场状态、活动状态、睡眠状态、卧床在位等
+     */
+    private fun millimeterWaveRadar(): TslProtocol = TslProtocol(
+        id = "builtin_radar_mmwave_v1",
+        name = "毫米波人体体征雷达物模型",
+        format = TslFormat.JSON,
+        matchTopic = "college/radar/data/#",
+        builtin = true,
+        enabled = true,
+        fields = listOf(
+            TslField(
+                identifier = "target_count",
+                name = "监测人数",
+                type = TslFieldType.JSON_NUMBER,
+                jsonPath = "target_count",
+                unit = "人",
+                precision = 0,
+                isKeyIndicator = true
+            ),
+            TslField(
+                identifier = "presence_status",
+                name = "在场状态",
+                type = TslFieldType.JSON_STRING,
+                jsonPath = "presence_status",
+                valueMap = mapOf("present" to "在场", "absent" to "无人")
+            ),
+            TslField(
+                identifier = "activity_state",
+                name = "活动状态",
+                type = TslFieldType.JSON_STRING,
+                jsonPath = "activity_state",
+                valueMap = mapOf(
+                    "still" to "微动",
+                    "motion" to "运动",
+                    "moving" to "运动",
+                    "micro_motion" to "微动",
+                    "fall" to "跌倒告警"
+                )
+            ),
+            TslField(
+                identifier = "sleep_state",
+                name = "睡眠状态",
+                type = TslFieldType.JSON_STRING,
+                jsonPath = "sleep_state",
+                valueMap = mapOf(
+                    "bed_rest_observed" to "在床休息",
+                    "off_bed_present" to "离床在场",
+                    "off_bed" to "离床",
+                    "sleep" to "睡眠",
+                    "awake" to "清醒"
+                )
+            ),
+            TslField(
+                identifier = "bed_present",
+                name = "卧床在位",
+                type = TslFieldType.JSON_BOOL,
+                jsonPath = "bed_present",
+                valueMap = mapOf("true" to "在床", "false" to "离床")
             )
         )
     )

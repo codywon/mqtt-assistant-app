@@ -228,13 +228,16 @@ object TslParseEngine {
                 val byteVal = bytes[field.offset].toInt() and 0xFF
                 val bitIndex = field.length.coerceIn(0, 7)
                 val bitVal = (byteVal shr bitIndex) and 1
+                val isTrue = (bitVal == 1)
+                val displayStr = formatBoolDisplay(field, isTrue)
                 TslParsedValue(
                     identifier = field.identifier,
                     name = field.name,
                     rawValue = bitVal.toDouble(),
-                    displayValue = if (bitVal == 1) "ON" else "OFF",
+                    displayValue = displayStr,
                     unit = field.unit,
                     isWarning = false,
+                    stringValue = if (isTrue) "true" else "false",
                     isKeyIndicator = field.isKeyIndicator
                 )
             }
@@ -286,12 +289,13 @@ object TslParseEngine {
                 buildNumericValue(field, numVal)
             }
             TslFieldType.JSON_STRING -> {
-                val strVal = value.toString()
+                val strVal = value.toString().trim()
+                val displayStr = formatStateDisplay(field, strVal)
                 TslParsedValue(
                     identifier = field.identifier,
                     name = field.name,
                     rawValue = 0.0,
-                    displayValue = strVal,
+                    displayValue = displayStr,
                     unit = field.unit,
                     isWarning = false,
                     stringValue = strVal,
@@ -305,13 +309,15 @@ object TslParseEngine {
                     is Number -> value.toInt() != 0
                     else -> return null
                 }
+                val displayStr = formatBoolDisplay(field, boolVal)
                 TslParsedValue(
                     identifier = field.identifier,
                     name = field.name,
                     rawValue = if (boolVal) 1.0 else 0.0,
-                    displayValue = if (boolVal) "ON" else "OFF",
+                    displayValue = displayStr,
                     unit = field.unit,
                     isWarning = false,
+                    stringValue = boolVal.toString(),
                     isKeyIndicator = field.isKeyIndicator
                 )
             }
@@ -397,6 +403,158 @@ object TslParseEngine {
             pi++
         }
         return ti == topicParts.size
+    }
+
+    // =========================================================================
+    // 行业状态语义字典与中文化呈现
+    // =========================================================================
+
+    private val STATE_TRANSLATION_MAP = mapOf(
+        // 雷达活动状态
+        "still" to "微动",
+        "motion" to "运动",
+        "moving" to "运动",
+        "body_motion" to "运动",
+        "major_motion" to "大幅运动",
+        "micro_motion" to "微动",
+        "minor_motion" to "微动",
+        "slight_motion" to "微动",
+        "static" to "静止",
+        "rest" to "静止",
+        "resting" to "静止",
+        "fall" to "跌倒告警",
+        "fallen" to "跌倒告警",
+        "falling" to "跌倒告警",
+        "fall_detected" to "检测到跌倒",
+        "sitting" to "坐姿",
+        "seated" to "坐姿",
+        "standing" to "站立",
+        "walking" to "走动",
+
+        // 在场/在位状态
+        "present" to "在场",
+        "room_present" to "有人在场",
+        "occupied" to "有人",
+        "exist" to "在场",
+        "absent" to "无人",
+        "room_absent" to "无人",
+        "empty" to "无人",
+        "vacant" to "无人",
+        "nobody" to "无人",
+        "leave" to "离场",
+        "leaving" to "离场中",
+        "enter" to "进入",
+        "entering" to "进入中",
+
+        // 睡眠/在床状态
+        "bed_rest_observed" to "在床休息",
+        "in_bed" to "在床",
+        "bed_present" to "在床",
+        "off_bed_present" to "离床在场",
+        "off_bed" to "离床",
+        "out_of_bed" to "离床",
+        "out_bed" to "离床",
+        "sleep" to "睡眠",
+        "sleeping" to "睡眠中",
+        "asleep" to "入睡",
+        "deep_sleep" to "深睡",
+        "light_sleep" to "浅睡",
+        "rem" to "快速眼动",
+        "awake" to "清醒",
+        "turn_over" to "翻身",
+        "breath_pause" to "呼吸暂停告警",
+        "apnea" to "呼吸暂停告警",
+
+        // 开关/通用工控运行状态
+        "on" to "合闸/开启",
+        "off" to "分闸/关闭",
+        "open" to "开启",
+        "close" to "关闭",
+        "closed" to "关闭",
+        "normal" to "正常",
+        "alarm" to "告警",
+        "fault" to "故障",
+        "trip" to "跳闸",
+        "tripped" to "已跳闸",
+        "online" to "在线",
+        "offline" to "离线",
+        "connected" to "已连接",
+        "disconnected" to "已断开",
+        "running" to "运行中",
+        "stopped" to "已停机",
+        "standby" to "待机"
+    )
+
+    /**
+     * 智能翻译状态字符串（优先使用 TslField 的显式映射表 valueMap，兜底查内建行业语义词典）
+     */
+    fun formatStateDisplay(field: TslField, rawStr: String): String {
+        val clean = rawStr.trim()
+        if (clean.isEmpty()) return clean
+
+        // 1. 优先查字段级显式配置的 valueMap (支持大小写无关)
+        field.valueMap?.let { map ->
+            val explicitMatch = map.entries.firstOrNull { it.key.equals(clean, ignoreCase = true) }
+            if (explicitMatch != null && explicitMatch.value.isNotBlank()) {
+                return explicitMatch.value
+            }
+        }
+
+        // 2. 查内建雷达与工控通用状态词典
+        val key = clean.lowercase()
+        STATE_TRANSLATION_MAP[key]?.let { return it }
+
+        // 3. 未匹配时保持原始字符串
+        return clean
+    }
+
+    /**
+     * 智能翻译布尔值（优先使用 TslField 的显式映射表，兜底结合字段领域语义推断）
+     */
+    fun formatBoolDisplay(field: TslField, boolVal: Boolean): String {
+        val boolKey = if (boolVal) "true" else "false"
+        val numKey = if (boolVal) "1" else "0"
+
+        // 1. 优先查显式 valueMap
+        field.valueMap?.let { map ->
+            val match = map.entries.firstOrNull {
+                it.key.equals(boolKey, ignoreCase = true) || it.key == numKey
+            }
+            if (match != null && match.value.isNotBlank()) {
+                return match.value
+            }
+        }
+
+        // 2. 结合字段领域语义自动推断
+        val lowerId = field.identifier.lowercase()
+        val lowerName = field.name.lowercase()
+
+        // 卧床/在床检测
+        if (lowerId.contains("bed") || lowerName.contains("床") || lowerName.contains("卧")) {
+            return if (boolVal) "在床" else "离床"
+        }
+
+        // 人员在场/在位检测
+        if (lowerId.contains("presence") || lowerId.contains("occup") ||
+            lowerName.contains("在位") || lowerName.contains("在场") ||
+            lowerName.contains("有人") || lowerName.contains("人数")) {
+            return if (boolVal) "有人" else "无人"
+        }
+
+        // 跌倒/告警/故障
+        if (lowerId.contains("fall") || lowerId.contains("alarm") || lowerId.contains("warn") ||
+            lowerName.contains("跌倒") || lowerName.contains("告警") || lowerName.contains("报警")) {
+            return if (boolVal) "告警" else "正常"
+        }
+
+        // 开关/断路器/继电器
+        if (lowerId.contains("breaker") || lowerId.contains("switch") || lowerId.contains("relay") ||
+            lowerName.contains("开关") || lowerName.contains("断路器") || lowerName.contains("闸") || lowerName.contains("继电器")) {
+            return if (boolVal) "合闸" else "分闸"
+        }
+
+        // 默认工业标识
+        return if (boolVal) "ON" else "OFF"
     }
 
     // =========================================================================
@@ -618,7 +776,8 @@ object TslParseEngine {
                     Math.abs(actualValDouble - tNum) < 0.0001
                 } else {
                     val aStr = actualValStr ?: actualValDouble?.toString() ?: ""
-                    aStr.equals(targetValStr, ignoreCase = true)
+                    val dStr = matchedTslValue?.displayValue ?: ""
+                    aStr.equals(targetValStr, ignoreCase = true) || dStr.equals(targetValStr, ignoreCase = true)
                 }
             }
             "!=" -> {
@@ -627,12 +786,14 @@ object TslParseEngine {
                     Math.abs(actualValDouble - tNum) >= 0.0001
                 } else {
                     val aStr = actualValStr ?: actualValDouble?.toString() ?: ""
-                    !aStr.equals(targetValStr, ignoreCase = true)
+                    val dStr = matchedTslValue?.displayValue ?: ""
+                    !aStr.equals(targetValStr, ignoreCase = true) && !dStr.equals(targetValStr, ignoreCase = true)
                 }
             }
             "contains" -> {
                 val aStr = actualValStr ?: actualValDouble?.toString() ?: rawPayload
-                aStr.contains(targetValStr, ignoreCase = true)
+                val dStr = matchedTslValue?.displayValue ?: ""
+                aStr.contains(targetValStr, ignoreCase = true) || dStr.contains(targetValStr, ignoreCase = true)
             }
             "bitmask_and", "&" -> {
                 val mask = parseLongSafely(targetValStr) ?: return false

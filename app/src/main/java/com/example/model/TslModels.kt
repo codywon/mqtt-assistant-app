@@ -100,7 +100,8 @@ data class TslField(
     val warnMin: Double? = null,        // 下限告警阈值（低于此值触发告警）
     val warnMax: Double? = null,        // 上限告警阈值（高于此值触发告警）
     val alarmBitmask: Long? = null,     // 状态位掩码告警（按位与非 0 触发告警，如 0x0002 代表跳闸报警）
-    val isKeyIndicator: Boolean = false // 是否显式声明为该协议的核心指标（微型药丸最高权重展现）
+    val isKeyIndicator: Boolean = false, // 是否显式声明为该协议的核心指标（微型药丸最高权重展现）
+    val valueMap: Map<String, String>? = null // 状态/枚举值显式中文化映射字典（如 {"still": "微动", "motion": "运动"}）
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
         put("identifier", identifier)
@@ -116,32 +117,49 @@ data class TslField(
         if (warnMax != null) put("warnMax", warnMax)
         if (alarmBitmask != null) put("alarmBitmask", alarmBitmask)
         if (isKeyIndicator) put("isKeyIndicator", true)
+        if (valueMap != null && valueMap.isNotEmpty()) {
+            put("valueMap", JSONObject(valueMap))
+        }
     }
 
     companion object {
-        fun fromJson(json: JSONObject): TslField = TslField(
-            identifier = json.optString("identifier", json.optString("id", "unknown")),
-            name = json.optString("name", "未知字段"),
-            offset = json.optInt("offset", 0),
-            length = json.optInt("length", 1),
-            type = try {
-                TslFieldType.valueOf(json.optString("type", "uint8").uppercase())
-            } catch (_: Exception) { TslFieldType.UINT8 },
-            scale = json.optDouble("scale", 1.0),
-            precision = json.optInt("precision", 2),
-            unit = json.optString("unit", ""),
-            jsonPath = json.optString("jsonPath", ""),
-            warnMin = if (json.has("warnMin") || json.has("warn_min"))
-                json.optDouble("warnMin", json.optDouble("warn_min", Double.NaN)).takeIf { !it.isNaN() }
-            else null,
-            warnMax = if (json.has("warnMax") || json.has("warn_max"))
-                json.optDouble("warnMax", json.optDouble("warn_max", Double.NaN)).takeIf { !it.isNaN() }
-            else null,
-            alarmBitmask = if (json.has("alarmBitmask") || json.has("alarm_bitmask"))
-                json.optLong("alarmBitmask", json.optLong("alarm_bitmask", -1L)).takeIf { it >= 0 }
-            else null,
-            isKeyIndicator = json.optBoolean("isKeyIndicator", json.optBoolean("is_key_indicator", false))
-        )
+        fun fromJson(json: JSONObject): TslField {
+            val mapObj = json.optJSONObject("valueMap") ?: json.optJSONObject("value_map")
+            val parsedValueMap: Map<String, String>? = if (mapObj != null && mapObj.length() > 0) {
+                val map = mutableMapOf<String, String>()
+                val keys = mapObj.keys()
+                while (keys.hasNext()) {
+                    val k = keys.next()
+                    map[k] = mapObj.optString(k, "")
+                }
+                map
+            } else null
+
+            return TslField(
+                identifier = json.optString("identifier", json.optString("id", "unknown")),
+                name = json.optString("name", "未知字段"),
+                offset = json.optInt("offset", 0),
+                length = json.optInt("length", 1),
+                type = try {
+                    TslFieldType.valueOf(json.optString("type", "uint8").uppercase())
+                } catch (_: Exception) { TslFieldType.UINT8 },
+                scale = json.optDouble("scale", 1.0),
+                precision = json.optInt("precision", 2),
+                unit = json.optString("unit", ""),
+                jsonPath = json.optString("jsonPath", ""),
+                warnMin = if (json.has("warnMin") || json.has("warn_min"))
+                    json.optDouble("warnMin", json.optDouble("warn_min", Double.NaN)).takeIf { !it.isNaN() }
+                else null,
+                warnMax = if (json.has("warnMax") || json.has("warn_max"))
+                    json.optDouble("warnMax", json.optDouble("warn_max", Double.NaN)).takeIf { !it.isNaN() }
+                else null,
+                alarmBitmask = if (json.has("alarmBitmask") || json.has("alarm_bitmask"))
+                    json.optLong("alarmBitmask", json.optLong("alarm_bitmask", -1L)).takeIf { it >= 0 }
+                else null,
+                isKeyIndicator = json.optBoolean("isKeyIndicator", json.optBoolean("is_key_indicator", false)),
+                valueMap = parsedValueMap
+            )
+        }
     }
 }
 

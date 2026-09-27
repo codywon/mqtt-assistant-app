@@ -971,7 +971,10 @@ private fun CompactMessageCard(
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier
+                                .weight(1f, fill = false)
+                                .padding(end = 6.dp)
                         ) {
                             if (hasWarn) {
                                 Text(
@@ -985,13 +988,17 @@ private fun CompactMessageCard(
                                     fontSize = 11.sp,
                                     fontWeight = if (hasWarn) FontWeight.Bold else FontWeight.Medium,
                                     color = if (hasWarn) Color(0xFFDC2626) else OnSurfaceVariantGray
-                                )
+                                ),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                         if (tslResult.values.size > 4) {
                             Text(
                                 text = "共 ${tslResult.values.size} 项指标",
-                                style = TextStyle(fontSize = 10.sp, color = OutlineGray)
+                                style = TextStyle(fontSize = 10.sp, color = OutlineGray),
+                                maxLines = 1,
+                                softWrap = false
                             )
                         }
                     }
@@ -1329,14 +1336,21 @@ private fun MessageDetailsModalDialog(
                                 Text(
                                     text = if (hasWarn) "⚠️ 越限告警 · ${tslResult.protocolName}" else "物模型解析 · ${tslResult.protocolName}",
                                     style = TextStyle(
-                                        fontSize = 13.sp,
+                                        fontSize = 12.5.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = titleC
-                                    )
+                                    ),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier
+                                        .weight(1f, fill = false)
+                                        .padding(end = 8.dp)
                                 )
                                 Text(
                                     text = "共 ${tslResult.values.size} 项指标",
-                                    style = TextStyle(fontSize = 11.sp, color = OnSurfaceVariantGray)
+                                    style = TextStyle(fontSize = 11.sp, color = OnSurfaceVariantGray),
+                                    maxLines = 1,
+                                    softWrap = false
                                 )
                             }
 
