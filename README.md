@@ -45,3 +45,9 @@ git push origin v1.0.0
 1. 确保安装 JDK 17 或 JDK 21。
 2. 运行 `./gradlew assembleDebug`（Linux/macOS）或 `build_apk.bat` / `gradlew.bat assembleDebug`（Windows）。
 3. 生成的 APK 位于 `app/build/outputs/apk/debug/app-debug.apk`。
+
+---
+
+## 📚 研发经验与排错知识库
+
+- [核心排错经验与工业级工程实践指南](docs/TROUBLESHOOTING_AND_EXPERIENCE.md)：深入记录了包括前后台组件消息重叠拦截、Android 原生 JSON 转义斜杠净化、MQTT 5.0 保留消息规范边界、移动端 Markdown LaTeX 深度栈解析以及高频 60Hz 帧率对齐等经典技术陷阱与防御方案。
