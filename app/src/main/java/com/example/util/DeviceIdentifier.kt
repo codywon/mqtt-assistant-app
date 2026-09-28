@@ -19,6 +19,7 @@ object DeviceIdentifier {
 
     /**
      * 获取本机专属的短特征码（6位小写十六进制字符串，如 "a3f89b"）
+     * 绝不返回 "000000" 或全相同字符
      */
     fun getShortDeviceId(context: Context): String {
         return try {
@@ -27,15 +28,31 @@ object DeviceIdentifier {
                 Settings.Secure.ANDROID_ID
             )?.trim()?.lowercase()
 
-            // 过滤已知模拟器默认假值或异常空值
-            if (!androidId.isNullOrBlank() && androidId != "9774d56d682e549c" && androidId.length >= 6) {
-                androidId.takeLast(6)
+            if (isValidAndroidId(androidId)) {
+                androidId!!.takeLast(6)
             } else {
                 getOrGeneratePersistentId(context)
             }
         } catch (_: Exception) {
             getOrGeneratePersistentId(context)
         }
+    }
+
+    /**
+     * 校验 ANDROID_ID 是否为真实有效的硬件标识
+     */
+    fun isValidAndroidId(id: String?): Boolean {
+        if (id.isNullOrBlank() || id.length < 6) return false
+        val invalidTokens = setOf(
+            "9774d56d682e549c", // Android 2.2 模拟器与部分假系统经典占位符
+            "unknown",
+            "null",
+            "0"
+        )
+        if (id in invalidTokens) return false
+        // 核心过滤：国产 ROM（小米/华为/OPPO/vivo）隐私保护常返回全0（例如 0000000000000000）或全f或全相同字符
+        if (id.all { it == '0' || it == 'f' || it == id[0] }) return false
+        return true
     }
 
     /**
@@ -54,13 +71,35 @@ object DeviceIdentifier {
         return "${prefix}_$randomSuffix"
     }
 
+    /**
+     * 生成并持久化本设备专属的唯一安装短标识（若 ANDROID_ID 被屏蔽时使用）
+     */
     private fun getOrGeneratePersistentId(context: Context): String {
         val sp = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         var id = sp.getString(KEY_INSTALL_ID, null)
-        if (id.isNullOrBlank()) {
-            id = UUID.randomUUID().toString().replace("-", "").take(6).lowercase()
+        // 若为空、为全0或无效，则重新计算生成
+        if (id.isNullOrBlank() || id == "000000" || id.all { it == '0' || it == id[0] } || id.length < 6) {
+            id = generateUniqueShortHash()
             sp.edit().putString(KEY_INSTALL_ID, id).apply()
         }
         return id
+    }
+
+    private fun generateUniqueShortHash(): String {
+        return try {
+            val hardwareSeed = "${android.os.Build.MANUFACTURER}_${android.os.Build.MODEL}_${android.os.Build.BOARD}_${android.os.Build.HARDWARE}"
+            val randomToken = UUID.randomUUID().toString().replace("-", "")
+            val md = java.security.MessageDigest.getInstance("MD5")
+            val digest = md.digest((hardwareSeed + randomToken).toByteArray(Charsets.UTF_8))
+            val hex = digest.joinToString("") { "%02x".format(it) }
+            val candidate = hex.take(6).lowercase()
+            if (candidate.all { it == '0' || it == candidate[0] }) {
+                UUID.randomUUID().toString().replace("-", "").take(6).lowercase()
+            } else {
+                candidate
+            }
+        } catch (_: Exception) {
+            UUID.randomUUID().toString().replace("-", "").take(6).lowercase()
+        }
     }
 }

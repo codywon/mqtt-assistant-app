@@ -139,7 +139,10 @@ object MqttClientManager {
                 disconnectInternal(isIntentional = true)
 
                 val brokerUrl = normalizeBrokerUrl(config.host, config.port, config.tlsEnabled)
-                val clientId = if (config.clientId.isBlank() || config.clientId == "client_mobile_th0201") {
+                val clientId = if (config.clientId.isBlank() || 
+                    config.clientId == "client_mobile_th0201" || 
+                    config.clientId == "client_mobile_000000" || 
+                    config.clientId.endsWith("_000000")) {
                     "android_" + UUID.randomUUID().toString().replace("-", "").take(8)
                 } else {
                     config.clientId.trim()
