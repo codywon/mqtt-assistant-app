@@ -89,7 +89,7 @@ object TslParseEngine {
 
                 // 3. 关键生理/物理量医学合理性评估（Sanity Check）
                 for (v in res.values) {
-                    val num = v.numericValue ?: continue
+                    val num = v.rawValue
                     val id = v.identifier.lowercase()
                     val name = v.name
 
