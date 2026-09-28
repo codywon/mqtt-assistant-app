@@ -14,7 +14,10 @@ import com.example.util.AutoExportHelper
 import com.example.util.ArchivedExcelReader
 import com.example.util.AutoStartUtil
 import com.example.util.BackupData
-import com.example.util.ConfigBackupHelper
+import com.example.util.AppUpdateManager
+import com.example.util.UpdateCheckResult
+import com.example.util.UpdateInfo
+import java.io.File
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.ai.AiAgentClient
@@ -3209,6 +3212,93 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
         tslParseResults.value = map
     }
 
+    // ==========================================
+    // 应用自动检测与全自动在线更新状态机
+    // ==========================================
+    val updateUiState = MutableStateFlow<UpdateUiState>(UpdateUiState.Idle)
+    private var downloadedApkFile: File? = null
+
+    fun checkForUpdate(context: Context, isManual: Boolean = false) {
+        viewModelScope.launch {
+            if (isManual) {
+                updateUiState.value = UpdateUiState.Checking
+            }
+            when (val result = AppUpdateManager.checkUpdate(context, isManual)) {
+                is UpdateCheckResult.HasUpdate -> {
+                    updateUiState.value = UpdateUiState.UpdateAvailable(result.info)
+                }
+                is UpdateCheckResult.NoUpdate -> {
+                    if (isManual) {
+                        updateUiState.value = UpdateUiState.Idle
+                        showToast("当前已是最新版本 (v${result.currentVersion})")
+                    } else {
+                        updateUiState.value = UpdateUiState.Idle
+                    }
+                }
+                is UpdateCheckResult.Ignored -> {
+                    updateUiState.value = UpdateUiState.Idle
+                }
+                is UpdateCheckResult.Error -> {
+                    if (isManual) {
+                        updateUiState.value = UpdateUiState.Idle
+                        showToast("检查更新失败: ${result.message}")
+                    } else {
+                        updateUiState.value = UpdateUiState.Idle
+                    }
+                }
+            }
+        }
+    }
+
+    fun startDownloadUpdate(context: Context, info: UpdateInfo) {
+        viewModelScope.launch {
+            updateUiState.value = UpdateUiState.Downloading(info, 0f, 0L, info.fileSize)
+            val downloadRes = AppUpdateManager.downloadApk(context, info) { progress, downloaded, total ->
+                updateUiState.value = UpdateUiState.Downloading(info, progress, downloaded, total)
+            }
+            downloadRes.onSuccess { apkFile ->
+                downloadedApkFile = apkFile
+                if (!AppUpdateManager.canInstallPackages(context)) {
+                    updateUiState.value = UpdateUiState.PermissionRequired(info, apkFile)
+                } else {
+                    updateUiState.value = UpdateUiState.ReadyToInstall(info, apkFile)
+                    // 自动尝试直接调起系统安装器
+                    AppUpdateManager.installApk(context, apkFile)
+                }
+            }.onFailure { err ->
+                updateUiState.value = UpdateUiState.Error(err.localizedMessage ?: "下载安装包失败")
+            }
+        }
+    }
+
+    fun installDownloadedApk(context: Context, apkFile: File) {
+        if (!AppUpdateManager.canInstallPackages(context)) {
+            val state = updateUiState.value
+            val info = if (state is UpdateUiState.ReadyToInstall) state.info 
+                       else if (state is UpdateUiState.PermissionRequired) state.info 
+                       else null
+            if (info != null) {
+                updateUiState.value = UpdateUiState.PermissionRequired(info, apkFile)
+            }
+            context.startActivity(AppUpdateManager.createInstallPermissionIntent(context))
+        } else {
+            val res = AppUpdateManager.installApk(context, apkFile)
+            if (res.isFailure) {
+                showToast("调起安装失败: ${res.exceptionOrNull()?.message}")
+            }
+        }
+    }
+
+    fun ignoreCurrentUpdate(context: Context, tagName: String) {
+        AppUpdateManager.ignoreVersion(context, tagName)
+        updateUiState.value = UpdateUiState.Idle
+        showToast("已忽略版本 $tagName，后续启动不再提示")
+    }
+
+    fun dismissUpdateDialog() {
+        updateUiState.value = UpdateUiState.Idle
+    }
+
     override fun onCleared() {
         super.onCleared()
         try {
@@ -3219,4 +3309,22 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
         MqttClientManager.onConnectionStateChanged = null
         reconnectJob?.cancel()
     }
+}
+
+/**
+ * 应用全自动在线升级 UI 交互状态
+ */
+sealed class UpdateUiState {
+    object Idle : UpdateUiState()
+    object Checking : UpdateUiState()
+    data class UpdateAvailable(val info: UpdateInfo) : UpdateUiState()
+    data class Downloading(
+        val info: UpdateInfo,
+        val progress: Float,
+        val downloadedBytes: Long,
+        val totalBytes: Long
+    ) : UpdateUiState()
+    data class ReadyToInstall(val info: UpdateInfo, val apkFile: File) : UpdateUiState()
+    data class PermissionRequired(val info: UpdateInfo, val apkFile: File) : UpdateUiState()
+    data class Error(val message: String) : UpdateUiState()
 }

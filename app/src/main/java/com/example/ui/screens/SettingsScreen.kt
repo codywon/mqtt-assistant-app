@@ -60,6 +60,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import com.example.viewmodel.UpdateUiState
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -1164,21 +1166,63 @@ fun SettingsScreen(
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Icon(
-                    imageVector = Icons.Default.Memory,
-                    contentDescription = null,
-                    tint = OnSurfaceVariantGray,
-                    modifier = Modifier.size(15.dp)
-                )
-                Text(
-                    text = "MQTT Assistant v2.0.0 (Android Native)",
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontSize = 11.sp,
-                        color = OnSurfaceVariantGray
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Memory,
+                        contentDescription = null,
+                        tint = OnSurfaceVariantGray,
+                        modifier = Modifier.size(15.dp)
                     )
-                )
+                    Text(
+                        text = "MQTT Assistant v2.0.0 (Android Native)",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontSize = 11.sp,
+                            color = OnSurfaceVariantGray
+                        )
+                    )
+                }
+
+                val updateUiState by viewModel.updateUiState.collectAsState()
+                val isChecking = updateUiState is UpdateUiState.Checking
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(3.dp),
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(SurfaceContainerHigh)
+                        .clickable(enabled = !isChecking) {
+                            viewModel.checkForUpdate(context, isManual = true)
+                        }
+                        .padding(horizontal = 7.dp, vertical = 3.dp)
+                ) {
+                    if (isChecking) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(10.dp),
+                            strokeWidth = 1.5.dp,
+                            color = PrimaryBlack
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = null,
+                            tint = PrimaryBlack,
+                            modifier = Modifier.size(11.dp)
+                        )
+                    }
+                    Text(
+                        text = if (isChecking) "检查中" else "检查更新",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = PrimaryBlack
+                        )
+                    )
+                }
             }
             Text(
                 text = "Powered by codywon",

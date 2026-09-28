@@ -59,8 +59,10 @@ import com.example.ui.theme.SurfaceCanvas
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.material3.ScaffoldDefaults
 import com.example.ui.screens.AiChatScreen
-import com.example.viewmodel.MqttAssistantViewModel
 import androidx.activity.viewModels
+import androidx.compose.ui.platform.LocalContext
+import com.example.ui.components.AppUpdateDialog
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 
 class MainActivity : ComponentActivity() {
@@ -123,9 +125,15 @@ fun MqttAssistantApp(
         viewModel.toastEvent.collectLatest { message ->
             snackbarHostState.showSnackbar(message = message, withDismissAction = false)
         }
-    }
-
     val isAiChatRoute = currentRoute == AppScreen.AiChat.route
+    val context = LocalContext.current
+    val updateUiState by viewModel.updateUiState.collectAsState()
+
+    // 启动 2 秒后在后台安全静默检查一次更新
+    LaunchedEffect(Unit) {
+        delay(2000)
+        viewModel.checkForUpdate(context, isManual = false)
+    }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -293,6 +301,15 @@ fun MqttAssistantApp(
             }
         }
     }
+
+    // 全局在线更新弹窗
+    AppUpdateDialog(
+        state = updateUiState,
+        onStartDownload = { info -> viewModel.startDownloadUpdate(context, info) },
+        onInstall = { apkFile -> viewModel.installDownloadedApk(context, apkFile) },
+        onIgnore = { tagName -> viewModel.ignoreCurrentUpdate(context, tagName) },
+        onDismiss = { viewModel.dismissUpdateDialog() }
+    )
 }
 
 /**
