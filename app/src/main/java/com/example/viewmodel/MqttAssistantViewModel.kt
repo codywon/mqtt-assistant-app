@@ -335,25 +335,29 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
             val savedAiMsgs = storage.loadAiMessages(activeSessionId, 100)
             val savedProtocols = storage.loadAllProtocolKnowledge()
 
-            // TSL 物模型：首次安装注入内置模板，然后加载所有已启用协议
-            storage.initBuiltinTslProtocols()
-            val enabledTslProtos = storage.loadEnabledTslProtocols()
-
-            // 自动同步所有已启用的 TSL 物模型镜像到协议工作台，确保用户界面即时可见且可查可改
-            enabledTslProtos.forEach { tsl ->
-                val existing = savedProtocols.find { it.id == tsl.id }
-                if (existing == null || existing.description.startsWith("【TSL 原生物模型")) {
-                    val mirror = ProtocolKnowledge(
-                        id = tsl.id,
-                        name = tsl.name,
-                        topicFilter = tsl.matchTopic,
-                        description = tsl.toJson().toString(2),
-                        sampleHex = "",
-                        createdAt = existing?.createdAt ?: System.currentTimeMillis()
-                    )
-                    storage.saveProtocolKnowledge(mirror)
+            // 彻底遵从用户需求：绝不强制自动注入对不上的预置模板！
+            // 从用户已保存的协议澄清知识库中，深度同步所有合法的 TSL 物模型规则到底层微秒级执行引擎
+            savedProtocols.forEach { proto ->
+                val descStr = proto.description.trim()
+                if (descStr.startsWith("{") && (descStr.contains("\"fields\"") || descStr.contains("'fields'"))) {
+                    try {
+                        val json = JSONObject(descStr)
+                        if (json.has("fields")) {
+                            val parsed = com.example.model.TslProtocol.fromJson(json)
+                            val finalTopic = proto.topicFilter.ifBlank { parsed.matchTopic }
+                            val finalName = proto.name.ifBlank { parsed.name }
+                            val tslToSave = parsed.copy(
+                                id = proto.id,
+                                name = finalName,
+                                matchTopic = finalTopic
+                            )
+                            storage.saveTslProtocol(tslToSave)
+                        }
+                    } catch (_: Exception) {}
                 }
             }
+
+            val enabledTslProtos = storage.loadEnabledTslProtocols()
             val finalProtocols = storage.loadAllProtocolKnowledge()
 
             // 保持内存单例为单一可信源
@@ -2623,7 +2627,25 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
         if (jsonResult.protocols.isNotEmpty() || jsonResult.tslProtocols.isNotEmpty()) {
             viewModelScope.launch(Dispatchers.IO) {
                 if (jsonResult.protocols.isNotEmpty()) {
-                    jsonResult.protocols.forEach { storage.saveProtocolKnowledge(it) }
+                    jsonResult.protocols.forEach { p ->
+                        storage.saveProtocolKnowledge(p)
+                        // 双重保障：若某条 ProtocolKnowledge 含有合法 TSL 物模型，同步写入 tsl_protocols
+                        val descStr = p.description.trim()
+                        if (descStr.startsWith("{") && (descStr.contains("\"fields\"") || descStr.contains("'fields'"))) {
+                            try {
+                                val json = JSONObject(descStr)
+                                if (json.has("fields")) {
+                                    val parsed = com.example.model.TslProtocol.fromJson(json)
+                                    val tsl = parsed.copy(
+                                        id = p.id,
+                                        name = p.name.ifBlank { parsed.name },
+                                        matchTopic = p.topicFilter.ifBlank { parsed.matchTopic }
+                                    )
+                                    storage.saveTslProtocol(tsl)
+                                }
+                            } catch (_: Exception) {}
+                        }
+                    }
                 }
                 if (jsonResult.tslProtocols.isNotEmpty()) {
                     jsonResult.tslProtocols.forEach { tsl ->
@@ -2638,18 +2660,16 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                         )
                         storage.saveProtocolKnowledge(mirrorKnowledge)
                     }
-                    val updatedTsl = storage.loadEnabledTslProtocols()
-                    withContext(Dispatchers.Main) {
-                        tslProtocols.value = updatedTsl
-                        reparseAllLivePacketsWithTsl()
-                    }
                 }
+                val updatedTsl = storage.loadEnabledTslProtocols()
                 val updatedKnowledge = storage.loadAllProtocolKnowledge()
                 withContext(Dispatchers.Main) {
+                    tslProtocols.value = updatedTsl
                     protocolKnowledgeList.value = updatedKnowledge
+                    reparseAllLivePacketsWithTsl()
                     val countDesc = buildString {
                         if (jsonResult.protocols.isNotEmpty()) append("${jsonResult.protocols.size} 条协议规则 ")
-                        if (jsonResult.tslProtocols.isNotEmpty()) append("${jsonResult.tslProtocols.size} 条 TSL 物模型")
+                        if (updatedTsl.isNotEmpty()) append("(${updatedTsl.size} 条可用 TSL 物模型)")
                     }.trim()
                     showToast("成功导入 $countDesc！")
                 }

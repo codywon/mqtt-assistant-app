@@ -545,25 +545,50 @@ object ConfigBackupHelper {
         val tslProtocols = mutableListOf<TslProtocol>()
 
         fun parseSingleObject(obj: JSONObject) {
-            // 1. 优先尝试解析为 TslProtocol（判断是否有 fields 数组）
+            var extractedTsl: TslProtocol? = null
+
+            // 1. 若对象本身带有 fields 数组，直接解析为 TslProtocol
             if (obj.has("fields")) {
                 try {
-                    tslProtocols.add(TslProtocol.fromJson(obj))
-                    return
+                    extractedTsl = TslProtocol.fromJson(obj)
                 } catch (_: Exception) {}
+            } else {
+                // 2. 若对象本身没有 fields，但 description 字段是包含 fields 的合法 TSL JSON 字符串，深度提取！
+                val descStr = obj.optString("description", "").trim()
+                if (descStr.startsWith("{") && (descStr.contains("\"fields\"") || descStr.contains("'fields'"))) {
+                    try {
+                        val descJson = JSONObject(descStr)
+                        if (descJson.has("fields")) {
+                            val parsed = TslProtocol.fromJson(descJson)
+                            // 优先采用外层用户明确指定或修正过的 id, name, topicFilter
+                            val finalTopic = obj.optString("topicFilter", obj.optString("matchTopic", parsed.matchTopic)).trim()
+                            val finalName = obj.optString("name", parsed.name).trim()
+                            val finalId = obj.optString("id", parsed.id).trim()
+                            extractedTsl = parsed.copy(
+                                id = finalId.ifBlank { parsed.id },
+                                name = finalName.ifBlank { parsed.name },
+                                matchTopic = finalTopic.ifBlank { parsed.matchTopic }
+                            )
+                        }
+                    } catch (_: Exception) {}
+                }
             }
 
-            // 2. 尝试解析为 ProtocolKnowledge
+            if (extractedTsl != null) {
+                tslProtocols.add(extractedTsl)
+            }
+
+            // 同时记录为 ProtocolKnowledge，确保工作台前台可见并可查可改
             val desc = obj.optString("description", "").trim()
-            val name = obj.optString("name", "").trim()
-            val topic = obj.optString("topicFilter", obj.optString("matchTopic", "")).trim()
-            if (desc.isNotBlank() || name.isNotBlank() || topic.isNotBlank()) {
+            val name = obj.optString("name", extractedTsl?.name ?: "").trim()
+            val topic = obj.optString("topicFilter", obj.optString("matchTopic", extractedTsl?.matchTopic ?: "")).trim()
+            if (desc.isNotBlank() || name.isNotBlank() || topic.isNotBlank() || extractedTsl != null) {
                 protocols.add(
                     ProtocolKnowledge(
-                        id = obj.optString("id", UUID.randomUUID().toString()),
-                        name = name.ifBlank { "未命名协议" },
-                        topicFilter = topic,
-                        description = desc.ifBlank { name },
+                        id = obj.optString("id", extractedTsl?.id ?: UUID.randomUUID().toString()),
+                        name = name.ifBlank { extractedTsl?.name ?: "未命名协议" },
+                        topicFilter = topic.ifBlank { extractedTsl?.matchTopic ?: "+/+#" },
+                        description = if (desc.isNotBlank()) desc else (extractedTsl?.toJson()?.toString(2) ?: name),
                         sampleHex = obj.optString("sampleHex", "").trim(),
                         createdAt = obj.optLong("createdAt", System.currentTimeMillis())
                     )

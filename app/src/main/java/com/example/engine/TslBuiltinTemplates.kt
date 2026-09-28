@@ -248,7 +248,7 @@ object TslBuiltinTemplates {
         id = "builtin_bioland_bp_v3",
         name = "爱奥乐蓝牙血压计 V3.0",
         format = TslFormat.HEX,
-        matchTopic = "Collect/BP_Report/#, medical/+/blood_pressure/#",
+        matchTopic = "Collect/BPM_Report/#, medical/+/blood_pressure/#",
         builtin = true,
         enabled = true,
         fields = listOf(
@@ -327,7 +327,7 @@ object TslBuiltinTemplates {
         id = "builtin_bioland_glucose_v3",
         name = "爱奥乐蓝牙血糖仪 V3.0",
         format = TslFormat.HEX,
-        matchTopic = "Collect/GL_Report/#, Collect/BG_Report/#, medical/+/glucose/#",
+        matchTopic = "Collect/BGM_Report/#, medical/+/glucose/#",
         builtin = true,
         enabled = true,
         fields = listOf(
