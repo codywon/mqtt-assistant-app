@@ -52,6 +52,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Router
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material.icons.filled.Visibility
@@ -1156,79 +1157,123 @@ fun SettingsScreen(
             }
         }
 
-        // Footer version info
+        // 软件版本与在线更新独立卡片
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = SurfaceContainerLowest),
+            shape = RoundedCornerShape(12.dp),
+            border = BorderStroke(1.dp, OutlineVariantLight)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(SurfaceContainerHigh),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.SystemUpdate,
+                                contentDescription = null,
+                                tint = PrimaryBlack,
+                                modifier = Modifier.size(19.dp)
+                            )
+                        }
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(
+                                text = "版本与在线更新",
+                                style = TextStyle(
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = PrimaryBlack
+                                )
+                            )
+                            val currentVersion = remember(context) {
+                                com.example.util.AppUpdateManager.getCurrentVersionName(context)
+                            }
+                            Text(
+                                text = "v$currentVersion (Android Native)",
+                                style = TextStyle(
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 11.5.sp,
+                                    color = OnSurfaceVariantGray
+                                )
+                            )
+                        }
+                    }
+
+                    // 检查更新操作按钮
+                    val updateUiState by viewModel.updateUiState.collectAsState()
+                    val isChecking = updateUiState is UpdateUiState.Checking
+                    Button(
+                        onClick = { viewModel.checkForUpdate(context, isManual = true) },
+                        enabled = !isChecking,
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = PrimaryBlack,
+                            contentColor = OnPrimaryWhite,
+                            disabledContainerColor = SurfaceContainerHigh,
+                            disabledContentColor = OnSurfaceVariantGray
+                        ),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                        modifier = Modifier.height(34.dp)
+                    ) {
+                        if (isChecking) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(12.dp),
+                                strokeWidth = 1.5.dp,
+                                color = OnSurfaceVariantGray
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("检查中...", fontSize = 11.5.sp)
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = null,
+                                modifier = Modifier.size(13.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("检查更新", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+
+        // Footer copyright info
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 10.dp),
+                .padding(vertical = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(3.dp)
+            verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Memory,
-                        contentDescription = null,
-                        tint = OnSurfaceVariantGray,
-                        modifier = Modifier.size(15.dp)
-                    )
-                    Text(
-                        text = "MQTT Assistant v2.0.1 (Android Native)",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontSize = 11.sp,
-                            color = OnSurfaceVariantGray
-                        )
-                    )
-                }
-
-                val updateUiState by viewModel.updateUiState.collectAsState()
-                val isChecking = updateUiState is UpdateUiState.Checking
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(3.dp),
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(SurfaceContainerHigh)
-                        .clickable(enabled = !isChecking) {
-                            viewModel.checkForUpdate(context, isManual = true)
-                        }
-                        .padding(horizontal = 7.dp, vertical = 3.dp)
-                ) {
-                    if (isChecking) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(10.dp),
-                            strokeWidth = 1.5.dp,
-                            color = PrimaryBlack
-                        )
-                    } else {
-                        Icon(
-                            imageVector = Icons.Default.Refresh,
-                            contentDescription = null,
-                            tint = PrimaryBlack,
-                            modifier = Modifier.size(11.dp)
-                        )
-                    }
-                    Text(
-                        text = if (isChecking) "检查中" else "检查更新",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = PrimaryBlack
-                        )
-                    )
-                }
-            }
+            Text(
+                text = "MQTT Assistant · 工业级轻量智能客户端",
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontSize = 11.sp,
+                    color = OnSurfaceVariantGray
+                )
+            )
             Text(
                 text = "Powered by codywon",
                 style = MaterialTheme.typography.labelSmall.copy(
-                    fontSize = 11.sp,
-                    color = OnSurfaceVariantGray.copy(alpha = 0.7f)
+                    fontSize = 10.5.sp,
+                    color = OnSurfaceVariantGray.copy(alpha = 0.6f)
                 )
             )
         }
