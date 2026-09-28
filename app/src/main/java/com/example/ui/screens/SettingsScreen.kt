@@ -215,7 +215,7 @@ fun SettingsScreen(
                                 name = "自定义节点",
                                 host = "",
                                 port = 1883,
-                                clientId = "client_mobile_" + UUID.randomUUID().toString().take(6),
+                                clientId = com.example.util.DeviceIdentifier.generateDefaultClientId(context),
                                 username = "",
                                 password = ""
                             )
@@ -1385,6 +1385,7 @@ private fun BrokerProfileEditDialog(
     var tlsEnabled by remember { mutableStateOf(initialBroker.tlsEnabled) }
     var cleanSession by remember { mutableStateOf(initialBroker.cleanSession) }
     var keepAliveStr by remember { mutableStateOf(initialBroker.keepAlive.toString()) }
+    val context = LocalContext.current
     var isPasswordVisible by remember { mutableStateOf(false) }
 
     Dialog(
@@ -1539,17 +1540,30 @@ private fun BrokerProfileEditDialog(
                             text = "客户端标识 (Client ID)",
                             style = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = PrimaryBlack)
                         )
-                        Text(
-                            text = "随机生成",
-                            style = TextStyle(
-                                fontSize = 11.sp,
-                                color = PrimaryBlack,
-                                fontWeight = FontWeight.Bold
-                            ),
-                            modifier = Modifier.clickable {
-                                clientId = "client_mobile_" + UUID.randomUUID().toString().take(6)
-                            }
-                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "📱 本机唯一",
+                                style = TextStyle(
+                                    fontSize = 11.sp,
+                                    color = PrimaryBlack,
+                                    fontWeight = FontWeight.Bold
+                                ),
+                                modifier = Modifier.clickable {
+                                    clientId = com.example.util.DeviceIdentifier.generateDefaultClientId(context)
+                                }
+                            )
+                            Text(
+                                text = "🎲 随机生成",
+                                style = TextStyle(
+                                    fontSize = 11.sp,
+                                    color = PrimaryBlack,
+                                    fontWeight = FontWeight.Bold
+                                ),
+                                modifier = Modifier.clickable {
+                                    clientId = com.example.util.DeviceIdentifier.generateRandomClientId()
+                                }
+                            )
+                        }
                     }
                     Row(
                         modifier = Modifier
@@ -1573,6 +1587,10 @@ private fun BrokerProfileEditDialog(
                             cursorBrush = SolidColor(PrimaryBlack)
                         )
                     }
+                    Text(
+                        text = "💡 多个设备连接同一服务器时 Client ID 必须不同，否则会被 Broker 互相顶下线。",
+                        style = TextStyle(fontSize = 10.sp, color = OnSurfaceVariantGray)
+                    )
                 }
 
                 // Username & Password
