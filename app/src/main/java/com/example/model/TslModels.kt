@@ -62,7 +62,7 @@ data class TslProtocol(
                 format = try {
                     TslFormat.valueOf(json.optString("format", "HEX").uppercase())
                 } catch (_: Exception) { TslFormat.HEX },
-                matchTopic = json.optString("matchTopic", ""),
+                matchTopic = json.optString("matchTopic", "").trim().replace("\\/", "/"),
                 fields = fields,
                 builtin = json.optBoolean("builtin", false),
                 enabled = json.optBoolean("enabled", true),

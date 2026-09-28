@@ -45,7 +45,7 @@ object TslBuiltinTemplates {
         id = "builtin_vital_signs_v1",
         name = "多参数健康体征网关协议",
         format = TslFormat.HEX,
-        matchTopic = "+/+/vital",
+        matchTopic = "Collect/Vital_Report/#, +/+/vital",
         builtin = true,
         enabled = true,
         fields = listOf(
@@ -248,7 +248,7 @@ object TslBuiltinTemplates {
         id = "builtin_bioland_bp_v3",
         name = "爱奥乐蓝牙血压计 V3.0",
         format = TslFormat.HEX,
-        matchTopic = "medical/+/blood_pressure/#",
+        matchTopic = "Collect/BP_Report/#, medical/+/blood_pressure/#",
         builtin = true,
         enabled = true,
         fields = listOf(
@@ -327,7 +327,7 @@ object TslBuiltinTemplates {
         id = "builtin_bioland_glucose_v3",
         name = "爱奥乐蓝牙血糖仪 V3.0",
         format = TslFormat.HEX,
-        matchTopic = "medical/+/glucose/#",
+        matchTopic = "Collect/GL_Report/#, Collect/BG_Report/#, medical/+/glucose/#",
         builtin = true,
         enabled = true,
         fields = listOf(
@@ -397,7 +397,7 @@ object TslBuiltinTemplates {
         id = "builtin_bioland_thermometer_v3",
         name = "爱奥乐红外额温枪 V3.0",
         format = TslFormat.HEX,
-        matchTopic = "medical/+/thermometer/#",
+        matchTopic = "Collect/IT_Report/#, medical/+/thermometer/#",
         builtin = true,
         enabled = true,
         fields = listOf(
@@ -461,7 +461,7 @@ object TslBuiltinTemplates {
         id = "builtin_body_fat_scale_v1",
         name = "蓝牙智能体脂秤广播协议",
         format = TslFormat.HEX,
-        matchTopic = "medical/+/body_scale/#",
+        matchTopic = "Collect/BFS_Report/#, medical/+/body_scale/#",
         builtin = true,
         enabled = true,
         fields = listOf(
@@ -539,7 +539,7 @@ object TslBuiltinTemplates {
         id = "builtin_lepu_pc60_continuous_v1",
         name = "乐普血氧仪 PC-60 连续实时监测协议",
         format = TslFormat.HEX,
-        matchTopic = "medical/+/oximeter/continuous/#",
+        matchTopic = "Collect/SPO2_Report/#, medical/+/oximeter/continuous/#",
         builtin = true,
         enabled = true,
         fields = listOf(
@@ -618,7 +618,7 @@ object TslBuiltinTemplates {
         id = "builtin_lepu_pc60_spot_check_v1",
         name = "乐普血氧仪 PC-60 单次点测结果协议",
         format = TslFormat.HEX,
-        matchTopic = "medical/+/oximeter/spot/#",
+        matchTopic = "Collect/SPO2_Report/#, medical/+/oximeter/spot/#",
         builtin = true,
         enabled = true,
         fields = listOf(

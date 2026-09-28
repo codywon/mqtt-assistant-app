@@ -380,12 +380,25 @@ object TslParseEngine {
     /**
      * MQTT Topic 通配符匹配
      * 支持：+ (单层通配) 和 # (多层通配)
+     * 具备工业现场高容错能力：
+     * 1. 自动清洗反斜杠转义 (如 JSON 导出的 "\/" 统一还原为 "/")
+     * 2. 支持多 Topic 过滤表达式 (以逗号或分号分隔，命中任意一个即为匹配成功)
      * 例如：
      *   matchTopic("hospital/gateway/gw01/vital", "hospital/gateway/+/vital") -> true
      *   matchTopic("factory/line1/sensor/temp", "factory/#") -> true
+     *   matchTopic("Collect/BP_Report/01", "Collect/BP_Report/#, medical/+/blood_pressure/#") -> true
      */
     fun matchTopic(topic: String, pattern: String): Boolean {
         if (pattern.isBlank()) return false
+        val cleanTopic = topic.trim().replace("\\/", "/").replace("\\", "")
+        val patterns = pattern.split(",", ";")
+            .map { it.trim().replace("\\/", "/").replace("\\", "") }
+            .filter { it.isNotBlank() }
+        if (patterns.isEmpty()) return false
+        return patterns.any { p -> matchSingleTopic(cleanTopic, p) }
+    }
+
+    private fun matchSingleTopic(topic: String, pattern: String): Boolean {
         if (pattern == "#") return true
         if (pattern == topic) return true
 
