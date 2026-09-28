@@ -41,19 +41,155 @@ object TslParseEngine {
     ): TslParseResult? {
         if (protocols.isEmpty() || payload.isBlank()) return null
 
-        // 遍历所有启用的协议，找到第一个匹配 topic 的
-        for (protocol in protocols) {
-            if (!protocol.enabled) continue
-            if (!matchTopic(topic, protocol.matchTopic)) continue
+        // 筛选所有启用的且匹配当前 topic 的候选协议
+        val matchedProtocols = protocols.filter { it.enabled && matchTopic(topic, it.matchTopic) }
+        if (matchedProtocols.isEmpty()) return null
 
-            return try {
-                parseWithProtocol(payload, category, protocol)
+        val rawHex = extractHexFromPayload(payload)
+        val hexBytes = hexStringToBytes(rawHex)
+
+        data class CandidateEval(
+            val protocol: TslProtocol,
+            val result: TslParseResult,
+            val score: Double
+        )
+
+        val candidates = mutableListOf<CandidateEval>()
+
+        for (protocol in matchedProtocols) {
+            // 特征过滤器校验：若配置了特征过滤且不匹配，直接排除
+            if (!matchesPacketFilter(payload, protocol.packetFilter)) {
+                continue
+            }
+
+            try {
+                val res = parseWithProtocol(payload, category, protocol) ?: continue
+                if (res.values.isEmpty()) continue
+
+                var score = 100.0
+
+                // 1. 字段解析完整度（成功解析数 / 声明总数）
+                val totalDeclaredFields = protocol.fields.size
+                val parsedFieldsCount = res.values.size
+                val coverageRatio = if (totalDeclaredFields > 0) parsedFieldsCount.toDouble() / totalDeclaredFields.toDouble() else 1.0
+                score += coverageRatio * 100.0
+
+                // 若有声明的字段越界缺失，扣分惩罚
+                if (parsedFieldsCount < totalDeclaredFields) {
+                    score -= (totalDeclaredFields - parsedFieldsCount) * 50.0
+                }
+
+                // 2. HEX 报文长度匹配度（防止短报文被长协议硬套）
+                if (hexBytes != null && protocol.format == TslFormat.HEX) {
+                    val maxRequiredOffset = protocol.fields.maxOfOrNull { it.offset + it.length } ?: 0
+                    if (hexBytes.size < maxRequiredOffset) {
+                        score -= 250.0 // 报文长度不足以覆盖协议声明的偏移量，严重不匹配！
+                    }
+                }
+
+                // 3. 关键生理/物理量医学合理性评估（Sanity Check）
+                for (v in res.values) {
+                    val num = v.numericValue ?: continue
+                    val id = v.identifier.lowercase()
+                    val name = v.name
+
+                    // 心率/脉率合理性：人类心率在 30 ~ 250 bpm 之间
+                    if (id.contains("pr") || id.contains("heart") || id.contains("hr") || name.contains("心率") || name.contains("脉率")) {
+                        if (num > 300.0 || num < 25.0) {
+                            score -= 300.0 // 极度不合理（如拼错的 24579）
+                        } else {
+                            score += 60.0
+                        }
+                    }
+                    // 血氧饱和度合理性：人类血氧在 60% ~ 100% 之间
+                    if (id.contains("spo2") || id.contains("sp02") || id.contains("oxygen") || name.contains("血氧")) {
+                        if (num < 50.0 || num > 100.0) {
+                            score -= 300.0 // 极度不合理（如偏移错误的 1%）
+                        } else {
+                            score += 60.0
+                        }
+                    }
+                    // 体温合理性：通常在 30℃ ~ 45℃ 之间
+                    if (id.contains("temp") || name.contains("体温") || name.contains("温度")) {
+                        if (num < 15.0 || num > 60.0) {
+                            score -= 200.0
+                        }
+                    }
+                }
+
+                // 4. 特征过滤器显式命中加分
+                if (protocol.packetFilter.isNotBlank()) {
+                    score += 150.0
+                }
+
+                candidates.add(CandidateEval(protocol, res, score))
             } catch (e: Exception) {
                 Log.w(TAG, "协议 [${protocol.name}] 解析报文异常: ${e.message}")
-                null
             }
         }
-        return null
+
+        if (candidates.isEmpty()) return null
+
+        // 挑选综合评分最高者作为权威解析结果
+        candidates.sortByDescending { it.score }
+        val best = candidates.first()
+        Log.d(TAG, "多协议仲裁命中: 主题=[$topic], 选中=[${best.protocol.name}], 评分=${best.score}")
+        return best.result
+    }
+
+    /**
+     * 校验报文是否符合协议特征过滤器 (Packet Filter)
+     * 支持语法示例：
+     * - "4==0x21": 字节索引 4 必须等于 0x21
+     * - "len:10": HEX 报文字节数必须等于 10
+     * - "minlen:12": HEX 报文字节数必须至少 12
+     * - "aa55..21": 起始匹配通配符
+     * - "aa550f06": 头部 Hex 包含/前缀匹配
+     */
+    fun matchesPacketFilter(payload: String, filter: String): Boolean {
+        if (filter.isBlank()) return true
+        val cleanFilter = filter.trim()
+        val rawHex = extractHexFromPayload(payload).replace(" ", "").lowercase()
+
+        // 1. 长度匹配
+        if (cleanFilter.startsWith("len:", ignoreCase = true)) {
+            val expectedBytes = cleanFilter.substring(4).trim().toIntOrNull() ?: return true
+            return rawHex.length / 2 == expectedBytes
+        }
+        if (cleanFilter.startsWith("minlen:", ignoreCase = true)) {
+            val minBytes = cleanFilter.substring(7).trim().toIntOrNull() ?: return true
+            return rawHex.length / 2 >= minBytes
+        }
+
+        // 2. 字节值精准匹配：如 "4==0x21" 或 "4==21"
+        if (cleanFilter.contains("==")) {
+            val parts = cleanFilter.split("==")
+            val offset = parts[0].trim().toIntOrNull()
+            val expectedHex = parts[1].trim().removePrefix("0x").removePrefix("0X")
+            val expectedVal = expectedHex.toIntOrNull(16)
+            if (offset != null && expectedVal != null) {
+                val hexCharIndex = offset * 2
+                if (rawHex.length >= hexCharIndex + 2) {
+                    val actualVal = rawHex.substring(hexCharIndex, hexCharIndex + 2).toIntOrNull(16)
+                    return actualVal == expectedVal
+                }
+                return false
+            }
+        }
+
+        // 3. 通配符模式：如 "aa55..21"
+        if (cleanFilter.contains("..")) {
+            val regexStr = "^" + cleanFilter.replace("..", "[0-9a-f]{2}") + ".*"
+            return try {
+                rawHex.matches(Regex(regexStr, RegexOption.IGNORE_CASE))
+            } catch (_: Exception) {
+                false
+            }
+        }
+
+        // 4. 字符串前缀或包含匹配
+        val filterHex = cleanFilter.replace(" ", "").lowercase()
+        return rawHex.startsWith(filterHex) || rawHex.contains(filterHex)
     }
 
     /**

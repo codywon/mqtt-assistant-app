@@ -223,11 +223,15 @@ class MqttDatabaseHelper(context: Context) : SQLiteOpenHelper(
                     fieldsJson TEXT,
                     builtin INTEGER,
                     enabled INTEGER,
-                    created_at INTEGER
+                    created_at INTEGER,
+                    packetFilter TEXT DEFAULT ''
                 )
                 """.trimIndent()
             )
         }
+        try {
+            db.execSQL("ALTER TABLE $TABLE_TSL_PROTOCOLS ADD COLUMN packetFilter TEXT DEFAULT ''")
+        } catch (_: Exception) {}
         try {
             db.execSQL("CREATE INDEX IF NOT EXISTS idx_packet_topic ON $TABLE_PACKETS(topic)")
             db.execSQL("CREATE INDEX IF NOT EXISTS idx_packet_category ON $TABLE_PACKETS(category)")
@@ -927,12 +931,19 @@ class MqttDatabaseHelper(context: Context) : SQLiteOpenHelper(
             put("name", protocol.name)
             put("format", protocol.format.name)
             put("matchTopic", protocol.matchTopic)
+            put("packetFilter", protocol.packetFilter)
             put("fieldsJson", fieldsJson)
             put("builtin", if (protocol.builtin) 1 else 0)
             put("enabled", if (protocol.enabled) 1 else 0)
             put("created_at", protocol.createdAt)
         }
-        db.insertWithOnConflict(TABLE_TSL_PROTOCOLS, null, cv, SQLiteDatabase.CONFLICT_REPLACE)
+        try {
+            db.insertWithOnConflict(TABLE_TSL_PROTOCOLS, null, cv, SQLiteDatabase.CONFLICT_REPLACE)
+        } catch (_: Exception) {
+            // 降级兜底：若旧表未成功增加 packetFilter 列
+            cv.remove("packetFilter")
+            db.insertWithOnConflict(TABLE_TSL_PROTOCOLS, null, cv, SQLiteDatabase.CONFLICT_REPLACE)
+        }
     }
 
     /**
@@ -963,6 +974,7 @@ class MqttDatabaseHelper(context: Context) : SQLiteOpenHelper(
             "enabled DESC, created_at DESC"
         )
         cursor.use { c ->
+            val packetFilterCol = c.getColumnIndex("packetFilter")
             while (c.moveToNext()) {
                 try {
                     val fieldsJsonStr = c.getString(c.getColumnIndexOrThrow("fieldsJson"))
@@ -970,6 +982,7 @@ class MqttDatabaseHelper(context: Context) : SQLiteOpenHelper(
                     val fields = (0 until fieldsArray.length()).map { i ->
                         com.example.model.TslField.fromJson(fieldsArray.getJSONObject(i))
                     }
+                    val packetFilter = if (packetFilterCol >= 0) c.getString(packetFilterCol) ?: "" else ""
                     list.add(
                         TslProtocol(
                             id = c.getString(c.getColumnIndexOrThrow("id")),
@@ -980,6 +993,7 @@ class MqttDatabaseHelper(context: Context) : SQLiteOpenHelper(
                                 )
                             } catch (_: Exception) { com.example.model.TslFormat.HEX },
                             matchTopic = c.getString(c.getColumnIndexOrThrow("matchTopic")),
+                            packetFilter = packetFilter,
                             fields = fields,
                             builtin = c.getInt(c.getColumnIndexOrThrow("builtin")) == 1,
                             enabled = c.getInt(c.getColumnIndexOrThrow("enabled")) == 1,

@@ -540,6 +540,7 @@ object TslBuiltinTemplates {
         name = "乐普血氧仪 PC-60 连续实时监测协议",
         format = TslFormat.HEX,
         matchTopic = "Collect/SPO2_Report/#, Collect/SP02_Report/#, medical/+/oximeter/continuous/#",
+        packetFilter = "4==0x01",
         builtin = true,
         enabled = true,
         fields = listOf(
@@ -619,6 +620,7 @@ object TslBuiltinTemplates {
         name = "乐普血氧仪 PC-60 单次点测结果协议",
         format = TslFormat.HEX,
         matchTopic = "Collect/SPO2_Report/#, Collect/SP02_Report/#, medical/+/oximeter/spot/#",
+        packetFilter = "4==0x21",
         builtin = true,
         enabled = true,
         fields = listOf(

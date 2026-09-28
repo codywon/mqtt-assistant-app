@@ -26,6 +26,7 @@ data class TslProtocol(
     val name: String,                   // 协议名称（如 "多参数健康体征网关协议"）
     val format: TslFormat,              // 报文格式：HEX（二进制）或 JSON
     val matchTopic: String,             // MQTT Topic 匹配模式（支持 + 和 # 通配符）
+    val packetFilter: String = "",      // 报文特征过滤（如 "4==0x21" 或 "len:10" 或 "aa55..21"）
     val fields: List<TslField>,         // 解析字段列表
     val builtin: Boolean = false,       // 是否为系统预置模板
     val enabled: Boolean = true,        // 是否启用
@@ -39,6 +40,7 @@ data class TslProtocol(
         put("name", name)
         put("format", format.name)
         put("matchTopic", matchTopic)
+        put("packetFilter", packetFilter)
         put("builtin", builtin)
         put("enabled", enabled)
         put("createdAt", createdAt)
@@ -63,6 +65,7 @@ data class TslProtocol(
                     TslFormat.valueOf(json.optString("format", "HEX").uppercase())
                 } catch (_: Exception) { TslFormat.HEX },
                 matchTopic = json.optString("matchTopic", "").trim().replace("\\/", "/"),
+                packetFilter = json.optString("packetFilter", "").trim(),
                 fields = fields,
                 builtin = json.optBoolean("builtin", false),
                 enabled = json.optBoolean("enabled", true),
