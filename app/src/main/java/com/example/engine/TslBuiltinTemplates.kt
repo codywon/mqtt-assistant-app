@@ -407,7 +407,7 @@ object TslBuiltinTemplates {
                 offset = 9,
                 length = 2,
                 type = TslFieldType.UINT16_LE,
-                scale = 0.1,
+                scale = 0.01,
                 unit = "℃",
                 precision = 1,
                 warnMin = 36.0,
