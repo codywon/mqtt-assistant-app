@@ -9,12 +9,16 @@ import android.provider.Settings
 import android.util.Log
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
+import java.io.IOException
+import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 /**
@@ -198,13 +202,18 @@ object AppUpdateManager {
         }
     }
 
+    data class DownloadChannel(
+        val name: String,
+        val url: String
+    )
+
     /**
-     * 高速流式下载 APK，支持国内镜像自动切换与实时进度回调
+     * 高速流式下载 APK，支持通道并发竞速、低速熔断自动换线与实时速率计算
      */
     suspend fun downloadApk(
         context: Context,
         info: UpdateInfo,
-        onProgress: (progress: Float, downloadedBytes: Long, totalBytes: Long) -> Unit
+        onProgress: (progress: Float, downloadedBytes: Long, totalBytes: Long, speedText: String, channelName: String) -> Unit
     ): Result<File> = withContext(Dispatchers.IO) {
         val updateDir = File(context.cacheDir, "updates").apply { mkdirs() }
         val targetFile = File(updateDir, "MQTT-Assistant-update.apk")
@@ -212,15 +221,23 @@ object AppUpdateManager {
             targetFile.delete()
         }
 
-        // 优先级：国内加速镜像 -> GitHub 原生官方直连
-        val candidateUrls = info.mirrorUrls + listOf(info.downloadUrl)
+        val allCandidates = mutableListOf<DownloadChannel>().apply {
+            add(DownloadChannel("官方直连 (加速器极速)", info.downloadUrl))
+            add(DownloadChannel("国内极速镜像 (ghfast)", "https://ghfast.top/${info.downloadUrl}"))
+            add(DownloadChannel("国内极速镜像 (ghp.ci)", "https://ghp.ci/${info.downloadUrl}"))
+            add(DownloadChannel("国内加速镜像 (gh-proxy)", "https://gh-proxy.com/${info.downloadUrl}"))
+            add(DownloadChannel("国内备用镜像 (ghproxy)", "https://ghproxy.net/${info.downloadUrl}"))
+        }
+
+        // 步骤 1：轻量并发测速竞速（1200ms），选出响应最快的通道排在首位
+        val rankedChannels = rankChannelsBySpeed(allCandidates)
         var lastException: Exception? = null
 
-        for (url in candidateUrls) {
+        for (channel in rankedChannels) {
             try {
-                Log.d(TAG, "Starting download from: $url")
+                Log.d(TAG, "Attempting download from channel [${channel.name}]: ${channel.url}")
                 val request = Request.Builder()
-                    .url(url)
+                    .url(channel.url)
                     .header("User-Agent", "Mozilla/5.0 (Linux; Android) MQTT-Assistant")
                     .build()
 
@@ -235,24 +252,51 @@ object AppUpdateManager {
 
                 body.byteStream().use { input ->
                     FileOutputStream(targetFile).use { output ->
-                        val buffer = ByteArray(16 * 1024)
+                        val buffer = ByteArray(64 * 1024)
                         var bytesRead: Int
                         var totalRead = 0L
-                        var lastUpdateTime = 0L
+                        var lastProgressUiTime = 0L
+                        var speedSampleStartTime = System.currentTimeMillis()
+                        var speedSampleBytes = 0L
+                        var currentSpeedText = "-- KB/s"
+                        val connectionStartTime = System.currentTimeMillis()
 
                         while (input.read(buffer).also { bytesRead = it } != -1) {
                             output.write(buffer, 0, bytesRead)
                             totalRead += bytesRead
+                            speedSampleBytes += bytesRead
+
                             val now = System.currentTimeMillis()
-                            if (now - lastUpdateTime > 60 || totalRead == contentLength) {
-                                lastUpdateTime = now
+
+                            // 低速熔断看门狗：前 4 秒如果平均速度低于 120 KB/s，主动断开当前通道换更快的通道
+                            val elapsedSec = (now - connectionStartTime) / 1000.0
+                            if (elapsedSec >= 4.0 && totalRead < contentLength * 0.9) {
+                                val avgSpeedKb = (totalRead / 1024.0) / elapsedSec
+                                if (avgSpeedKb < 120.0) {
+                                    Log.w(TAG, "Watchdog triggered: speed ${avgSpeedKb.toInt()} KB/s < 120 KB/s on ${channel.name}")
+                                    throw IOException("当前通道连接速率过低 (${avgSpeedKb.toInt()} KB/s)，自动切换更优通道")
+                                }
+                            }
+
+                            // 采样计算瞬时下载速度（每 400ms 刷新一次速度值）
+                            val sampleElapsedSec = (now - speedSampleStartTime) / 1000.0
+                            if (sampleElapsedSec >= 0.4) {
+                                val bytesPerSec = (speedSampleBytes / sampleElapsedSec).toLong()
+                                currentSpeedText = formatSpeed(bytesPerSec)
+                                speedSampleBytes = 0L
+                                speedSampleStartTime = now
+                            }
+
+                            // 刷新 UI 进度（约 120ms 一次）
+                            if (now - lastProgressUiTime >= 120 || totalRead == contentLength) {
+                                lastProgressUiTime = now
                                 val progress = if (contentLength > 0) {
                                     (totalRead.toFloat() / contentLength.toFloat()).coerceIn(0f, 1f)
                                 } else {
                                     0f
                                 }
                                 withContext(Dispatchers.Main) {
-                                    onProgress(progress, totalRead, contentLength)
+                                    onProgress(progress, totalRead, contentLength, currentSpeedText, channel.name)
                                 }
                             }
                         }
@@ -262,19 +306,72 @@ object AppUpdateManager {
 
                 // 完整性校验：下载后的文件必须大于 3MB（防止把 HTML 404 错误页当成 APK 保存）
                 if (targetFile.exists() && targetFile.length() > 3 * 1024 * 1024) {
-                    Log.d(TAG, "Download succeeded from $url, size=${targetFile.length()}")
+                    Log.d(TAG, "Download successfully completed from ${channel.name}, size=${targetFile.length()}")
                     return@withContext Result.success(targetFile)
                 } else {
                     targetFile.delete()
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "Download attempt failed for $url: ${e.message}")
+                Log.w(TAG, "Download channel [${channel.name}] failed: ${e.message}")
                 lastException = e
                 if (targetFile.exists()) targetFile.delete()
             }
         }
 
-        Result.failure(lastException ?: Exception("所有下载镜像通道均无法访问，请检查网络或开启代理重试"))
+        Result.failure(lastException ?: Exception("所有下载镜像通道均无法访问，建议点击【用浏览器下载】"))
+    }
+
+    private suspend fun rankChannelsBySpeed(candidates: List<DownloadChannel>): List<DownloadChannel> = withContext(Dispatchers.IO) {
+        try {
+            val scoredList = candidates.map { channel ->
+                async {
+                    val start = System.currentTimeMillis()
+                    val isAlive = try {
+                        val req = Request.Builder()
+                            .url(channel.url)
+                            .head()
+                            .header("User-Agent", "Mozilla/5.0 (Linux; Android) MQTT-Assistant")
+                            .build()
+                        val client = httpClient.newBuilder()
+                            .connectTimeout(1200, TimeUnit.MILLISECONDS)
+                            .readTimeout(1200, TimeUnit.MILLISECONDS)
+                            .build()
+                        client.newCall(req).execute().use { it.isSuccessful }
+                    } catch (_: Exception) {
+                        false
+                    }
+                    val duration = System.currentTimeMillis() - start
+                    Pair(channel, if (isAlive) duration else Long.MAX_VALUE)
+                }
+            }.awaitAll()
+
+            // 测速成功的优先按延迟从低到高排列，超时的放在最后
+            scoredList.sortedBy { it.second }.map { it.first }
+        } catch (_: Exception) {
+            candidates
+        }
+    }
+
+    fun formatSpeed(bytesPerSec: Long): String {
+        return when {
+            bytesPerSec >= 1024 * 1024 -> String.format(Locale.US, "%.1f MB/s", bytesPerSec / (1024.0 * 1024.0))
+            bytesPerSec >= 1024 -> "${bytesPerSec / 1024} KB/s"
+            else -> "$bytesPerSec B/s"
+        }
+    }
+
+    /**
+     * 调用系统外部浏览器下载 APK（逃生通道）
+     */
+    fun openInBrowser(context: Context, url: String) {
+        try {
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to open browser", e)
+        }
     }
 
     /**

@@ -331,15 +331,73 @@ fun AppUpdateDialog(
                                 )
                             }
 
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = SurfaceContainerLow,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "⚡ 速率: ${if (state.speedText.isNotBlank()) state.speedText else "测速连接中..."}",
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontFamily = FontFamily.Monospace,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = PrimaryBlack,
+                                            fontSize = 11.sp
+                                        )
+                                    )
+                                    Text(
+                                        text = state.currentChannel.ifBlank { "智能通道" },
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            color = OnSurfaceVariantGray,
+                                            fontSize = 11.sp
+                                        ),
+                                        maxLines = 1
+                                    )
+                                }
+                            }
+
                             Spacer(modifier = Modifier.height(16.dp))
 
-                            Text(
-                                text = "⚡ 正在启用国内专属开源镜像加速下载...",
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    color = OnSurfaceVariantGray,
-                                    fontSize = 11.sp
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                OutlinedButton(
+                                    onClick = {
+                                        AppUpdateManager.openInBrowser(context, state.info.downloadUrl)
+                                        onDismiss()
+                                    },
+                                    shape = RoundedCornerShape(8.dp),
+                                    border = BorderStroke(1.dp, OutlineVariantLight),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                                ) {
+                                    Icon(Icons.Default.OpenInBrowser, contentDescription = null, modifier = Modifier.size(14.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "外部浏览器下载",
+                                        fontSize = 11.sp,
+                                        color = OnSurfaceDark
+                                    )
+                                }
+
+                                Text(
+                                    text = "后台持续下载中",
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        color = OnSurfaceVariantGray,
+                                        fontSize = 11.sp
+                                    )
                                 )
-                            )
+                            }
                         }
                     }
 

@@ -17,25 +17,19 @@ android {
     applicationId = "com.aistudio.mqttassistant.wkpz"
     minSdk = 24
     targetSdk = 36
-    versionCode = 4
-    versionName = "2.0.2"
+    versionCode = 5
+    versionName = "2.0.3"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
 
   signingConfigs {
-    create("release") {
-      val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks"
+    create("appRelease") {
+      val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/mqtt-assistant-key.jks"
       storeFile = file(keystorePath)
-      storePassword = System.getenv("STORE_PASSWORD")
-      keyAlias = "upload"
-      keyPassword = System.getenv("KEY_PASSWORD")
-    }
-    create("debugConfig") {
-      storeFile = file("${rootDir}/debug.keystore")
-      storePassword = "android"
-      keyAlias = "androiddebugkey"
-      keyPassword = "android"
+      storePassword = System.getenv("STORE_PASSWORD") ?: "mqttassistant"
+      keyAlias = System.getenv("KEY_ALIAS") ?: "mqttassistant"
+      keyPassword = System.getenv("KEY_PASSWORD") ?: "mqttassistant"
     }
   }
 
@@ -44,16 +38,10 @@ android {
       isCrunchPngs = false
       isMinifyEnabled = false
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-      val releaseKeystore = file(System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks")
-      if (releaseKeystore.exists()) {
-        signingConfig = signingConfigs.getByName("release")
-      }
+      signingConfig = signingConfigs.getByName("appRelease")
     }
     debug {
-      val debugKeystore = file("${rootDir}/debug.keystore")
-      if (debugKeystore.exists()) {
-        signingConfig = signingConfigs.getByName("debugConfig")
-      }
+      signingConfig = signingConfigs.getByName("appRelease")
     }
   }
   compileOptions {

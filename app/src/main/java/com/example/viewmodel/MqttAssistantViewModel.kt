@@ -3280,9 +3280,9 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
 
     fun startDownloadUpdate(context: Context, info: UpdateInfo) {
         viewModelScope.launch {
-            updateUiState.value = UpdateUiState.Downloading(info, 0f, 0L, info.fileSize)
-            val downloadRes = AppUpdateManager.downloadApk(context, info) { progress, downloaded, total ->
-                updateUiState.value = UpdateUiState.Downloading(info, progress, downloaded, total)
+            updateUiState.value = UpdateUiState.Downloading(info, 0f, 0L, info.fileSize, "正在优选测速...", "智能路由探测")
+            val downloadRes = AppUpdateManager.downloadApk(context, info) { progress, downloaded, total, speedText, channelName ->
+                updateUiState.value = UpdateUiState.Downloading(info, progress, downloaded, total, speedText, channelName)
             }
             downloadRes.onSuccess { apkFile ->
                 downloadedApkFile = apkFile
@@ -3297,6 +3297,10 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 updateUiState.value = UpdateUiState.Error(err.localizedMessage ?: "下载安装包失败")
             }
         }
+    }
+
+    fun openBrowserDownload(context: Context, url: String) {
+        AppUpdateManager.openInBrowser(context, url)
     }
 
     fun installDownloadedApk(context: Context, apkFile: File) {
@@ -3350,7 +3354,9 @@ sealed class UpdateUiState {
         val info: UpdateInfo,
         val progress: Float,
         val downloadedBytes: Long,
-        val totalBytes: Long
+        val totalBytes: Long,
+        val speedText: String = "",
+        val currentChannel: String = ""
     ) : UpdateUiState()
     data class ReadyToInstall(val info: UpdateInfo, val apkFile: File) : UpdateUiState()
     data class PermissionRequired(val info: UpdateInfo, val apkFile: File) : UpdateUiState()
