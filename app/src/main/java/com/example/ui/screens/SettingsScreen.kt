@@ -1179,7 +1179,7 @@ fun SettingsScreen(
                         modifier = Modifier.size(15.dp)
                     )
                     Text(
-                        text = "MQTT Assistant v2.0.0 (Android Native)",
+                        text = "MQTT Assistant v2.0.1 (Android Native)",
                         style = MaterialTheme.typography.labelSmall.copy(
                             fontSize = 11.sp,
                             color = OnSurfaceVariantGray
