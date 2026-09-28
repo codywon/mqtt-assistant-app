@@ -91,6 +91,13 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         assistantViewModel.onAppResume()
     }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) {
+            assistantViewModel.onAppResume()
+        }
+    }
 }
 
 @Composable

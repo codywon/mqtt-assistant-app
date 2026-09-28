@@ -17,8 +17,8 @@ android {
     applicationId = "com.aistudio.mqttassistant.wkpz"
     minSdk = 24
     targetSdk = 36
-    versionCode = 3
-    versionName = "2.0.1"
+    versionCode = 4
+    versionName = "2.0.2"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }

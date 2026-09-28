@@ -518,16 +518,16 @@ fun SettingsScreen(
                             .defaultMinSize(minWidth = 68.dp),
                         shape = RoundedCornerShape(8.dp),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = PrimaryBlack,
-                            contentColor = OnPrimaryWhite
+                            containerColor = if (isBatteryOptimizationIgnored) Color(0xFFF3F4F6) else PrimaryBlack,
+                            contentColor = if (isBatteryOptimizationIgnored) PrimaryBlack else OnPrimaryWhite
                         ),
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
                     ) {
                         Text(
-                            text = if (isBatteryOptimizationIgnored) "查看状态" else "立即开启",
+                            text = if (isBatteryOptimizationIgnored) "已开启 · 查看" else "立即开启",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold,
-                            color = Color.White,
+                            color = if (isBatteryOptimizationIgnored) PrimaryBlack else Color.White,
                             maxLines = 1
                         )
                     }

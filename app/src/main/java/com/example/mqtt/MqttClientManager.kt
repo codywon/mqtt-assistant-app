@@ -71,8 +71,8 @@ object MqttClientManager {
     val isConnecting: Boolean
         get() = _isConnecting.get()
 
-    fun notifyConnectionState(isConnected: Boolean, cause: Throwable?) {
-        if (lastReportedConnectedState == isConnected) {
+    fun notifyConnectionState(isConnected: Boolean, cause: Throwable?, force: Boolean = false) {
+        if (!force && lastReportedConnectedState == isConnected) {
             return
         }
         lastReportedConnectedState = isConnected
@@ -135,6 +135,7 @@ object MqttClientManager {
             }
 
             _isConnecting.set(true)
+            lastReportedConnectedState = null
             try {
                 disconnectInternal(isIntentional = true)
 
@@ -233,7 +234,7 @@ object MqttClientManager {
 
                 client.connect(options)
                 _isConnecting.set(false)
-                notifyConnectionState(true, null)
+                notifyConnectionState(true, null, force = true)
                 Result.success(Unit)
             } catch (e: Throwable) {
                 _isConnecting.set(false)

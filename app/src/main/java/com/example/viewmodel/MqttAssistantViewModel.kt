@@ -1660,6 +1660,10 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
             connectionState.value = MqttConnectionState.CONNECTING
             val result = MqttClientManager.connect(serverConfig.value)
             if (result.isSuccess) {
+                connectionState.value = MqttConnectionState.CONNECTED
+                serverConfig.update { it.copy(isConnected = true) }
+                reconnectAttempt.value = 0
+                reconnectCountdown.value = 0
                 val activeCount = subscriptions.value.count { it.isEnabled }
                 showToast("连接已恢复，已同步 $activeCount 个主题订阅")
             } else {
@@ -1693,6 +1697,8 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
         }
     }
 
+    private var batteryProbeJob: Job? = null
+
     fun checkBatteryOptimizationStatus(context: Context) {
         try {
             val powerManager = context.getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
@@ -1721,6 +1727,27 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                     showToast("无法打开系统电池优化设置")
                 }
             }
+        }
+        startBatteryOptimizationProbe(context)
+    }
+
+    private fun startBatteryOptimizationProbe(context: Context) {
+        batteryProbeJob?.cancel()
+        batteryProbeJob = viewModelScope.launch {
+            val delays = listOf(300L, 500L, 800L, 1200L, 2000L, 3000L)
+            for (d in delays) {
+                delay(d)
+                val powerManager = context.getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
+                val isIgnored = powerManager?.isIgnoringBatteryOptimizations(context.packageName) == true
+                if (isIgnored) {
+                    if (!isBatteryOptimizationIgnored.value) {
+                        isBatteryOptimizationIgnored.value = true
+                        showToast("已开启忽略电池优化")
+                    }
+                    break
+                }
+            }
+            checkBatteryOptimizationStatus(context)
         }
     }
 

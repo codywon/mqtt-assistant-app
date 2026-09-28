@@ -115,12 +115,19 @@ fun AppTopBar(
                             .padding(horizontal = 7.dp, vertical = 3.dp)
                             .testTag("top_broker_badge")
                     ) {
+                        val effectiveState = when {
+                            isConnected && (connectionState == MqttConnectionState.CONNECTING || connectionState == MqttConnectionState.DISCONNECTED) -> {
+                                MqttConnectionState.CONNECTED
+                            }
+                            else -> connectionState
+                        }
+
                         Box(
                             modifier = Modifier
                                 .size(6.5.dp)
                                 .clip(CircleShape)
                                 .background(
-                                    when (connectionState) {
+                                    when (effectiveState) {
                                         MqttConnectionState.CONNECTED -> Color(0xFF10B981)
                                         MqttConnectionState.CONNECTING,
                                         MqttConnectionState.RECONNECTING -> PrimaryBlack.copy(alpha = 0.4f)
@@ -131,11 +138,11 @@ fun AppTopBar(
                         Spacer(modifier = Modifier.width(4.dp))
                         val badgeText = when {
                             brokerHost.isBlank() -> "未配置 Broker · 点击添加"
-                            connectionState == MqttConnectionState.CONNECTED -> brokerHost
-                            connectionState == MqttConnectionState.CONNECTING -> "正在连接..."
-                            connectionState == MqttConnectionState.RECONNECTING -> "重连中 (${reconnectCountdown}s)"
-                            connectionState == MqttConnectionState.DISCONNECTED -> "$brokerHost · 点击连接"
-                            connectionState == MqttConnectionState.ERROR -> "$brokerHost · 连接失败"
+                            effectiveState == MqttConnectionState.CONNECTED -> brokerHost
+                            effectiveState == MqttConnectionState.CONNECTING -> "正在连接..."
+                            effectiveState == MqttConnectionState.RECONNECTING -> "重连中 (${reconnectCountdown}s)"
+                            effectiveState == MqttConnectionState.DISCONNECTED -> "$brokerHost · 点击连接"
+                            effectiveState == MqttConnectionState.ERROR -> "$brokerHost · 连接失败"
                             else -> "未连接 · 点击连接"
                         }
                         Text(
@@ -143,7 +150,7 @@ fun AppTopBar(
                             style = MaterialTheme.typography.labelSmall.copy(
                                 fontSize = 11.sp,
                                 fontFamily = FontFamily.Monospace,
-                                color = if (connectionState == MqttConnectionState.CONNECTED) PrimaryBlack else OnSurfaceVariantGray
+                                color = if (effectiveState == MqttConnectionState.CONNECTED) PrimaryBlack else OnSurfaceVariantGray
                             ),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
