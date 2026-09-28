@@ -511,26 +511,10 @@ fun SettingsScreen(
                         )
                     }
                     Spacer(modifier = Modifier.width(16.dp))
-                    Button(
-                        onClick = { viewModel.requestIgnoreBatteryOptimization(context) },
-                        modifier = Modifier
-                            .height(34.dp)
-                            .defaultMinSize(minWidth = 68.dp),
-                        shape = RoundedCornerShape(8.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (isBatteryOptimizationIgnored) Color(0xFFF3F4F6) else PrimaryBlack,
-                            contentColor = if (isBatteryOptimizationIgnored) PrimaryBlack else OnPrimaryWhite
-                        ),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
-                    ) {
-                        Text(
-                            text = if (isBatteryOptimizationIgnored) "已开启 · 查看" else "立即开启",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = if (isBatteryOptimizationIgnored) PrimaryBlack else Color.White,
-                            maxLines = 1
-                        )
-                    }
+                    SystemPermissionStateButton(
+                        isGranted = isBatteryOptimizationIgnored,
+                        onClick = { viewModel.requestIgnoreBatteryOptimization(context) }
+                    )
                 }
             }
         }
@@ -637,41 +621,10 @@ fun SettingsScreen(
                         )
                     }
                     Spacer(modifier = Modifier.width(16.dp))
-                    if (isAllFilesAccessGranted) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(Color(0xFFDCFCE7))
-                                .clickable { viewModel.openAllFilesAccessSettings(context) }
-                                .padding(horizontal = 10.dp, vertical = 6.dp)
-                        ) {
-                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(15.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("已开启", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF047857))
-                        }
-                    } else {
-                        Button(
-                            onClick = { viewModel.openAllFilesAccessSettings(context) },
-                            modifier = Modifier
-                                .height(34.dp)
-                                .defaultMinSize(minWidth = 68.dp),
-                            shape = RoundedCornerShape(8.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = PrimaryBlack,
-                                contentColor = OnPrimaryWhite
-                            ),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
-                        ) {
-                            Text(
-                                text = "立即开启",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = Color.White,
-                                maxLines = 1
-                            )
-                        }
-                    }
+                    SystemPermissionStateButton(
+                        isGranted = isAllFilesAccessGranted,
+                        onClick = { viewModel.openAllFilesAccessSettings(context) }
+                    )
                 }
 
                 // Metrics cards (1:1 绝对等高与严格对称排版)
@@ -1843,6 +1796,67 @@ private fun BrokerProfileEditDialog(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun SystemPermissionStateButton(
+    isGranted: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    if (isGranted) {
+        Surface(
+            shape = RoundedCornerShape(8.dp),
+            color = Color(0xFFDCFCE7),
+            border = BorderStroke(1.dp, Color(0xFFA7F3D0)),
+            modifier = modifier
+                .height(34.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .clickable { onClick() }
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+                modifier = Modifier.padding(horizontal = 10.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.CheckCircle,
+                    contentDescription = null,
+                    tint = Color(0xFF10B981),
+                    modifier = Modifier.size(15.dp)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = "已开启",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFF047857),
+                    maxLines = 1
+                )
+            }
+        }
+    } else {
+        Button(
+            onClick = onClick,
+            modifier = modifier
+                .height(34.dp)
+                .defaultMinSize(minWidth = 68.dp),
+            shape = RoundedCornerShape(8.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = PrimaryBlack,
+                contentColor = OnPrimaryWhite
+            ),
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
+        ) {
+            Text(
+                text = "立即开启",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color.White,
+                maxLines = 1
+            )
         }
     }
 }
