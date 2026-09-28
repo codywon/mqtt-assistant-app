@@ -539,7 +539,7 @@ object TslBuiltinTemplates {
         id = "builtin_lepu_pc60_continuous_v1",
         name = "乐普血氧仪 PC-60 连续实时监测协议",
         format = TslFormat.HEX,
-        matchTopic = "Collect/SPO2_Report/#, medical/+/oximeter/continuous/#",
+        matchTopic = "Collect/SPO2_Report/#, Collect/SP02_Report/#, medical/+/oximeter/continuous/#",
         builtin = true,
         enabled = true,
         fields = listOf(
@@ -618,7 +618,7 @@ object TslBuiltinTemplates {
         id = "builtin_lepu_pc60_spot_check_v1",
         name = "乐普血氧仪 PC-60 单次点测结果协议",
         format = TslFormat.HEX,
-        matchTopic = "Collect/SPO2_Report/#, medical/+/oximeter/spot/#",
+        matchTopic = "Collect/SPO2_Report/#, Collect/SP02_Report/#, medical/+/oximeter/spot/#",
         builtin = true,
         enabled = true,
         fields = listOf(

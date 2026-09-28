@@ -87,9 +87,11 @@ object TslParseEngine {
 
     /**
      * 将 Hex 字符串解析为字节数组，然后逐字段按偏移量切片、按类型解包
+     * 具备智能网关解包能力：若网关将 Hex 封装在 JSON 载荷中 (如 {"data_value": "550e03..."})，自动提取内部真实 Hex
      */
     private fun parseHexPayload(payload: String, fields: List<TslField>): List<TslParsedValue> {
-        val bytes = hexStringToBytes(payload) ?: return emptyList()
+        val rawHex = extractHexFromPayload(payload)
+        val bytes = hexStringToBytes(rawHex) ?: return emptyList()
         if (bytes.isEmpty()) return emptyList()
 
         return fields.mapNotNull { field ->
@@ -100,6 +102,50 @@ object TslParseEngine {
                 null
             }
         }
+    }
+
+    /**
+     * 智能网关载荷解包 (Gateway Wrapped Hex Unpacker):
+     * 工业/医疗现场中，很多物联网网关收到蓝牙/串口 Hex 报文后，会包装成 JSON 格式上报 MQTT Broker。
+     * 例如：{ "data_value": "550e03180c050800008100514db8", "bat_voltage": 3784, ... }
+     * 本方法自动识别并提取内部包裹的真实 Hex 字符串。若本身就是纯 Hex 则直接返回。
+     */
+    fun extractHexFromPayload(payload: String): String {
+        val trimmed = payload.trim()
+        if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+            try {
+                val json = JSONObject(trimmed)
+                // 常见网关封装 Hex 的键名优先级列表 (现场以 data_value 最为典型)
+                val candidateKeys = listOf(
+                    "data_value", "dataValue", "data", "raw_data", "rawData",
+                    "raw", "payload", "hex", "hexData", "hex_data", "value", "msg", "content", "stream"
+                )
+                for (key in candidateKeys) {
+                    if (json.has(key)) {
+                        val v = json.optString(key, "").trim()
+                        if (isLikelyHexString(v)) return v
+                    }
+                }
+                // 若预设键未命中，自动扫描 JSON 顶级字段寻找最长的有效 Hex 字符串
+                var longestHex = ""
+                val keys = json.keys()
+                while (keys.hasNext()) {
+                    val k = keys.next()
+                    val v = json.optString(k, "").trim()
+                    if (isLikelyHexString(v) && v.length > longestHex.length) {
+                        longestHex = v
+                    }
+                }
+                if (longestHex.isNotBlank()) return longestHex
+            } catch (_: Exception) {}
+        }
+        return trimmed
+    }
+
+    private fun isLikelyHexString(str: String): Boolean {
+        val clean = str.trim().replace(" ", "").replace("0x", "").replace("0X", "").replace("-", "").replace("\"", "")
+        if (clean.length < 4 || clean.length % 2 != 0) return false
+        return clean.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }
     }
 
     /**
@@ -637,6 +683,7 @@ object TslParseEngine {
      */
     fun hexStringToBytes(hex: String): ByteArray? {
         val cleaned = hex.trim()
+            .replace("\"", "").replace("'", "")
             .replace("0x", "").replace("0X", "")
             .replace("-", " ")
             .replace(",", " ")
