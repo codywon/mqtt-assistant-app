@@ -125,6 +125,8 @@ fun MqttAssistantApp(
         viewModel.toastEvent.collectLatest { message ->
             snackbarHostState.showSnackbar(message = message, withDismissAction = false)
         }
+    }
+
     val isAiChatRoute = currentRoute == AppScreen.AiChat.route
     val context = LocalContext.current
     val updateUiState by viewModel.updateUiState.collectAsState()

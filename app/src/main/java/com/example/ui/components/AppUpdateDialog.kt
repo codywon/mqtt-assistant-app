@@ -487,6 +487,7 @@ fun AppUpdateDialog(
                             }
                         }
                     }
+                    else -> {}
                 }
             }
         }
