@@ -83,27 +83,34 @@ import org.commonmark.node.ThematicBreak
 import org.commonmark.parser.Parser
 
 /**
- * CJK (中日韩) 智能 Markdown 标点定界符归一化引擎：
+ * 大模型友好型 CJK (中日韩) Markdown 规整引擎：
  * 
- * 解决 CommonMark 国际规范与中文标点排版习惯冲突的业界著名难题：
- * 在 CommonMark 规范 6.2 节中，定界符 (如 ** 或 *) 若紧接标点符号 (如 “"‘'（【《 等)，
- * 必须“前置空白字符或标点”才允许开启加粗；
- * 若内部以标点结尾 (如 ”'）】》！？等)，必须“后置空白字符或标点”才允许闭合加粗。
- * 
- * 在中文排版中，汉字与标点之间通常不含空格（例如：`汽车的**“发动机”**——` 或 `**（高频）**通信`）。
- * 此时标准 CommonMark 解析器会严格判定其为词内标记而拒绝解析加粗，导致界面直接暴露原始 ** 符号！
- * 
- * 本归一化引擎自动保护代码块，在文本定界符边界智能补齐合规空白，100% 根除粗体遇到中英文标点失效的顽疾。
+ * 1. 自动转换伪列表符号 (•, ◦, ▪ 等) 为标准 Markdown 列表符号 (- )，激活官方 AST 挂起缩进列表；
+ * 2. 彻底清除粗体定界符内侧的冗余空白 (如 "** 文本 **" 或 "零冗余 **。")，严格满足 CommonMark 6.2 闭合规范；
+ * 3. 精准区分 CJK 开启标点与闭合标点，杜绝误插空格造成粗体无法闭合；
+ * 4. 自动保护所有行内代码与代码块，严禁误伤代码内容。
  */
 object CjkMarkdownNormalizer {
     private val CODE_BLOCK_PATTERN = Regex("""(```[\s\S]*?```|`[^`\n]+`)""")
-    // 匹配汉字/字母紧贴 ** 且内部紧跟中英文标点（如 的**“ -> 的 **“）
-    private val OPEN_BOLD_REGEX = Regex("""([\u4e00-\u9fa5\w])(\*{1,2}|_{1,2})([^\s\w\u4e00-\u9fa5*_])""")
-    // 匹配内部以中英文标点结尾且外部紧贴汉字/字母（如 ！”**测试 -> ！”** 测试，或 ”**只认 -> ”** 只认）
-    private val CLOSE_BOLD_REGEX = Regex("""([^\s\w\u4e00-\u9fa5*_])(\*{1,2}|_{1,2})([\u4e00-\u9fa5\w])""")
+    
+    // 伪列表符号（大模型经常用 Unicode 圆点代替 Markdown 连字符）
+    private val PSEUDO_LIST_REGEX = Regex("""(?m)^([\t ]*)[•◦▪◆]\s+""")
+
+    // 成对粗体定界符内侧空白清除（如 "** 文本 **" -> "**文本**"，"零冗余 **。" -> "零冗余**。"）
+    private val INNER_BOLD_WHITESPACE_ASTERISK = Regex("""\*\*[\t ]*([^*]+?)[\t ]*\*\*""")
+    private val INNER_BOLD_WHITESPACE_UNDERSCORE = Regex("""__[\t ]*([^_]+?)[\t ]*__""")
+
+    // CJK 开启标点与闭合标点
+    private const val OPEN_PUNC = """[“‘（【《〈〔\[\(\{]"""
+    private const val CLOSE_PUNC = """[”’）】》〉〕\]\)\}。，！？；：]"""
+
+    // 汉字/字母紧贴 ** + 开启标点 (如 汽车的**“发动机 -> 汽车的 **“发动机)
+    private val OPEN_BOLD_REGEX = Regex("""([\u4e00-\u9fa5\w])(\*\*)($OPEN_PUNC)""")
+    // 闭合标点 + ** + 汉字/字母 (如 发动机”**非常好 -> 发动机”** 非常好)
+    private val CLOSE_BOLD_REGEX = Regex("""($CLOSE_PUNC)(\*\*)([\u4e00-\u9fa5\w])""")
 
     fun normalize(rawMarkdown: String): String {
-        if (rawMarkdown.isEmpty() || (!rawMarkdown.contains("*") && !rawMarkdown.contains("_"))) {
+        if (rawMarkdown.isEmpty() || (!rawMarkdown.contains("*") && !rawMarkdown.contains("_") && !rawMarkdown.contains("•"))) {
             return rawMarkdown
         }
 
@@ -131,7 +138,15 @@ object CjkMarkdownNormalizer {
     }
 
     private fun fixSegment(text: String): String {
-        var s = OPEN_BOLD_REGEX.replace(text) { m ->
+        // 1. 规范化伪列表符号
+        var s = PSEUDO_LIST_REGEX.replace(text) { "${it.groupValues[1]}- " }
+
+        // 2. 剥除成对加粗内侧的空格，让其完美满足 CommonMark Left/Right-flanking 规范
+        s = INNER_BOLD_WHITESPACE_ASTERISK.replace(s) { "**${it.groupValues[1]}**" }
+        s = INNER_BOLD_WHITESPACE_UNDERSCORE.replace(s) { "__${it.groupValues[1]}__" }
+
+        // 3. 精准修复 CJK 标点分界
+        s = OPEN_BOLD_REGEX.replace(s) { m ->
             "${m.groupValues[1]} ${m.groupValues[2]}${m.groupValues[3]}"
         }
         s = CLOSE_BOLD_REGEX.replace(s) { m ->
@@ -391,16 +406,46 @@ private fun RenderAstBlockNode(node: Node, isUser: Boolean) {
 }
 
 /**
- * 递归构建包含加粗、行内代码、斜体、删除线和链接的 AnnotatedString
+ * 递归构建包含加粗、行内代码、斜体、删除线和链接的 AnnotatedString，
+ * 并在块级别进行成对粗体兜底清理，确保跨节点换行或复杂嵌套也绝不裸露 ** 符号。
  */
 private fun buildInlineAnnotatedString(parentNode: Node, isUser: Boolean): AnnotatedString {
-    return buildAnnotatedString {
+    val initial = buildAnnotatedString {
         appendInlineChildren(parentNode, this, isUser)
     }
+    return fixUnrenderedBoldInAnnotatedString(initial)
 }
 
-// 行内粗体兜底正则（第二道防线：即使极端嵌套逃脱了 CommonMark AST 解析，在文本节点仍能秒级兜底渲染为粗体）
-private val INLINE_FALLBACK_BOLD_REGEX = Regex("""\*\*(.+?)\*\*""")
+// 行内与全局粗体兜底正则（容忍空白与跨节点漏网）
+private val GLOBAL_FALLBACK_BOLD_REGEX = Regex("""\*\*[\t ]*([^*]+?)[\t ]*\*\*""")
+
+private fun fixUnrenderedBoldInAnnotatedString(source: AnnotatedString): AnnotatedString {
+    val rawText = source.text
+    if (!rawText.contains("**")) return source
+    if (!GLOBAL_FALLBACK_BOLD_REGEX.containsMatchIn(rawText)) return source
+
+    return buildAnnotatedString {
+        var cursor = 0
+        GLOBAL_FALLBACK_BOLD_REGEX.findAll(rawText).forEach { match ->
+            val matchStart = match.range.first
+            val matchEnd = match.range.last + 1
+            val innerBoldContent = match.groupValues[1]
+
+            if (matchStart > cursor) {
+                append(source.subSequence(cursor, matchStart))
+            }
+
+            pushStyle(SpanStyle(fontWeight = FontWeight.Bold))
+            append(innerBoldContent)
+            pop()
+
+            cursor = matchEnd
+        }
+        if (cursor < rawText.length) {
+            append(source.subSequence(cursor, rawText.length))
+        }
+    }
+}
 
 private fun appendInlineChildren(parent: Node, builder: AnnotatedString.Builder, isUser: Boolean) {
     var child = parent.firstChild
@@ -484,7 +529,7 @@ private fun appendMdTextWithFallbacks(
     }
 
     var lastIndex = 0
-    INLINE_FALLBACK_BOLD_REGEX.findAll(literal).forEach { match ->
+    GLOBAL_FALLBACK_BOLD_REGEX.findAll(literal).forEach { match ->
         val start = match.range.first
         val end = match.range.last + 1
         if (start > lastIndex) {
