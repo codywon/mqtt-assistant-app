@@ -130,7 +130,7 @@ object MqttClientManager {
                 currentConfig.cleanSession == config.cleanSession
             ) {
                 Log.d(TAG, "Already connected with identical configuration, skipping disconnect-reconnect.")
-                notifyConnectionState(true, null)
+                notifyConnectionState(true, null, force = true)
                 return@withContext Result.success(Unit)
             }
 

@@ -438,10 +438,11 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 batch.clear()
                 val maxBuffer = serverConfig.value.bufferThreshold
 
-                // 1. TSL 物模型与 AI 哨兵雷达拦截判定
+                // 1. TSL 物模型与 AI 哨兵雷达拦截判定（在后台协程池中统一并行计算）
                 val protos = tslProtocols.value
                 val trap = activeRadarTrap.value
                 var newlyInterceptedCount = 0
+                val parsedTslBatchMap = mutableMapOf<String, com.example.model.TslParseResult>()
 
                 val processedBatch = currentBatch.map { pkt ->
                     val tslRes = if (protos.isNotEmpty()) {
@@ -452,6 +453,10 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                             protocols = protos
                         )
                     } else null
+
+                    if (tslRes != null) {
+                        parsedTslBatchMap[pkt.id] = tslRes
+                    }
 
                     val isHit = if (trap != null) {
                         val hit = com.example.engine.TslParseEngine.evaluateTrap(pkt.topic, pkt.payload, tslRes, trap)
@@ -466,34 +471,28 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                     activeRadarTrap.update { it?.copy(capturedCount = it.capturedCount + newlyInterceptedCount) }
                 }
 
-                // 2. 纯内存高速环形存储与主线程极速发射 (零 SQLite 写入，零闪存磨损)
+                // 2. 纯内存高速环形存储 (零 SQLite 写入，零闪存磨损)
                 val allPackets = com.example.data.MemoryPacketStore.addPackets(processedBatch, maxBuffer)
+
+                // 3. 在后台线程预计算并合并 TSL 结果字典，彻底将主线程从解析循环与集合修剪中解放出来
+                val updatedTslResults: Map<String, com.example.model.TslParseResult>? = if (parsedTslBatchMap.isNotEmpty()) {
+                    val currentMap = tslParseResults.value.toMutableMap()
+                    currentMap.putAll(parsedTslBatchMap)
+                    if (currentMap.size > maxBuffer * 2) {
+                        val liveIds = allPackets.map { it.id }.toSet()
+                        currentMap.keys.retainAll(liveIds)
+                    }
+                    currentMap
+                } else null
+
+                val topicCounts = processedBatch.groupBy { it.topic }
+
                 withContext(Dispatchers.Main) {
                     livePackets.value = allPackets
-
-                    // TSL 物模型引擎：实时自动解析新到达的报文（微秒级，零额外 I/O）
-                    if (protos.isNotEmpty()) {
-                        val newResults = tslParseResults.value.toMutableMap()
-                        for (pkt in processedBatch) {
-                            val result = com.example.engine.TslParseEngine.tryParse(
-                                topic = pkt.topic,
-                                payload = pkt.payload,
-                                category = pkt.category,
-                                protocols = protos
-                            )
-                            if (result != null) {
-                                newResults[pkt.id] = result
-                            }
-                        }
-                        // 保持缓存大小与 livePackets 对齐，防止无限膨胀
-                        if (newResults.size > maxBuffer * 2) {
-                            val liveIds = allPackets.map { it.id }.toSet()
-                            newResults.keys.retainAll(liveIds)
-                        }
-                        tslParseResults.value = newResults
+                    if (updatedTslResults != null) {
+                        tslParseResults.value = updatedTslResults
                     }
 
-                    val topicCounts = processedBatch.groupBy { it.topic }
                     subscriptions.update { list ->
                         list.map { sub ->
                             if (sub.isEnabled) {
@@ -716,6 +715,10 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
             connectionState.value = MqttConnectionState.CONNECTING
             val result = MqttClientManager.connect(serverConfig.value)
             if (result.isSuccess) {
+                connectionState.value = MqttConnectionState.CONNECTED
+                serverConfig.update { it.copy(isConnected = true) }
+                reconnectAttempt.value = 0
+                reconnectCountdown.value = 0
                 val activeCount = subscriptions.value.count { it.isEnabled }
                 showToast("已连接至 ${serverConfig.value.host}:${serverConfig.value.port} (已激活 $activeCount 个主题)")
             } else {
@@ -1677,23 +1680,67 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
     }
 
     /**
-     * 应用切回前台时即刻探活自愈：
-     * 解决“最小化打开其他程序再回来每次都断开/重连”的问题，只要发现未连接瞬间发起重连，不让用户等待。
+     * 应用切回前台时即刻探活自愈与状态对齐：
+     * 1. 彻底解决“最小化打开其他程序再回来每次都断开/重连”与“已连接却显示正在连接”的状态漂移；
+     * 2. 底层长连接存活时秒级对齐 UI 状态并主动 Ping；
+     * 3. 底层长连接断开时 0ms 瞬间发起自愈重连。
      */
     fun onAppResume() {
         checkBatteryOptimizationStatus(getApplication())
         checkAllFilesAccessStatus(getApplication())
-        if (!serverConfig.value.isConnected && !isManualDisconnecting && serverConfig.value.autoReconnect && brokerProfiles.value.isNotEmpty() && serverConfig.value.host.isNotBlank()) {
-            Log.d("MqttAssistantViewModel", "onAppResume: app returned to foreground, probing immediate reconnect")
-            startAutoReconnectLoop(isImmediate = true)
+
+        val isSocketConnected = MqttClientManager.isConnected
+        if (isSocketConnected) {
+            if (connectionState.value != MqttConnectionState.CONNECTED || !serverConfig.value.isConnected) {
+                connectionState.value = MqttConnectionState.CONNECTED
+                serverConfig.update { it.copy(isConnected = true) }
+                reconnectAttempt.value = 0
+                reconnectCountdown.value = 0
+            }
+            viewModelScope.launch(Dispatchers.IO) {
+                try {
+                    MqttClientManager.pingOrKeepAlive()
+                } catch (_: Exception) {}
+            }
+        } else {
+            if (!isManualDisconnecting && serverConfig.value.autoReconnect && brokerProfiles.value.isNotEmpty() && serverConfig.value.host.isNotBlank()) {
+                Log.d("MqttAssistantViewModel", "onAppResume: app returned to foreground, probing immediate reconnect")
+                startAutoReconnectLoop(isImmediate = true)
+            } else if (!isManualDisconnecting) {
+                if (connectionState.value != MqttConnectionState.DISCONNECTED || serverConfig.value.isConnected) {
+                    connectionState.value = MqttConnectionState.DISCONNECTED
+                    serverConfig.update { it.copy(isConnected = false) }
+                }
+            }
         }
     }
+
+    private var allFilesProbeJob: Job? = null
 
     fun checkAllFilesAccessStatus(context: Context) {
         try {
             isAllFilesAccessGranted.value = ArchivedExcelReader.hasAllFilesAccess(context)
         } catch (e: Exception) {
             Log.w("MqttAssistantViewModel", "Failed to check all files access status", e)
+        }
+    }
+
+    fun startAllFilesAccessProbe(context: Context) {
+        allFilesProbeJob?.cancel()
+        allFilesProbeJob = viewModelScope.launch {
+            val delays = listOf(300L, 500L, 800L, 1200L, 2000L, 3000L)
+            for (d in delays) {
+                delay(d)
+                val isGranted = ArchivedExcelReader.hasAllFilesAccess(context)
+                if (isGranted) {
+                    if (!isAllFilesAccessGranted.value) {
+                        isAllFilesAccessGranted.value = true
+                        showToast("已获取所有文件访问权限")
+                    }
+                    break
+                }
+            }
+            checkAllFilesAccessStatus(context)
         }
     }
 
@@ -3037,9 +3084,10 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
 
     // --- 场景 5: 外部 Excel 日志免权限导入与权限自愈 ---
 
-    fun hasAllFilesAccess(context: Context): Boolean = ArchivedExcelReader.hasAllFilesAccess(context)
-
-    fun openAllFilesAccessSettings(context: Context) = ArchivedExcelReader.openAllFilesAccessSettings(context)
+    fun openAllFilesAccessSettings(context: Context) {
+        ArchivedExcelReader.openAllFilesAccessSettings(context)
+        startAllFilesAccessProbe(context)
+    }
 
     fun importExternalExcel(context: Context, uri: Uri) {
         viewModelScope.launch(Dispatchers.IO) {

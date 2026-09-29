@@ -186,8 +186,8 @@ fun LiveLogsScreen(
 
     // 智能自动吸底与防闪屏状态机：
     // 1. 默认处于 autoScrollToBottom 自动向下吸底追踪状态；
-    // 2. 当用户向上滚动离开底部时，自动停止吸底，保障自由翻看历史不受干扰；
-    // 3. 当用户手动滑回最底部、解除暂停或点击悬浮回到底部按钮时，平滑重新恢复吸底！
+    // 2. 当用户手势拖拽或惯性滚动离开底部翻看历史时，自动停止吸底，保障自由翻看历史不受干扰；
+    // 3. 当用户手动滑回最底部（停止滚动后）、解除暂停或点击悬浮回到底部按钮时，平滑重新恢复吸底！
     var autoScrollToBottom by remember { mutableStateOf(true) }
 
     val isAtBottom by remember {
@@ -203,24 +203,26 @@ fun LiveLogsScreen(
         }
     }
 
-    // 仅监听用户真实手势拖拽（彻底排除系统自动滚动导致的误判中断）：
-    val isDragged by listState.interactionSource.collectIsDraggedAsState()
-    LaunchedEffect(isDragged) {
-        if (isDragged) {
-            if (!isAtBottom) {
-                autoScrollToBottom = false
-            } else {
-                autoScrollToBottom = true
-            }
+    // 监听拖拽与惯性滚动：只要用户主动离开底部翻看历史，立即解除底部自动吸附，避免打断阅读
+    LaunchedEffect(listState.isScrollInProgress) {
+        if (listState.isScrollInProgress && !isAtBottom) {
+            autoScrollToBottom = false
+        }
+    }
+
+    // 当用户手动滑回最底部且滚动停止时，智能自动恢复底部吸附
+    LaunchedEffect(isAtBottom, listState.isScrollInProgress) {
+        if (isAtBottom && !listState.isScrollInProgress) {
+            autoScrollToBottom = true
         }
     }
 
     // 毫秒级零抖动自动向下吸底推进：
     // 使用最新报文唯一 ID (latestPacketId) 作为触发键。
-    // 即使报文总量达到 maxBuffer 截断上限导致 filteredPackets.size 恒定，只要有新消息进来 ID 必变，彻底终结假死停滚！
+    // 在用户滚动中 (!listState.isScrollInProgress) 绝不打断抢夺屏幕
     val latestPacketId = filteredPackets.lastOrNull()?.id ?: ""
     LaunchedEffect(latestPacketId, autoScrollToBottom, isPaused) {
-        if (autoScrollToBottom && !isPaused && filteredPackets.isNotEmpty()) {
+        if (autoScrollToBottom && !isPaused && !listState.isScrollInProgress && filteredPackets.isNotEmpty()) {
             listState.scrollToItem(filteredPackets.size - 1)
         }
     }
@@ -507,7 +509,11 @@ fun LiveLogsScreen(
                         }
                     }
                 } else {
-                    items(filteredPackets, key = { it.id }) { packet ->
+                    items(
+                        items = filteredPackets,
+                        key = { it.id },
+                        contentType = { "packet" }
+                    ) { packet ->
                         CompactMessageCard(
                             packet = packet,
                             tslResult = tslParseResults[packet.id],

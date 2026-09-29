@@ -219,7 +219,16 @@ data class TslParseResult(
      *    - 权重 5:  辅助诊断与次要参数 (rssi, seq, version, bat, snr, timestamp)
      * 4. 【首项兜底 (Fallback)】: 相同权重或无法区分时按物模型定义的第 1 个指标呈现。
      */
-    fun findKeyIndicator(): TslParsedValue? {
+    /**
+     * 核心关键指标（微型药丸专用）- 懒加载计算并常驻缓存，规避列表滚动高频重组反复打分
+     */
+    val keyIndicator: TslParsedValue? by lazy {
+        computeKeyIndicator()
+    }
+
+    fun findKeyIndicator(): TslParsedValue? = keyIndicator
+
+    private fun computeKeyIndicator(): TslParsedValue? {
         if (values.isEmpty()) return null
 
         // 1. 告警最高优先级（任何异常都无条件优先在药丸呈现）
