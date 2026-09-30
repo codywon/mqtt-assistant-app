@@ -614,7 +614,7 @@ fun AiChatScreen(
                                     }
                                 )
                                 DropdownMenuItem(
-                                    text = { Text("协议澄清规则库", fontSize = 13.5.sp, color = PrimaryBlack) },
+                                    text = { Text("私有协议规则库", fontSize = 13.5.sp, color = PrimaryBlack) },
                                     leadingIcon = {
                                         Icon(Icons.Default.Psychology, contentDescription = null, modifier = Modifier.size(18.dp), tint = PrimaryBlack)
                                     },
@@ -642,7 +642,7 @@ fun AiChatScreen(
                                     onClick = {
                                         showMoreMenu = false
                                         if (activeRadarTrap != null) {
-                                            viewModel.sendAiMessage("请详细汇报当前雷达哨兵的布控规则、拦截目标和捕获战报")
+                                            viewModel.sendAiMessage("请详细汇报当前雷达哨兵的布控规则、拦截目标和拦截记录与详情")
                                         } else {
                                             viewModel.showToast("当前未部署雷达哨兵，可对 AI 说'帮我盯住xx主题的xx异常'进行布控")
                                         }

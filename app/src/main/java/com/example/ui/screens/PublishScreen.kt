@@ -391,7 +391,7 @@ private fun PublishPresetCard(
                     .padding(horizontal = 10.dp, vertical = 6.dp)
             ) {
                 Text(
-                    text = preset.payload.ifBlank { "（无载荷内容）" }.replace("\n", " ").trim(),
+                    text = preset.payload.ifBlank { "（空载荷）" }.replace("\n", " ").trim(),
                     style = TextStyle(
                         fontFamily = FontFamily.Monospace,
                         fontSize = 12.sp,

@@ -612,7 +612,7 @@ fun LiveLogsScreen(
             },
             onCopyResult = {
                 clipboardManager.setPrimaryClip(ClipData.newPlainText("ai_inspection", inspectionResult))
-                viewModel.showToast("已复制 AI 透视结果")
+                viewModel.showToast("已复制 AI 分析结果")
             }
         )
     }
@@ -765,7 +765,7 @@ private fun CompactMessageCard(
                     ) {
                         Icon(
                             imageVector = Icons.Default.Psychology,
-                            contentDescription = "AI 结构化透视",
+                            contentDescription = "AI 分析",
                             tint = PrimaryBlack,
                             modifier = Modifier.size(16.dp)
                         )
@@ -1420,7 +1420,7 @@ private fun MessageDetailsModalDialog(
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = "AI 智能透视",
+                            text = "AI 分析",
                             style = TextStyle(
                                 fontSize = 12.5.sp,
                                 fontWeight = FontWeight.Bold,
@@ -2115,7 +2115,7 @@ private fun AiPacketInspectorDialog(
                             modifier = Modifier.size(20.dp)
                         )
                         Text(
-                            text = "AI 报文透视与解码",
+                            text = "AI 报文分析与解码",
                             style = TextStyle(
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Bold,
@@ -2186,7 +2186,7 @@ private fun AiPacketInspectorDialog(
                         ) {
                             ClaudeOrbitLoading(modifier = Modifier.size(36.dp))
                             Text(
-                                text = "正在匹配协议知识库与逆向切片...",
+                                text = "正在匹配协议规则并解析报文...",
                                 style = TextStyle(fontSize = 12.5.sp, color = OnSurfaceVariantGray)
                             )
                         }
@@ -2243,7 +2243,7 @@ private fun AiPacketInspectorDialog(
                             modifier = Modifier.size(13.dp)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text(text = "沉淀为规则", fontSize = 11.5.sp)
+                        Text(text = "存为协议规则", fontSize = 11.5.sp)
                     }
 
                     Button(
@@ -2266,7 +2266,7 @@ private fun AiPacketInspectorDialog(
     if (showSaveRuleModal) {
         AlertDialog(
             onDismissRequest = { showSaveRuleModal = false },
-            title = { Text("沉淀为此主题协议规则", fontSize = 16.sp, fontWeight = FontWeight.Bold) },
+            title = { Text("保存为协议规则", fontSize = 16.sp, fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
@@ -2291,7 +2291,7 @@ private fun AiPacketInspectorDialog(
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlack)
                 ) {
-                    Text("保存沉淀", color = Color.White)
+                    Text("保存规则", color = Color.White)
                 }
             },
             dismissButton = {

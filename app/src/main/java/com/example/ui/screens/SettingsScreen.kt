@@ -662,7 +662,7 @@ fun SettingsScreen(
                             )
                         }
                         Text(
-                            text = if (config.autoExportExcel) "满额自动切卷" else "超限循环覆盖",
+                            text = if (config.autoExportExcel) "满额自动导出" else "超限循环覆盖",
                             style = TextStyle(
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 10.sp,
@@ -994,7 +994,7 @@ fun SettingsScreen(
                             .padding(horizontal = 8.dp, vertical = 3.dp)
                     ) {
                         Text(
-                            text = if (aiConfig.apiKey.isNotBlank()) "已就绪" else "未配置 Key",
+                            text = if (aiConfig.apiKey.isNotBlank()) "已就绪" else "未配置 API Key",
                             style = TextStyle(
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.SemiBold,
@@ -1077,7 +1077,7 @@ fun SettingsScreen(
                             style = TextStyle(fontSize = 11.sp, color = OnSurfaceVariantGray)
                         )
                         Text(
-                            text = "${protocols.size} 条澄清规则",
+                            text = "${protocols.size} 条协议规则",
                             style = TextStyle(
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Medium,

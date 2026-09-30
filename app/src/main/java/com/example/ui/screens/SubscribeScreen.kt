@@ -934,7 +934,7 @@ private fun SubscriptionConfigModalDialog(
                     ) {
                         listOf(
                             2 to "2: 不发保留",
-                            0 to "0: 建立时发",
+                            0 to "0: 订阅即发",
                             1 to "1: 初次发送"
                         ).forEach { (rVal, rLabel) ->
                             val selected = retainHandling == rVal

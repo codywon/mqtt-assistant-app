@@ -255,7 +255,7 @@ fun AiSettingsDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = if (onlyProtocol) "硬件私有协议澄清库" else "AI 助手与协议澄清工作台",
+                        text = if (onlyProtocol) "硬件私有协议库" else "AI 助手与协议知识库",
                         style = TextStyle(
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Bold,
@@ -312,7 +312,7 @@ fun AiSettingsDialog(
                             onClick = { selectedTab = 1 },
                             text = {
                                 Text(
-                                    text = "协议澄清知识库 (${protocols.size})",
+                                    text = "私有协议知识库 (${protocols.size})",
                                     style = TextStyle(
                                         fontSize = 13.5.sp,
                                         fontWeight = if (selectedTab == 1) FontWeight.Bold else FontWeight.Normal,
@@ -797,7 +797,7 @@ private fun ProtocolListView(
                     style = TextStyle(fontSize = 13.5.sp, fontWeight = FontWeight.Bold, color = PrimaryBlack)
                 )
                 Text(
-                    text = "MQTT 主题澄清与 TSL 物模型规则",
+                    text = "MQTT 主题与 TSL 协议规则",
                     style = TextStyle(fontSize = 10.5.sp, color = OnSurfaceVariantGray)
                 )
             }
@@ -1021,7 +1021,7 @@ private fun ProtocolEditView(
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         Text(
-            text = if (initial.id.isNotBlank()) "编辑协议澄清说明" else "录入新硬件私有协议",
+            text = if (initial.id.isNotBlank()) "编辑协议规则说明" else "录入新硬件私有协议",
             style = TextStyle(fontSize = 13.5.sp, fontWeight = FontWeight.Bold, color = PrimaryBlack)
         )
 
@@ -1041,7 +1041,7 @@ private fun ProtocolEditView(
 
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(
-                text = "协议澄清描述",
+                text = "协议规则描述",
                 style = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = OnSurfaceDark)
             )
             Box(

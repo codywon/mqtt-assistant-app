@@ -2694,7 +2694,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 }
             } catch (_: Exception) { }
         }
-        showToast("协议澄清已保存并注入 Agent 知识库")
+        showToast("协议规则已保存至知识库")
     }
 
     fun importBatchProtocols(rawText: String) {
@@ -2794,7 +2794,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
         viewModelScope.launch(Dispatchers.IO) {
             newProtocols.forEach { storage.saveProtocolKnowledge(it) }
         }
-        showToast("已成功导入 ${newProtocols.size} 条硬件协议澄清规则")
+        showToast("已成功导入 ${newProtocols.size} 条硬件协议规则")
     }
 
     fun deleteProtocolKnowledge(id: String) {
@@ -2961,7 +2961,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
             val cfg = aiConfig.value
             if (cfg.apiKey.isBlank()) {
                 withContext(Dispatchers.Main) {
-                    packetInspectionResult.value = "⚠️ 未配置 AI 模型 API Key。请在「设置 - AI 大模型设置」中配置 API Key 后再使用 AI 透视功能。"
+                    packetInspectionResult.value = "⚠️ 未配置 AI 模型 API Key。请在「设置 - AI 大模型设置」中配置 API Key 后再使用 AI 分析功能。"
                     isPacketInspecting.value = false
                 }
                 return@launch
@@ -3035,7 +3035,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 },
                 onToolAction = { _ -> },
                 onError = { err ->
-                    packetInspectionResult.value = "AI 透视解析失败: $err"
+                    packetInspectionResult.value = "AI 分析失败: $err"
                     isPacketInspecting.value = false
                 },
                 onComplete = { _, _ ->
@@ -3058,7 +3058,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
         val analysis = packetInspectionResult.value
         dismissPacketInspection()
         navigateTo(AppScreen.AiChat)
-        val followUpPrompt = "关于报文 [${packet.topic}] (Payload: ${packet.payload.take(60)}...) 的 AI 透视结果，我想深入追问："
+        val followUpPrompt = "关于报文 [${packet.topic}] (Payload: ${packet.payload.take(60)}...) 的 AI 分析结果，我想深入追问："
         sendAiMessage(followUpPrompt)
     }
 
@@ -3072,7 +3072,7 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
             createdAt = System.currentTimeMillis()
         )
         saveProtocolKnowledge(proto)
-        showToast("已将此报文特征成功沉淀为新协议规则！")
+        showToast("已成功保存为新协议规则！")
     }
 
     // --- 场景 4: 一键生成“SI 现场验收与排查工程报告” ---
