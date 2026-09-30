@@ -92,6 +92,12 @@ class MainActivity : ComponentActivity() {
         assistantViewModel.onAppResume()
     }
 
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        assistantViewModel.onAppResume()
+    }
+
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus) {

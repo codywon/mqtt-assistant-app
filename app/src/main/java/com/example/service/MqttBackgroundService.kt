@@ -144,6 +144,95 @@ class MqttBackgroundService : Service() {
         private var totalPacketCount: Long = 0L
         private var latestMessageTopic: String? = null
 
+        fun formatCount(count: Long): String {
+            return when {
+                count < 10_000L -> "已收 ${count}条"
+                count < 100_000_000L -> {
+                    val wan = count / 10000.0
+                    val formatted = if (count % 10000L == 0L) {
+                        "${count / 10000L}万"
+                    } else {
+                        String.format(Locale.getDefault(), "%.1f万", wan)
+                    }
+                    "已收 ${formatted}条"
+                }
+                else -> {
+                    val yi = count / 100_000_000.0
+                    val formatted = if (count % 100_000_000L == 0L) {
+                        "${count / 100_000_000L}亿"
+                    } else {
+                        String.format(Locale.getDefault(), "%.1f亿", yi)
+                    }
+                    "已收 ${formatted}条"
+                }
+            }
+        }
+
+        fun createNotificationChannel(context: Context) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val channel = NotificationChannel(
+                    CHANNEL_ID,
+                    "MQTT 助手长连接常驻服务",
+                    NotificationManager.IMPORTANCE_LOW
+                ).apply {
+                    description = "确保应用最小化或息屏时维持 MQTT 长连接与实时接收"
+                    setShowBadge(false)
+                }
+                val manager = context.getSystemService(NotificationManager::class.java)
+                manager?.createNotificationChannel(channel)
+            }
+        }
+
+        fun buildForegroundNotification(context: Context): Notification {
+            createNotificationChannel(context)
+
+            // 严格遵循 Android 任务栈规范：通过 packageManager.getLaunchIntentForPackage 获取与桌面 Launcher 完全同源的入口 Intent
+            // 并赋予 FLAG_ACTIVITY_NEW_TASK or FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
+            // 彻底消除从 Service 上下文缺少 NEW_TASK 异常、CLEAR_TOP 销毁现有 Activity 以及 LauncherAlias 别名组件冲突导致的闪退！
+            val pm = context.packageManager
+            val launchIntent = pm.getLaunchIntentForPackage(context.packageName)?.apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
+            } ?: Intent(context, MainActivity::class.java).apply {
+                action = Intent.ACTION_MAIN
+                addCategory(Intent.CATEGORY_LAUNCHER)
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
+            }
+
+            val pendingIntent = PendingIntent.getActivity(
+                context,
+                0,
+                launchIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+
+            val title = if (currentBrokerHost.isNotBlank()) {
+                "MQTT 助手 · $currentBrokerHost"
+            } else {
+                "MQTT 助手"
+            }
+
+            val contentText = if (!latestMessageTopic.isNullOrBlank()) {
+                val countText = formatCount(totalPacketCount)
+                "$countText · 主题：$latestMessageTopic"
+            } else if (totalPacketCount > 0) {
+                val countText = formatCount(totalPacketCount)
+                "$countText · 运行正常"
+            } else {
+                "● 连接正常 · 等待报文推送"
+            }
+
+            return NotificationCompat.Builder(context, CHANNEL_ID)
+                .setContentTitle(title)
+                .setContentText(contentText)
+                .setSmallIcon(android.R.drawable.stat_notify_sync)
+                .setContentIntent(pendingIntent)
+                .setOngoing(true)
+                .setOnlyAlertOnce(true)
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .setCategory(NotificationCompat.CATEGORY_SERVICE)
+                .build()
+        }
+
         fun startKeepAlive(context: Context, brokerHost: String = "MQTT Broker") {
             try {
                 currentBrokerHost = brokerHost
@@ -162,6 +251,12 @@ class MqttBackgroundService : Service() {
             }
         }
 
+        /**
+         * 生产级前台服务通知更新：
+         * 直接通过系统 NotificationManager 进行原地刷新，严禁通过 startService 跨组件发 Intent！
+         * 1. 消除 Android 8.0+ 后台禁止 startService 抛出的 IllegalStateException；
+         * 2. 避免争抢 Service 的 onStartCommand 时序，防止引发 ForegroundServiceDidNotStartInTimeException 强杀。
+         */
         fun updateNotification(
             context: Context,
             brokerHost: String? = null,
@@ -175,13 +270,9 @@ class MqttBackgroundService : Service() {
             if (!isRunning) return
 
             try {
-                val intent = Intent(context, MqttBackgroundService::class.java).apply {
-                    action = ACTION_UPDATE_STATS
-                    putExtra(EXTRA_BROKER, currentBrokerHost)
-                    putExtra(EXTRA_COUNT, totalPacketCount)
-                    putExtra(EXTRA_TOPIC, latestMessageTopic)
-                }
-                context.startService(intent)
+                val notification = buildForegroundNotification(context)
+                val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+                manager?.notify(NOTIFICATION_ID, notification)
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to update notification stats", e)
             }
@@ -264,52 +355,40 @@ class MqttBackgroundService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        createNotificationChannel()
+        createNotificationChannel(this)
         MqttClientManager.addMessageListener(backgroundMessageListener)
         registerScreenStateReceiver()
         registerNetworkCallback()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        when (intent?.action) {
-            ACTION_STOP -> {
-                AlarmPulseReceiver.cancelPulse(this)
-                stopSelf()
-                return START_NOT_STICKY
-            }
-            ACTION_UPDATE_STATS -> {
-                val host = intent.getStringExtra(EXTRA_BROKER)
-                val count = intent.getLongExtra(EXTRA_COUNT, -1L)
-                val topic = intent.getStringExtra(EXTRA_TOPIC)
-                if (!host.isNullOrBlank()) currentBrokerHost = host
-                if (count >= 0L) totalPacketCount = count
-                if (topic != null) latestMessageTopic = topic
+        if (intent?.action == ACTION_STOP) {
+            AlarmPulseReceiver.cancelPulse(this)
+            stopSelf()
+            return START_NOT_STICKY
+        }
 
-                refreshNotification()
-                return START_STICKY
-            }
+        // 核心铁律：无论任何动作拉起服务，在 onStartCommand 第一行必须无条件完成 startForeground 绑定！
+        // 彻底根除因任何 action 分支提前 return 导致系统 5 秒倒计时超时
+        // 爆出 ForegroundServiceDidNotStartInTimeException 强杀闪退！
+        val startForegroundSuccess = startForegroundSafely()
+        if (!startForegroundSuccess) {
+            Log.e(TAG, "Failed to start foreground safely, stopping service to prevent system kill")
+            stopSelf()
+            return START_NOT_STICKY
         }
 
         isRunning = true
         acquireWakeAndWifiLocks()
 
-        val brokerHost = intent?.getStringExtra(EXTRA_BROKER) ?: currentBrokerHost
-        if (brokerHost.isNotBlank()) currentBrokerHost = brokerHost
-        val notification = buildForegroundNotification()
+        val host = intent?.getStringExtra(EXTRA_BROKER)
+        val count = intent?.getLongExtra(EXTRA_COUNT, -1L) ?: -1L
+        val topic = intent?.getStringExtra(EXTRA_TOPIC)
+        if (!host.isNullOrBlank()) currentBrokerHost = host
+        if (count >= 0L) totalPacketCount = count
+        if (topic != null) latestMessageTopic = topic
 
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                startForeground(
-                    NOTIFICATION_ID,
-                    notification,
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-                )
-            } else {
-                startForeground(NOTIFICATION_ID, notification)
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error starting foreground service", e)
-        }
+        refreshNotification()
 
         serviceScope.launch {
             ensureMqttConnected(applicationContext)
@@ -318,6 +397,39 @@ class MqttBackgroundService : Service() {
         AlarmPulseReceiver.scheduleNextPulse(this)
 
         return START_STICKY
+    }
+
+    /**
+     * 具备双重降级容灾的生产级 startForeground：
+     * 1. 优先尝试带 FOREGROUND_SERVICE_TYPE_DATA_SYNC 声明启动；
+     * 2. 若在 Android 14+ 遇到类型限制抛出异常，自动降级为兼容普通前台服务模式；
+     * 3. 若彻底被系统限制，返回 false 以便调用 stopSelf()，杜绝 5 秒超时强杀闪退。
+     */
+    private fun startForegroundSafely(): Boolean {
+        createNotificationChannel(this)
+        val notification = buildForegroundNotification(this)
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                try {
+                    startForeground(
+                        NOTIFICATION_ID,
+                        notification,
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                    )
+                    true
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed startForeground with dataSync type, attempting compatibility fallback", e)
+                    startForeground(NOTIFICATION_ID, notification)
+                    true
+                }
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+                true
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Fatal: Unable to startForeground under any mode", e)
+            false
+        }
     }
 
     private fun acquireWakeAndWifiLocks() {
@@ -384,88 +496,10 @@ class MqttBackgroundService : Service() {
         }
     }
 
-    private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "MQTT 助手长连接常驻服务",
-                NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = "确保应用最小化或息屏时维持 MQTT 长连接与实时接收"
-                setShowBadge(false)
-            }
-            val manager = getSystemService(NotificationManager::class.java)
-            manager?.createNotificationChannel(channel)
-        }
-    }
-
-    private fun formatCount(count: Long): String {
-        return when {
-            count < 10_000L -> "已收 ${count}条"
-            count < 100_000_000L -> {
-                val wan = count / 10000.0
-                val formatted = if (count % 10000L == 0L) {
-                    "${count / 10000L}万"
-                } else {
-                    String.format(Locale.getDefault(), "%.1f万", wan)
-                }
-                "已收 ${formatted}条"
-            }
-            else -> {
-                val yi = count / 100_000_000.0
-                val formatted = if (count % 100_000_000L == 0L) {
-                    "${count / 100_000_000L}亿"
-                } else {
-                    String.format(Locale.getDefault(), "%.1f亿", yi)
-                }
-                "已收 ${formatted}条"
-            }
-        }
-    }
-
-    private fun buildForegroundNotification(): Notification {
-        val launchIntent = Intent(this, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
-        }
-        val pendingIntent = PendingIntent.getActivity(
-            this,
-            0,
-            launchIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        val title = if (currentBrokerHost.isNotBlank()) {
-            "MQTT 助手 · $currentBrokerHost"
-        } else {
-            "MQTT 助手"
-        }
-
-        val contentText = if (!latestMessageTopic.isNullOrBlank()) {
-            val countText = formatCount(totalPacketCount)
-            "$countText · 主题：$latestMessageTopic"
-        } else if (totalPacketCount > 0) {
-            val countText = formatCount(totalPacketCount)
-            "$countText · 运行正常"
-        } else {
-            "● 连接正常 · 等待报文推送"
-        }
-
-        return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle(title)
-            .setContentText(contentText)
-            .setSmallIcon(android.R.drawable.stat_notify_sync)
-            .setContentIntent(pendingIntent)
-            .setOngoing(true)
-            .setOnlyAlertOnce(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .setCategory(NotificationCompat.CATEGORY_SERVICE)
-            .build()
-    }
-
     private fun refreshNotification() {
         try {
             val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
-            notificationManager?.notify(NOTIFICATION_ID, buildForegroundNotification())
+            notificationManager?.notify(NOTIFICATION_ID, buildForegroundNotification(this))
         } catch (e: Exception) {
             Log.w(TAG, "Failed to refresh notification", e)
         }

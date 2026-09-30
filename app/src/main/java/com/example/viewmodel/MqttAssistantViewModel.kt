@@ -1740,14 +1740,24 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
         }
     }
 
+    private var lastResumeTimestamp = 0L
+
     /**
      * 应用切回前台时即刻探活自愈与状态对齐：
-     * 1. 报文消费管道自愈：确保消费协程始终存活，新消息绝不假死积压；
-     * 2. 历史报文 TSL 胶囊自愈：若有报文但胶囊为空，立即恢复解析点亮小药丸；
-     * 3. 通知栏常驻前台保活服务自愈：若设置中开启了后台常驻但服务掉了，立即拉起通知栏；
-     * 4. MQTT 长连接与半开僵尸 Socket 探活自愈：物理检测底层长连接真实存活，假死时 0ms 瞬间自愈重连。
+     * 1. 1500ms 时间戳防抖：消除通知栏点击拉起时 onResume 与 onWindowFocusChanged 快速连续回调的资源竞态；
+     * 2. 报文消费管道自愈：确保消费协程始终存活，新消息绝不假死积压；
+     * 3. 历史报文 TSL 胶囊自愈：若有报文但胶囊为空，立即恢复解析点亮小药丸；
+     * 4. 通知栏常驻前台保活服务自愈：若设置中开启了后台常驻但服务掉了，立即拉起通知栏；
+     * 5. MQTT 长连接与半开僵尸 Socket 探活自愈：物理检测底层长连接真实存活，假死时 0ms 瞬间自愈重连。
      */
     fun onAppResume() {
+        val now = System.currentTimeMillis()
+        if (now - lastResumeTimestamp < 1500L) {
+            Log.d("MqttAssistantViewModel", "onAppResume: debounced (< 1500ms)")
+            return
+        }
+        lastResumeTimestamp = now
+
         checkBatteryOptimizationStatus(getApplication())
         checkAllFilesAccessStatus(getApplication())
 
@@ -1768,8 +1778,12 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
             if (!MqttBackgroundService.isRunning) {
                 Log.d("MqttAssistantViewModel", "onAppResume: reviving foreground keepalive notification")
                 val brokerHost = "${serverConfig.value.host}:${serverConfig.value.port}"
-                MqttBackgroundService.startKeepAlive(getApplication(), brokerHost)
-                isForegroundKeepAliveRunning.value = true
+                try {
+                    MqttBackgroundService.startKeepAlive(getApplication(), brokerHost)
+                    isForegroundKeepAliveRunning.value = true
+                } catch (e: Exception) {
+                    Log.w("MqttAssistantViewModel", "Failed to start keep alive in onAppResume", e)
+                }
             }
         }
 
@@ -1777,25 +1791,29 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
         val isSocketConnected = MqttClientManager.isConnected
         if (isSocketConnected) {
             viewModelScope.launch(Dispatchers.IO) {
-                val isAlive = MqttClientManager.checkSocketAlive()
-                if (isAlive) {
-                    withContext(Dispatchers.Main) {
-                        if (connectionState.value != MqttConnectionState.CONNECTED || !serverConfig.value.isConnected) {
-                            connectionState.value = MqttConnectionState.CONNECTED
-                            serverConfig.update { it.copy(isConnected = true) }
-                            reconnectAttempt.value = 0
-                            reconnectCountdown.value = 0
+                try {
+                    val isAlive = MqttClientManager.checkSocketAlive()
+                    if (isAlive) {
+                        withContext(Dispatchers.Main) {
+                            if (connectionState.value != MqttConnectionState.CONNECTED || !serverConfig.value.isConnected) {
+                                connectionState.value = MqttConnectionState.CONNECTED
+                                serverConfig.update { it.copy(isConnected = true) }
+                                reconnectAttempt.value = 0
+                                reconnectCountdown.value = 0
+                            }
+                        }
+                    } else {
+                        Log.w("MqttAssistantViewModel", "onAppResume: zombie socket detected, reviving with fresh reconnect")
+                        withContext(Dispatchers.Main) {
+                            connectionState.value = MqttConnectionState.DISCONNECTED
+                            serverConfig.update { it.copy(isConnected = false) }
+                            if (!isManualDisconnecting && serverConfig.value.autoReconnect && brokerProfiles.value.isNotEmpty() && serverConfig.value.host.isNotBlank()) {
+                                startAutoReconnectLoop(isImmediate = true)
+                            }
                         }
                     }
-                } else {
-                    Log.w("MqttAssistantViewModel", "onAppResume: zombie socket detected, reviving with fresh reconnect")
-                    withContext(Dispatchers.Main) {
-                        connectionState.value = MqttConnectionState.DISCONNECTED
-                        serverConfig.update { it.copy(isConnected = false) }
-                        if (!isManualDisconnecting && serverConfig.value.autoReconnect && brokerProfiles.value.isNotEmpty() && serverConfig.value.host.isNotBlank()) {
-                            startAutoReconnectLoop(isImmediate = true)
-                        }
-                    }
+                } catch (e: Exception) {
+                    Log.w("MqttAssistantViewModel", "Socket alive check error in onAppResume", e)
                 }
             }
         } else {
