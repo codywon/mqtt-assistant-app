@@ -115,12 +115,14 @@ object MqttClientManager {
     /**
      * Connect to the MQTT Broker using specified configuration.
      * Mutex-protected to ensure only one connection attempt runs at any time.
+     *
+     * @param forceReconnect When true, skips connection cache and forces a fresh TCP/TLS handshake.
      */
-    suspend fun connect(config: MqttServerConfig): Result<Unit> = withContext(Dispatchers.IO) {
+    suspend fun connect(config: MqttServerConfig, forceReconnect: Boolean = false): Result<Unit> = withContext(Dispatchers.IO) {
         connectMutex.withLock {
             val currentClient = mqttClient
             val currentConfig = lastConfig
-            if (currentClient != null && currentClient.isConnected && currentConfig != null &&
+            if (!forceReconnect && currentClient != null && currentClient.isConnected && currentConfig != null &&
                 currentConfig.host == config.host &&
                 currentConfig.port == config.port &&
                 currentConfig.clientId == config.clientId &&
@@ -129,9 +131,14 @@ object MqttClientManager {
                 currentConfig.tlsEnabled == config.tlsEnabled &&
                 currentConfig.cleanSession == config.cleanSession
             ) {
-                Log.d(TAG, "Already connected with identical configuration, skipping disconnect-reconnect.")
-                notifyConnectionState(true, null, force = true)
-                return@withContext Result.success(Unit)
+                val isAlive = checkSocketAlive()
+                if (isAlive) {
+                    Log.d(TAG, "Already connected with identical configuration and verified socket, skipping disconnect-reconnect.")
+                    notifyConnectionState(true, null, force = true)
+                    return@withContext Result.success(Unit)
+                } else {
+                    Log.w(TAG, "Existing client detected as zombie/half-open socket, forcing fresh reconnection.")
+                }
             }
 
             _isConnecting.set(true)
@@ -344,33 +351,38 @@ object MqttClientManager {
      * Checks connection status and triggers reconnect if socket has silently dropped.
      */
     fun pingOrKeepAlive() {
+        val isAlive = checkSocketAlive()
+        if (!isAlive) {
+            Log.d(TAG, "Heartbeat check: Connection lost or dead in background, triggering state update")
+            notifyConnectionState(false, null)
+        }
+    }
+
+    /**
+     * 强力探针：物理检测底层 MQTT Socket 是否真实可达并发送 PINGREQ 帧，
+     * 彻底识破移动网络单向挂死但 isConnected 仍为 true 的“半开僵尸 Socket (Zombie Socket)”。
+     */
+    fun checkSocketAlive(): Boolean {
         try {
-            val client = mqttClient
-            if (client != null && client.isConnected) {
-                // 通过反射调用底层异步客户端的 checkPing 发送 PINGREQ 帧，强力保活 NAT 映射
-                try {
-                    val aClientField = MqttClient::class.java.getDeclaredField("aClient")
-                    aClientField.isAccessible = true
-                    val asyncClient = aClientField.get(client) as? org.eclipse.paho.client.mqttv3.MqttAsyncClient
-                    if (asyncClient != null && asyncClient.isConnected) {
-                        val pingMethod = org.eclipse.paho.client.mqttv3.MqttAsyncClient::class.java.getDeclaredMethod(
-                            "checkPing",
-                            Any::class.java,
-                            org.eclipse.paho.client.mqttv3.IMqttActionListener::class.java
-                        )
-                        pingMethod.isAccessible = true
-                        pingMethod.invoke(asyncClient, null, null)
-                        Log.d(TAG, "Heartbeat: Paho active ping frame dispatched")
-                    }
-                } catch (_: Exception) {
-                    Log.d(TAG, "Heartbeat check: MQTT client connection is active")
-                }
-            } else {
-                Log.d(TAG, "Heartbeat check: Connection lost in background, triggering state update")
-                notifyConnectionState(false, null)
-            }
+            val client = mqttClient ?: return false
+            if (!client.isConnected) return false
+            val aClientField = MqttClient::class.java.getDeclaredField("aClient")
+            aClientField.isAccessible = true
+            val asyncClient = aClientField.get(client) as? org.eclipse.paho.client.mqttv3.MqttAsyncClient ?: return false
+            if (!asyncClient.isConnected) return false
+
+            val pingMethod = org.eclipse.paho.client.mqttv3.MqttAsyncClient::class.java.getDeclaredMethod(
+                "checkPing",
+                Any::class.java,
+                org.eclipse.paho.client.mqttv3.IMqttActionListener::class.java
+            )
+            pingMethod.isAccessible = true
+            pingMethod.invoke(asyncClient, null, null)
+            Log.d(TAG, "Heartbeat: Paho active ping frame dispatched successfully")
+            return true
         } catch (e: Exception) {
-            Log.w(TAG, "Heartbeat ping check failed", e)
+            Log.w(TAG, "Heartbeat ping check failed on socket", e)
+            return false
         }
     }
 

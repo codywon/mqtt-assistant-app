@@ -375,6 +375,9 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 protocolKnowledgeList.value = finalProtocols
                 tslProtocols.value = enabledTslProtos
             }
+            if (currentMemoryPackets.isNotEmpty() && enabledTslProtos.isNotEmpty()) {
+                reparseAllLivePacketsWithTsl()
+            }
         }
         startPacketBatchCollector()
         setupMqttCallbacks()
@@ -397,6 +400,8 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
         }
     }
 
+    private var packetCollectorJob: Job? = null
+
     /**
      * 高性能报文聚合通道（40ms 窗口批处理）：
      * 无论瞬间并发冲刷多少条报文，聚合在 40ms 窗口（对应手机 60Hz/120Hz 丝滑刷新率）内合并更新：
@@ -405,141 +410,164 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
      * 3. 批量聚合订阅主题消息计数。
      */
     private fun startPacketBatchCollector() {
-        viewModelScope.launch(Dispatchers.Default) {
+        packetCollectorJob?.cancel()
+        packetCollectorJob = viewModelScope.launch(Dispatchers.Default) {
             val batch = mutableListOf<MqttLogPacket>()
             var lastEmitTime = 0L
             while (isActive) {
-                val firstPacket = incomingPacketChannel.receiveCatching().getOrNull() ?: break
-                batch.add(firstPacket)
+                try {
+                    val firstPacket = incomingPacketChannel.receiveCatching().getOrNull() ?: break
+                    batch.add(firstPacket)
 
-                // 抽干当前通道中已排队的消息
-                while (batch.size < 200) {
-                    val next = incomingPacketChannel.tryReceive().getOrNull() ?: break
-                    batch.add(next)
-                }
-
-                // 60Hz 帧率边界平滑对齐：
-                // 若空闲已久（距上次发射 >= 16ms），立即 0ms 发射，毫无迟滞感；
-                // 若处于高并发密集冲刷期（距上次发射 < 16ms），微让步对齐单帧渲染节拍并吸收新消息，
-                // 彻底杜绝主线程每秒上百次重组雪崩与滚动掉帧闪屏！
-                val now = System.currentTimeMillis()
-                val elapsed = now - lastEmitTime
-                if (elapsed < 16) {
-                    val waitMs = 16 - elapsed
-                    delay(waitMs)
+                    // 抽干当前通道中已排队的消息
                     while (batch.size < 200) {
                         val next = incomingPacketChannel.tryReceive().getOrNull() ?: break
                         batch.add(next)
                     }
-                }
-                lastEmitTime = System.currentTimeMillis()
 
-                val currentBatch = batch.toList()
-                batch.clear()
-                val maxBuffer = serverConfig.value.bufferThreshold
+                    // 60Hz 帧率边界平滑对齐：
+                    // 若空闲已久（距上次发射 >= 16ms），立即 0ms 发射，毫无迟滞感；
+                    // 若处于高并发密集冲刷期（距上次发射 < 16ms），微让步对齐单帧渲染节拍并吸收新消息，
+                    // 彻底杜绝主线程每秒上百次重组雪崩与滚动掉帧闪屏！
+                    val now = System.currentTimeMillis()
+                    val elapsed = now - lastEmitTime
+                    if (elapsed < 16) {
+                        val waitMs = 16 - elapsed
+                        delay(waitMs)
+                        while (batch.size < 200) {
+                            val next = incomingPacketChannel.tryReceive().getOrNull() ?: break
+                            batch.add(next)
+                        }
+                    }
+                    lastEmitTime = System.currentTimeMillis()
 
-                // 1. TSL 物模型与 AI 哨兵雷达拦截判定（在后台协程池中统一并行计算）
-                val protos = tslProtocols.value
-                val trap = activeRadarTrap.value
-                var newlyInterceptedCount = 0
-                val parsedTslBatchMap = mutableMapOf<String, com.example.model.TslParseResult>()
+                    val currentBatch = batch.toList()
+                    batch.clear()
+                    val maxBuffer = serverConfig.value.bufferThreshold
 
-                val processedBatch = currentBatch.map { pkt ->
-                    val tslRes = if (protos.isNotEmpty()) {
-                        com.example.engine.TslParseEngine.tryParse(
-                            topic = pkt.topic,
-                            payload = pkt.payload,
-                            category = pkt.category,
-                            protocols = protos
-                        )
+                    // 1. TSL 物模型与 AI 哨兵雷达拦截判定（在后台协程池中统一并行计算）
+                    val protos = tslProtocols.value
+                    val trap = activeRadarTrap.value
+                    var newlyInterceptedCount = 0
+                    val parsedTslBatchMap = mutableMapOf<String, com.example.model.TslParseResult>()
+
+                    val processedBatch = currentBatch.map { pkt ->
+                        val tslRes = if (protos.isNotEmpty()) {
+                            try {
+                                com.example.engine.TslParseEngine.tryParse(
+                                    topic = pkt.topic,
+                                    payload = pkt.payload,
+                                    category = pkt.category,
+                                    protocols = protos
+                                )
+                            } catch (e: Exception) {
+                                Log.w("MqttAssistantViewModel", "TSL parse exception on packet ${pkt.id}", e)
+                                null
+                            }
+                        } else null
+
+                        if (tslRes != null) {
+                            parsedTslBatchMap[pkt.id] = tslRes
+                        }
+
+                        val isHit = if (trap != null) {
+                            try {
+                                val hit = com.example.engine.TslParseEngine.evaluateTrap(pkt.topic, pkt.payload, tslRes, trap)
+                                if (hit) newlyInterceptedCount++
+                                hit
+                            } catch (e: Exception) {
+                                false
+                            }
+                        } else false
+
+                        if (isHit) pkt.copy(isRadarIntercepted = true) else pkt
+                    }
+
+                    if (newlyInterceptedCount > 0 && trap != null) {
+                        activeRadarTrap.update { it?.copy(capturedCount = it.capturedCount + newlyInterceptedCount) }
+                    }
+
+                    // 2. 纯内存高速环形存储 (零 SQLite 写入，零闪存磨损)
+                    val allPackets = com.example.data.MemoryPacketStore.addPackets(processedBatch, maxBuffer)
+
+                    // 3. 在后台线程预计算并合并 TSL 结果字典，彻底将主线程从解析循环与集合修剪中解放出来
+                    val updatedTslResults: Map<String, com.example.model.TslParseResult>? = if (parsedTslBatchMap.isNotEmpty()) {
+                        val currentMap = tslParseResults.value.toMutableMap()
+                        currentMap.putAll(parsedTslBatchMap)
+                        if (currentMap.size > maxBuffer * 2) {
+                            val liveIds = allPackets.map { it.id }.toSet()
+                            currentMap.keys.retainAll(liveIds)
+                        }
+                        currentMap
                     } else null
 
-                    if (tslRes != null) {
-                        parsedTslBatchMap[pkt.id] = tslRes
-                    }
+                    val topicCounts = processedBatch.groupBy { it.topic }
 
-                    val isHit = if (trap != null) {
-                        val hit = com.example.engine.TslParseEngine.evaluateTrap(pkt.topic, pkt.payload, tslRes, trap)
-                        if (hit) newlyInterceptedCount++
-                        hit
-                    } else false
+                    withContext(Dispatchers.Main) {
+                        livePackets.value = allPackets
+                        if (updatedTslResults != null) {
+                            tslParseResults.value = updatedTslResults
+                        }
 
-                    if (isHit) pkt.copy(isRadarIntercepted = true) else pkt
-                }
-
-                if (newlyInterceptedCount > 0 && trap != null) {
-                    activeRadarTrap.update { it?.copy(capturedCount = it.capturedCount + newlyInterceptedCount) }
-                }
-
-                // 2. 纯内存高速环形存储 (零 SQLite 写入，零闪存磨损)
-                val allPackets = com.example.data.MemoryPacketStore.addPackets(processedBatch, maxBuffer)
-
-                // 3. 在后台线程预计算并合并 TSL 结果字典，彻底将主线程从解析循环与集合修剪中解放出来
-                val updatedTslResults: Map<String, com.example.model.TslParseResult>? = if (parsedTslBatchMap.isNotEmpty()) {
-                    val currentMap = tslParseResults.value.toMutableMap()
-                    currentMap.putAll(parsedTslBatchMap)
-                    if (currentMap.size > maxBuffer * 2) {
-                        val liveIds = allPackets.map { it.id }.toSet()
-                        currentMap.keys.retainAll(liveIds)
-                    }
-                    currentMap
-                } else null
-
-                val topicCounts = processedBatch.groupBy { it.topic }
-
-                withContext(Dispatchers.Main) {
-                    livePackets.value = allPackets
-                    if (updatedTslResults != null) {
-                        tslParseResults.value = updatedTslResults
-                    }
-
-                    subscriptions.update { list ->
-                        list.map { sub ->
-                            if (sub.isEnabled) {
-                                val matchedCount = topicCounts.entries.sumOf { (topic, packets) ->
-                                    if (MqttTopicUtil.matchesMqttTopic(sub.topic, topic)) packets.size else 0
-                                }
-                                if (matchedCount > 0) {
-                                    sub.copy(
-                                        msgCount = sub.msgCount + matchedCount,
-                                        lastTimeText = "刚刚"
-                                    )
+                        subscriptions.update { list ->
+                            list.map { sub ->
+                                if (sub.isEnabled) {
+                                    val matchedCount = topicCounts.entries.sumOf { (topic, packets) ->
+                                        if (MqttTopicUtil.matchesMqttTopic(sub.topic, topic)) packets.size else 0
+                                    }
+                                    if (matchedCount > 0) {
+                                        sub.copy(
+                                            msgCount = sub.msgCount + matchedCount,
+                                            lastTimeText = "刚刚"
+                                        )
+                                    } else sub
                                 } else sub
-                            } else sub
+                            }
                         }
                     }
-                }
-                refreshStorageStats()
+                    refreshStorageStats()
 
-                // 2. 满额自动导出 Excel 归档检查 (受系统设置 autoExportExcel 开关管控)
-                if (serverConfig.value.autoExportExcel) {
-                    AutoExportHelper.checkAndExportFromMemory(
-                        context = getApplication(),
-                        bufferThreshold = maxBuffer,
-                        clientId = serverConfig.value.clientId
-                    ) { exportedCount, _ ->
-                        packetSeqCounter.set(0L)
-                        viewModelScope.launch(Dispatchers.Main) {
-                            livePackets.value = com.example.data.MemoryPacketStore.getAll()
-                            showToast("已自动将 $exportedCount 条报文归档为 Excel (存至 Download 目录)")
+                    // 4. 满额自动导出 Excel 归档检查 (受系统设置 autoExportExcel 开关管控)
+                    if (serverConfig.value.autoExportExcel) {
+                        try {
+                            AutoExportHelper.checkAndExportFromMemory(
+                                context = getApplication(),
+                                bufferThreshold = maxBuffer,
+                                clientId = serverConfig.value.clientId
+                            ) { exportedCount, _ ->
+                                packetSeqCounter.set(0L)
+                                viewModelScope.launch(Dispatchers.Main) {
+                                    livePackets.value = com.example.data.MemoryPacketStore.getAll()
+                                    showToast("已自动将 $exportedCount 条报文归档为 Excel (存至 Download 目录)")
+                                }
+                                refreshStorageStats()
+                            }
+                        } catch (e: Exception) {
+                            Log.w("MqttAssistantViewModel", "Auto export check failed", e)
                         }
-                        refreshStorageStats()
                     }
-                }
 
-                // 4. 更新通知栏
-                if (MqttBackgroundService.isRunning) {
-                    val lastPacket = currentBatch.lastOrNull()
-                    if (lastPacket != null) {
-                        val host = serverConfig.value.host
-                        val brokerLabel = if (host.isNotBlank()) "${host}:${serverConfig.value.port}" else ""
-                        MqttBackgroundService.updateNotification(
-                            context = getApplication(),
-                            brokerHost = brokerLabel,
-                            count = packetSeqCounter.get(),
-                            latestTopic = lastPacket.topic
-                        )
+                    // 5. 更新通知栏
+                    if (MqttBackgroundService.isRunning) {
+                        try {
+                            val lastPacket = currentBatch.lastOrNull()
+                            if (lastPacket != null) {
+                                val host = serverConfig.value.host
+                                val brokerLabel = if (host.isNotBlank()) "${host}:${serverConfig.value.port}" else ""
+                                MqttBackgroundService.updateNotification(
+                                    context = getApplication(),
+                                    brokerHost = brokerLabel,
+                                    count = packetSeqCounter.get(),
+                                    latestTopic = lastPacket.topic
+                                )
+                            }
+                        } catch (e: Exception) {
+                            Log.w("MqttAssistantViewModel", "Notification update failed", e)
+                        }
                     }
+                } catch (e: Throwable) {
+                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    Log.e("MqttAssistantViewModel", "Packet batch collector encountered unexpected error, continuing stream", e)
                 }
             }
         }
@@ -719,8 +747,16 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 serverConfig.update { it.copy(isConnected = true) }
                 reconnectAttempt.value = 0
                 reconnectCountdown.value = 0
-                val activeCount = subscriptions.value.count { it.isEnabled }
-                showToast("已连接至 ${serverConfig.value.host}:${serverConfig.value.port} (已激活 $activeCount 个主题)")
+                val activeSubs = subscriptions.value.filter { it.isEnabled }
+                if (activeSubs.isNotEmpty()) {
+                    MqttClientManager.subscribeBatch(activeSubs.map { it.topic to it.qos })
+                }
+                if (serverConfig.value.backgroundKeepAliveEnabled) {
+                    val brokerHost = "${serverConfig.value.host}:${serverConfig.value.port}"
+                    MqttBackgroundService.startKeepAlive(getApplication(), brokerHost)
+                    isForegroundKeepAliveRunning.value = true
+                }
+                showToast("已连接至 ${serverConfig.value.host}:${serverConfig.value.port} (已同步恢复 ${activeSubs.size} 个主题)")
             } else {
                 connectionState.value = MqttConnectionState.DISCONNECTED
                 serverConfig.update { it.copy(isConnected = false) }
@@ -1600,15 +1636,26 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
         viewModelScope.launch {
             connectionState.value = MqttConnectionState.CONNECTING
             showToast("正在连接至 ${serverConfig.value.host}:${serverConfig.value.port}...")
-            val result = MqttClientManager.connect(serverConfig.value)
+            val result = MqttClientManager.connect(serverConfig.value, forceReconnect = true)
             if (result.isSuccess) {
                 connectionState.value = MqttConnectionState.CONNECTED
                 serverConfig.update { it.copy(isConnected = true) }
                 reconnectAttempt.value = 0
                 reconnectCountdown.value = 0
                 val activeSubs = subscriptions.value.filter { it.isEnabled }
-                activeSubs.forEach { sub ->
-                    MqttClientManager.subscribe(sub.topic, sub.qos)
+                if (activeSubs.isNotEmpty()) {
+                    MqttClientManager.subscribeBatch(activeSubs.map { it.topic to it.qos })
+                }
+                if (serverConfig.value.backgroundKeepAliveEnabled) {
+                    val brokerHost = "${serverConfig.value.host}:${serverConfig.value.port}"
+                    MqttBackgroundService.startKeepAlive(getApplication(), brokerHost)
+                    isForegroundKeepAliveRunning.value = true
+                }
+                if (packetCollectorJob?.isActive != true) {
+                    startPacketBatchCollector()
+                }
+                if (livePackets.value.isNotEmpty() && tslParseResults.value.isEmpty() && tslProtocols.value.isNotEmpty()) {
+                    reparseAllLivePacketsWithTsl()
                 }
                 showToast("已连接 Broker，已同步恢复 ${activeSubs.size} 个主题订阅")
             } else {
@@ -1667,8 +1714,22 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
                 serverConfig.update { it.copy(isConnected = true) }
                 reconnectAttempt.value = 0
                 reconnectCountdown.value = 0
-                val activeCount = subscriptions.value.count { it.isEnabled }
-                showToast("连接已恢复，已同步 $activeCount 个主题订阅")
+                val activeSubs = subscriptions.value.filter { it.isEnabled }
+                if (activeSubs.isNotEmpty()) {
+                    MqttClientManager.subscribeBatch(activeSubs.map { it.topic to it.qos })
+                }
+                if (serverConfig.value.backgroundKeepAliveEnabled) {
+                    val brokerHost = "${serverConfig.value.host}:${serverConfig.value.port}"
+                    MqttBackgroundService.startKeepAlive(getApplication(), brokerHost)
+                    isForegroundKeepAliveRunning.value = true
+                }
+                if (packetCollectorJob?.isActive != true) {
+                    startPacketBatchCollector()
+                }
+                if (livePackets.value.isNotEmpty() && tslParseResults.value.isEmpty() && tslProtocols.value.isNotEmpty()) {
+                    reparseAllLivePacketsWithTsl()
+                }
+                showToast("连接已恢复，已同步 ${activeSubs.size} 个主题订阅")
             } else {
                 connectionState.value = MqttConnectionState.DISCONNECTED
                 serverConfig.update { it.copy(isConnected = false) }
@@ -1681,26 +1742,61 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
 
     /**
      * 应用切回前台时即刻探活自愈与状态对齐：
-     * 1. 彻底解决“最小化打开其他程序再回来每次都断开/重连”与“已连接却显示正在连接”的状态漂移；
-     * 2. 底层长连接存活时秒级对齐 UI 状态并主动 Ping；
-     * 3. 底层长连接断开时 0ms 瞬间发起自愈重连。
+     * 1. 报文消费管道自愈：确保消费协程始终存活，新消息绝不假死积压；
+     * 2. 历史报文 TSL 胶囊自愈：若有报文但胶囊为空，立即恢复解析点亮小药丸；
+     * 3. 通知栏常驻前台保活服务自愈：若设置中开启了后台常驻但服务掉了，立即拉起通知栏；
+     * 4. MQTT 长连接与半开僵尸 Socket 探活自愈：物理检测底层长连接真实存活，假死时 0ms 瞬间自愈重连。
      */
     fun onAppResume() {
         checkBatteryOptimizationStatus(getApplication())
         checkAllFilesAccessStatus(getApplication())
 
+        // 1. 报文消费管道自愈：防止后台异常导致协程退出断流
+        if (packetCollectorJob?.isActive != true) {
+            Log.w("MqttAssistantViewModel", "onAppResume: packetCollectorJob inactive, reviving...")
+            startPacketBatchCollector()
+        }
+
+        // 2. 历史报文 TSL 胶囊自愈：若有报文但胶囊字典为空，立即恢复解析
+        if (livePackets.value.isNotEmpty() && tslParseResults.value.isEmpty() && tslProtocols.value.isNotEmpty()) {
+            Log.d("MqttAssistantViewModel", "onAppResume: reviving tsl capsules for existing packets")
+            reparseAllLivePacketsWithTsl()
+        }
+
+        // 3. 通知栏常驻前台保活服务自愈：若设置开启但前台服务停止，自动拉起
+        if (serverConfig.value.backgroundKeepAliveEnabled && serverConfig.value.host.isNotBlank() && brokerProfiles.value.isNotEmpty()) {
+            if (!MqttBackgroundService.isRunning) {
+                Log.d("MqttAssistantViewModel", "onAppResume: reviving foreground keepalive notification")
+                val brokerHost = "${serverConfig.value.host}:${serverConfig.value.port}"
+                MqttBackgroundService.startKeepAlive(getApplication(), brokerHost)
+                isForegroundKeepAliveRunning.value = true
+            }
+        }
+
+        // 4. MQTT 长连接与半开僵尸 Socket 探活自愈
         val isSocketConnected = MqttClientManager.isConnected
         if (isSocketConnected) {
-            if (connectionState.value != MqttConnectionState.CONNECTED || !serverConfig.value.isConnected) {
-                connectionState.value = MqttConnectionState.CONNECTED
-                serverConfig.update { it.copy(isConnected = true) }
-                reconnectAttempt.value = 0
-                reconnectCountdown.value = 0
-            }
             viewModelScope.launch(Dispatchers.IO) {
-                try {
-                    MqttClientManager.pingOrKeepAlive()
-                } catch (_: Exception) {}
+                val isAlive = MqttClientManager.checkSocketAlive()
+                if (isAlive) {
+                    withContext(Dispatchers.Main) {
+                        if (connectionState.value != MqttConnectionState.CONNECTED || !serverConfig.value.isConnected) {
+                            connectionState.value = MqttConnectionState.CONNECTED
+                            serverConfig.update { it.copy(isConnected = true) }
+                            reconnectAttempt.value = 0
+                            reconnectCountdown.value = 0
+                        }
+                    }
+                } else {
+                    Log.w("MqttAssistantViewModel", "onAppResume: zombie socket detected, reviving with fresh reconnect")
+                    withContext(Dispatchers.Main) {
+                        connectionState.value = MqttConnectionState.DISCONNECTED
+                        serverConfig.update { it.copy(isConnected = false) }
+                        if (!isManualDisconnecting && serverConfig.value.autoReconnect && brokerProfiles.value.isNotEmpty() && serverConfig.value.host.isNotBlank()) {
+                            startAutoReconnectLoop(isImmediate = true)
+                        }
+                    }
+                }
             }
         } else {
             if (!isManualDisconnecting && serverConfig.value.autoReconnect && brokerProfiles.value.isNotEmpty() && serverConfig.value.host.isNotBlank()) {
@@ -3273,19 +3369,27 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
             tslParseResults.value = emptyMap()
             return
         }
-        val map = mutableMapOf<String, com.example.model.TslParseResult>()
-        for (pkt in packets) {
-            val res = com.example.engine.TslParseEngine.tryParse(
-                topic = pkt.topic,
-                payload = pkt.payload,
-                category = pkt.category,
-                protocols = protos
-            )
-            if (res != null) {
-                map[pkt.id] = res
+        viewModelScope.launch(Dispatchers.Default) {
+            val map = mutableMapOf<String, com.example.model.TslParseResult>()
+            for (pkt in packets) {
+                try {
+                    val res = com.example.engine.TslParseEngine.tryParse(
+                        topic = pkt.topic,
+                        payload = pkt.payload,
+                        category = pkt.category,
+                        protocols = protos
+                    )
+                    if (res != null) {
+                        map[pkt.id] = res
+                    }
+                } catch (e: Exception) {
+                    Log.w("MqttAssistantViewModel", "Reparse failed for packet ${pkt.id}", e)
+                }
+            }
+            withContext(Dispatchers.Main) {
+                tslParseResults.value = map
             }
         }
-        tslParseResults.value = map
     }
 
     // ==========================================
