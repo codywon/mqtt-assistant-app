@@ -867,7 +867,7 @@ private fun CompactMessageCard(
                                 .padding(horizontal = 4.5.dp, vertical = 1.dp)
                         ) {
                             Text(
-                                text = "${if (isWarn) "⚠️ " else "⚡ "}${keyIndicator.name} ${keyIndicator.displayValue}",
+                                text = "${if (isWarn) "⚠️ " else "⚡ "}${keyIndicator.cleanName} ${keyIndicator.displayValue}",
                                 style = TextStyle(
                                     fontFamily = FontFamily.Monospace,
                                     fontSize = 9.5.sp,
@@ -1262,7 +1262,7 @@ private fun MessageDetailsModalDialog(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .clip(RoundedCornerShape(6.dp))
-                                        .clickable { onCopyValue("${v.name}: ${v.displayValue}") }
+                                        .clickable { onCopyValue("${v.cleanName}: ${v.displayValue}") }
                                         .padding(horizontal = 6.dp, vertical = 5.dp),
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
@@ -1276,7 +1276,7 @@ private fun MessageDetailsModalDialog(
                                             Spacer(modifier = Modifier.width(4.dp))
                                         }
                                         Text(
-                                            text = v.name,
+                                            text = v.cleanName,
                                             style = TextStyle(
                                                 fontSize = 12.5.sp,
                                                 fontWeight = FontWeight.Medium,

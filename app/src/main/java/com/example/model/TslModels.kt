@@ -138,9 +138,25 @@ data class TslField(
                 map
             } else null
 
+            var rawName = json.optString("name", "未知字段").trim()
+            var rawUnit = json.optString("unit", "").trim()
+
+            // 智能解耦与单位提取：若名称自带括号单位（如 "血糖值(mmol/L)"），自动提取单位并清洗字段名
+            if (rawUnit.isBlank()) {
+                val match = Regex("[\\(（\\[【]\\s*([a-zA-Z/%℃°µΩ]+|[\\u4e00-\\u9fa5]{1,3})\\s*[\\)）\\]】]$").find(rawName)
+                if (match != null) {
+                    rawUnit = match.groupValues[1]
+                    rawName = rawName.substring(0, match.range.first).trim()
+                }
+            } else {
+                val escaped = Regex.escape(rawUnit)
+                rawName = rawName.replace(Regex("[\\(（\\[【]\\s*$escaped\\s*[\\)）\\]】]$", RegexOption.IGNORE_CASE), "").trim()
+            }
+            if (rawName.isBlank()) rawName = json.optString("name", "未知字段").trim()
+
             return TslField(
                 identifier = json.optString("identifier", json.optString("id", "unknown")),
-                name = json.optString("name", "未知字段"),
+                name = rawName,
                 offset = json.optInt("offset", 0),
                 length = json.optInt("length", 1),
                 type = try {
@@ -148,7 +164,7 @@ data class TslField(
                 } catch (_: Exception) { TslFieldType.UINT8 },
                 scale = json.optDouble("scale", 1.0),
                 precision = json.optInt("precision", 2),
-                unit = json.optString("unit", ""),
+                unit = rawUnit,
                 jsonPath = json.optString("jsonPath", ""),
                 warnMin = if (json.has("warnMin") || json.has("warn_min"))
                     json.optDouble("warnMin", json.optDouble("warn_min", Double.NaN)).takeIf { !it.isNaN() }
@@ -292,9 +308,18 @@ data class TslParsedValue(
     val stringValue: String? = null,    // 字符串类型字段的原始文本（ASCII / JSON_STRING）
     val isKeyIndicator: Boolean = false // 是否显式声明为该协议的核心指标
 ) {
+    /**
+     * 智能净化后的纯净指标名（去除多余冗余的括号单位，如 "血糖值(mmol/L)" -> "血糖值"）
+     * 彻底解决指标名称带单位与数值后单位双重重复、挤占空间导致省略号截断的问题
+     */
+    val cleanName: String by lazy {
+        sanitizeIndicatorName(name, unit)
+    }
+
     fun toJson(): JSONObject = JSONObject().apply {
         put("id", identifier)
         put("name", name)
+        put("cleanName", cleanName)
         put("value", rawValue)
         put("display", displayValue)
         put("unit", unit)
@@ -303,6 +328,22 @@ data class TslParsedValue(
         if (stringValue != null) put("stringValue", stringValue)
         if (isKeyIndicator) put("isKeyIndicator", true)
     }
+}
+
+/**
+ * 通用指标名称净化器：消除名称中多余的单位括号（如 "血糖值(mmol/L)" -> "血糖值"）
+ */
+fun sanitizeIndicatorName(rawName: String, unit: String = ""): String {
+    var result = rawName.trim()
+    if (unit.isNotBlank()) {
+        val escaped = Regex.escape(unit.trim())
+        val regex = Regex("[\\(（\\[【]\\s*$escaped\\s*[\\)）\\]】]$", RegexOption.IGNORE_CASE)
+        result = result.replace(regex, "").trim()
+    }
+    // 兜底正则：匹配末尾括号内的常见单位（如 (mmol/L), (℃), (V), (kWh), (人) 等）
+    val genericRegex = Regex("[\\(（\\[【]\\s*([a-zA-Z/%℃°µΩ]+|[\\u4e00-\\u9fa5]{1,3})\\s*[\\)）\\]】]$")
+    result = result.replace(genericRegex, "").trim()
+    return result.ifBlank { rawName }
 }
 
 // =========================================================================
