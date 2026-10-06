@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.os.PowerManager
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -2658,66 +2659,105 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
         aiJob = viewModelScope.launch(Dispatchers.IO) {
             val contentAccumulator = StringBuilder()
             val reasoningAccumulator = StringBuilder()
+            var lastCheckpointTime = 0L
 
-            aiAgentClient.chatStream(
-                config = aiConfig.value,
-                conversationHistory = aiMessages.value.dropLast(1),
-                onChunk = { delta, isThinking ->
-                    if (isThinking) {
-                        reasoningAccumulator.append(delta)
-                        currentAiThinkingText.value = reasoningAccumulator.toString()
-                    } else {
-                        contentAccumulator.append(delta)
-                        val currText = contentAccumulator.toString()
-                        aiMessages.update { list ->
-                            list.map { if (it.id == assistantMsgId) it.copy(content = currText, isThinking = false) else it }
-                        }
-                    }
-                },
-                onToolAction = { actionText ->
-                    currentAiActionStatus.value = actionText
-                },
-                onError = { errorText ->
-                    val finalError = if (contentAccumulator.isNotEmpty()) "${contentAccumulator}\n\n⚠️ $errorText" else "⚠️ $errorText"
-                    val errorMsg = AiChatMessage(
-                        id = assistantMsgId,
-                        sessionId = activeSessionId,
-                        role = "assistant",
-                        content = finalError,
-                        isError = true,
-                        isThinking = false
-                    )
-                    aiMessages.update { list ->
-                        list.map { if (it.id == assistantMsgId) errorMsg else it }
-                    }
-                    storage.saveAiMessage(errorMsg)
-                    isAiResponding.value = false
-                    currentAiActionStatus.value = ""
-                    currentAiThinkingText.value = ""
-                    checkAndTriggerNextPendingAiMessage()
-                },
-                onComplete = { fullContent, reasoningContent ->
-                    val finalMsg = AiChatMessage(
-                        id = assistantMsgId,
-                        sessionId = activeSessionId,
-                        role = "assistant",
-                        content = fullContent.ifBlank {
-                            "已完成数据检索，当前暂未发现匹配记录。请告诉我您想查询的特定设备、网关或报文主题，以便为您精准排查。"
-                        },
-                        reasoningContent = reasoningContent,
-                        isThinking = false,
-                        isError = false
-                    )
-                    aiMessages.update { list ->
-                        list.map { if (it.id == assistantMsgId) finalMsg else it }
-                    }
-                    storage.saveAiMessage(finalMsg)
-                    isAiResponding.value = false
-                    currentAiActionStatus.value = ""
-                    currentAiThinkingText.value = ""
-                    checkAndTriggerNextPendingAiMessage()
+            // 1. 申请后台任务临时 WakeLock，防止手机熄屏或切出应用时 CPU 深度休眠冻结导致网络 SocketTimeout
+            var aiWakeLock: PowerManager.WakeLock? = null
+            try {
+                val pm = getApplication<Application>().getSystemService(Context.POWER_SERVICE) as? PowerManager
+                aiWakeLock = pm?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "MqttAssistant:AiTaskWakeLock")?.apply {
+                    setReferenceCounted(false)
+                    acquire(5 * 60 * 1000L) // 5 分钟安全超时，防止任务异常导致漏释放耗电
                 }
-            )
+            } catch (e: Exception) {
+                Log.w("MqttAssistantViewModel", "Failed to acquire aiWakeLock", e)
+            }
+
+            try {
+                aiAgentClient.chatStream(
+                    config = aiConfig.value,
+                    conversationHistory = aiMessages.value.dropLast(1),
+                    onChunk = { delta, isThinking ->
+                        if (isThinking) {
+                            reasoningAccumulator.append(delta)
+                            currentAiThinkingText.value = reasoningAccumulator.toString()
+                        } else {
+                            contentAccumulator.append(delta)
+                            val currText = contentAccumulator.toString()
+                            aiMessages.update { list ->
+                                list.map { if (it.id == assistantMsgId) it.copy(content = currText, isThinking = false) else it }
+                            }
+
+                            // 2. 检查点定期暂存 (Checkpointing)：每 2.5 秒异步持久化一次草稿，防止切出被杀导致内容彻底丢失
+                            val now = System.currentTimeMillis()
+                            if (now - lastCheckpointTime > 2500L && currText.isNotBlank()) {
+                                lastCheckpointTime = now
+                                val draftMsg = AiChatMessage(
+                                    id = assistantMsgId,
+                                    sessionId = activeSessionId,
+                                    role = "assistant",
+                                    content = currText,
+                                    reasoningContent = reasoningAccumulator.toString(),
+                                    isThinking = false,
+                                    isError = false
+                                )
+                                storage.saveAiMessage(draftMsg)
+                            }
+                        }
+                    },
+                    onToolAction = { actionText ->
+                        currentAiActionStatus.value = actionText
+                    },
+                    onError = { errorText ->
+                        val finalError = if (contentAccumulator.isNotEmpty()) "${contentAccumulator}\n\n⚠️ $errorText" else "⚠️ $errorText"
+                        val errorMsg = AiChatMessage(
+                            id = assistantMsgId,
+                            sessionId = activeSessionId,
+                            role = "assistant",
+                            content = finalError,
+                            reasoningContent = reasoningAccumulator.toString(),
+                            isError = true,
+                            isThinking = false
+                        )
+                        aiMessages.update { list ->
+                            list.map { if (it.id == assistantMsgId) errorMsg else it }
+                        }
+                        storage.saveAiMessage(errorMsg)
+                        isAiResponding.value = false
+                        currentAiActionStatus.value = ""
+                        currentAiThinkingText.value = ""
+                        checkAndTriggerNextPendingAiMessage()
+                    },
+                    onComplete = { fullContent, reasoningContent ->
+                        val finalMsg = AiChatMessage(
+                            id = assistantMsgId,
+                            sessionId = activeSessionId,
+                            role = "assistant",
+                            content = fullContent.ifBlank {
+                                "已完成数据检索，当前暂未发现匹配记录。请告诉我您想查询的特定设备、网关或报文主题，以便为您精准排查。"
+                            },
+                            reasoningContent = reasoningContent,
+                            isThinking = false,
+                            isError = false
+                        )
+                        aiMessages.update { list ->
+                            list.map { if (it.id == assistantMsgId) finalMsg else it }
+                        }
+                        storage.saveAiMessage(finalMsg)
+                        isAiResponding.value = false
+                        currentAiActionStatus.value = ""
+                        currentAiThinkingText.value = ""
+                        checkAndTriggerNextPendingAiMessage()
+                    }
+                )
+            } finally {
+                // 安全释放后台 WakeLock
+                try {
+                    if (aiWakeLock?.isHeld == true) {
+                        aiWakeLock.release()
+                    }
+                } catch (_: Exception) {}
+            }
         }
     }
 
@@ -2735,6 +2775,16 @@ class MqttAssistantViewModel(application: Application) : AndroidViewModel(applic
 
     fun stopAiResponse() {
         aiJob?.cancel()
+        // 若当前有正在生成的草稿消息，将其标记为完成并落库保存已生成部分
+        val lastMsg = aiMessages.value.lastOrNull()
+        if (lastMsg != null && lastMsg.role == "assistant" && (lastMsg.isThinking || isAiResponding.value)) {
+            val stoppedContent = if (lastMsg.content.isNotBlank()) lastMsg.content else "（已手动停止生成）"
+            val stoppedMsg = lastMsg.copy(content = stoppedContent, isThinking = false)
+            aiMessages.update { list ->
+                list.map { if (it.id == lastMsg.id) stoppedMsg else it }
+            }
+            storage.saveAiMessage(stoppedMsg)
+        }
         isAiResponding.value = false
         currentAiActionStatus.value = ""
         currentAiThinkingText.value = ""

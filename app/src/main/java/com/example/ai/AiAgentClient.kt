@@ -239,8 +239,8 @@ class AiAgentClient(
 
                     conn = (url.openConnection() as HttpURLConnection).apply {
                         requestMethod = "POST"
-                        connectTimeout = 15_000
-                        readTimeout = 60_000
+                        connectTimeout = 20_000
+                        readTimeout = 120_000
                         doOutput = true
                         doInput = true
                         setRequestProperty("Authorization", "Bearer ${config.apiKey.trim()}")

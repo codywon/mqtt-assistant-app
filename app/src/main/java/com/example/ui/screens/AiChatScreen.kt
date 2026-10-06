@@ -160,11 +160,38 @@ fun AiChatScreen(
 
     val pendingQueue by viewModel.pendingAiPromptQueue.collectAsState()
     val listState = rememberLazyListState()
+    val chatCoroutineScope = rememberCoroutineScope()
+    var userScrolledUp by remember { mutableStateOf(false) }
 
-    // 消息更新或流式吐字时自动滚动到底部
-    LaunchedEffect(messages.size, messages.lastOrNull()?.content?.length, actionStatus) {
-        if (messages.isNotEmpty()) {
-            listState.animateScrollToItem(messages.size - 1)
+    // 智能检测用户是否手动向上翻看历史消息
+    val isAtBottom by remember {
+        derivedStateOf {
+            val layoutInfo = listState.layoutInfo
+            val totalItems = layoutInfo.totalItemsCount
+            if (totalItems == 0) return@derivedStateOf true
+            val lastVisible = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            lastVisible >= totalItems - 1
+        }
+    }
+
+    LaunchedEffect(listState.isScrollInProgress) {
+        if (listState.isScrollInProgress) {
+            if (!isAtBottom) {
+                userScrolledUp = true
+            }
+        } else {
+            if (isAtBottom) {
+                userScrolledUp = false
+            }
+        }
+    }
+
+    // 消息更新、流式吐字、思考展开或动作状态切换时的极速无打断贴底追踪 (确保超长文本底部始终在可视区)
+    val lastMsgLength = messages.lastOrNull()?.content?.length ?: 0
+    val thinkingLength = thinkingText.length
+    LaunchedEffect(messages.size, lastMsgLength, thinkingLength, actionStatus) {
+        if (messages.isNotEmpty() && !userScrolledUp) {
+            listState.scrollToItem(messages.size, scrollOffset = 100000)
         }
     }
 
@@ -795,6 +822,46 @@ fun AiChatScreen(
                     }
                     item {
                         Spacer(modifier = Modifier.height(10.dp))
+                    }
+                }
+            }
+
+            // 当用户向上翻看离开底部且存在消息时，显示“回到底部最新”微按钮
+            AnimatedVisibility(
+                visible = userScrolledUp && messages.isNotEmpty(),
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically(),
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(bottom = 12.dp, end = 16.dp)
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = PrimaryBlack.copy(alpha = 0.92f),
+                    shadowElevation = 6.dp,
+                    border = BorderStroke(0.8.dp, Color.White.copy(alpha = 0.2f)),
+                    modifier = Modifier.clickable {
+                        userScrolledUp = false
+                        chatCoroutineScope.launch {
+                            listState.scrollToItem(messages.size, scrollOffset = 100000)
+                        }
+                    }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.KeyboardArrowDown,
+                            contentDescription = "回到底部",
+                            tint = Color.White,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = if (isAiResponding) "新内容生成中..." else "回到最新",
+                            style = TextStyle(fontSize = 11.5.sp, color = Color.White, fontWeight = FontWeight.Medium)
+                        )
                     }
                 }
             }
