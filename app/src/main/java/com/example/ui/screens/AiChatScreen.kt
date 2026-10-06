@@ -60,6 +60,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Refresh
@@ -82,11 +83,14 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import kotlinx.coroutines.delay
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -827,7 +831,7 @@ fun AiChatScreen(
             }
 
             // 当用户向上翻看离开底部且存在消息时，显示“回到底部最新”微按钮
-            AnimatedVisibility(
+            androidx.compose.animation.AnimatedVisibility(
                 visible = userScrolledUp && messages.isNotEmpty(),
                 enter = fadeIn() + expandVertically(),
                 exit = fadeOut() + shrinkVertically(),
@@ -859,7 +863,7 @@ fun AiChatScreen(
                             modifier = Modifier.size(16.dp)
                         )
                         Text(
-                            text = if (isAiResponding) "新内容生成中..." else "回到最新",
+                            text = if (isResponding) "新内容生成中..." else "回到最新",
                             style = TextStyle(fontSize = 11.5.sp, color = Color.White, fontWeight = FontWeight.Medium)
                         )
                     }
