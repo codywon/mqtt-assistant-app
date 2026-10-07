@@ -758,7 +758,7 @@ class AiAgentClient(
 
         // 达到最大步数安全上限时完结
         onToolAction("")
-        val rawAnswer = currentStepContent.toString().trim()
+        val rawAnswer = fullAccumulatedContent.toString().trim()
         val safeAnswer = if (rawAnswer.isNotBlank() && rawAnswer != "null") {
             rawAnswer
         } else {
