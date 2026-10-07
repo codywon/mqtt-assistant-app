@@ -18,3 +18,11 @@ debug.keystore
 *.apk
 scratch/
 mqtt_assistant_full_config.json
+
+# Local documentation, notes, references, and experiences (keep local, do not sync to GitHub)
+docs/
+notes/
+*NOTE*.md
+*note*.md
+*EXPERIENCE*.md
+*experience*.md
