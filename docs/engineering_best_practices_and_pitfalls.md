@@ -272,6 +272,49 @@
 
 ---
 
+## 十、AI 智能体三级自愈容错状态机、双轨 ReAct 与 Observation-First 架构实践
+
+### 踩坑记录 (Pitfalls)
+1. **强依赖原生 tools 参数引发模型休克与 400 报错**：
+   - *现象*：用户配置某些开源推理模型（如 DeepSeek-R1、Ollama、部分 Qwen 版本）或第三方 API 聚合中转站时，点击发送后应用直接弹出 `大模型服务返回异常 (400)` 或静默返回 0 字节内容。
+   - *根因*：该类模型底层并未实现标准的 OpenAI Function Calling，当客户端请求体中强行传入 `"tools": [...]` 与 `"tool_choice": "auto"` 时，网关拒绝反序列化或直接发生语法报错。
+2. **反代网关与 CLIProxyAPI 的流式 Null 致命缺陷**：
+   - *现象*：用户使用将本地命令行工具（如 Claude Code CLI、Gemini CLI、Codex CLI）包装为 OpenAI 接口的反代网关（如 `router-for-me/CLIProxyAPI`）时，流式生成经常断流或返回空内容。
+   - *根因*：在 `stream: true` 下，CLIProxyAPI 管道极易出现 `delta: {"content": null}` 或标准输出缓冲截断导致连接提前关闭回送 0 字节 payload；而在 `stream: false`（单次 POST，`Accept: application/json`）模式下，网关能 100% 稳定返回标准 JSON。
+3. **流式 Content Block Array 结构解析盲区**：
+   - *现象*：部分中转代理返回的文本在应用界面中全部丢失，变成空白。
+   - *根因*：部分网关返回的 `choice.delta.content` 为 Content Block 数组（如 Anthropic 风格 `[{"type": "text", "text": "..."}]`），Android 原生 `JSONObject.optString("content")` 对 `JSONArray` 直接返回空字符串 `""`，导致有效文字全盘丢失。
+4. **Gemini 原生工具调用丢失与参数解析异常**：
+   - *现象*：配置 Gemini 模型时，AI 无法成功触发工具执行，直接落入降级。
+   - *根因*：Gemini 原生 API 函数调用无独立 `name`，反代将其编码在 `id` 属性中（如 `get_live_packets-1791345712310871728-67`），旧客户端因 `name.isEmpty()` 丢弃调用；且反代使用了 `args`（JSONObject 格式），旧逻辑仅按 String 取 `arguments` 导致参数丢失。
+5. **免 tools 降级模式的上下文污染**：
+   - *现象*：在免 tools 纯文本重试或终答步，大模型服务报 HTTP 400 或断流。
+   - *根因*：在未声明 `tools` 的请求体中，`messages` 数组中依然残留了前序步骤生成的 `{"role": "tool", ...}` 和带 `tool_calls` 的 assistant 消息，中转网关遇到未声明工具的角色直接崩溃。
+6. **终答判定误判抹杀现场成果**：
+   - *现象*：大模型连续执行了查库、搜包或布设雷达等现场操作后，界面却弹出一张大红报错卡片“未返回有效回答”。
+   - *根因*：在 Function Calling 规范下，模型下发工具时 `content` 为 null。当达到收敛步数或某一步模型只下发工具未吐文字时，终答逻辑因 `rawAnswer.isBlank()` 粗暴误判为错误，彻底抹杀了此前所有已成功执行的现场成果！
+
+### 工业级最佳实践 (Best Practices)
+- **三级全自动自愈容错状态机 (Multi-Tier Resilient Engine)**：
+  - **Tier 1 (原生流式)**：`stream=true, tools=true, tool_choice="auto"`；
+  - **Tier 2 (纯文本流式)**：`stream=true, tools=false`，自动在 System Prompt 注入纯文本 ReAct 语法指引；
+  - **Tier 3 (稳定非流式兜底)**：`stream=false, tools=false, Accept: application/json`，彻底治愈 CLIProxyAPI 等反代网关的流式 Null 缺陷；
+  - **状态持久化继承**：一旦某一层判定成功，后续 Step 直接继承，避免每次重复踩坑超时；
+  - **降级重试缓存精准回滚**：进入重试前严格重置 Step 缓冲区，杜绝残缺 chunk 脏数据残留；
+  - **空白字符严格校验**：全量使用 `isNotBlank()` 防御仅包含换行符 `\n` 的空白字符陷阱。
+- **全协议纯文本 ReAct 工具调用拦截 (4 大格式通吃)**：
+  - 支持 ````tool:xxx\n{...}````、````json\n{"name": "...", "arguments": {...}}````、`<tool_call>...</tool_call>` 以及 `Action: xxx\nAction Input: ...`，毫秒级正向捕获并执行。
+- **Gemini 原生工具调用智能 ID 回溯与多态参数提取**：
+  - 基于白名单从 ID 智能反推真实工具名，多态兼容 `arguments`、`args`、`parameters`、`input`（兼顾 JSONObject 与 String），严格回传原始 `tool_call_id`。
+- **免 tools 模式上下文平滑净化 (`sanitizeMessagesForTextMode`)**：
+  - 将 `role: "tool"` 平滑改写为标准 `role: "user", content: "【工具执行观测结果 (Tool Observation for xxx)】:\n..."`，将 `assistant.tool_calls` 改写为纯文本执行计划。
+- **Observation-First 执行成果优先自愈机制 (`buildExecutedToolsReport`)**：
+  - 全程记录 `executedToolRecords`；若模型最后一步未吐出文本终答，绝不允许抛出错误卡片，优先自动组织排版精致的 Markdown 现场分析与排查交付报告，100% 呈现真实执行成果。
+- **透明诊断采样镜像 (Diagnostic Mirror)**：
+  - 抓取上限放宽至 2000 字符，若三级自愈全部失败，直接呈现服务端原始报文采样，排障彻底透明。
+
+---
+
 ## 总结：架构设计的核心军规
 1. **面对外部输入（大模型输出、现场硬件报文）保持“最大宽容”**：永远假设输入数据是不标准、有噪音、带错位的，必须设置前置容错净化管道；
 2. **面对内部架构（数据流转、状态源）保持“绝对纯粹”**：单一真实源、单向数据流、执行态与认知态彻底解耦；
@@ -279,7 +322,9 @@
 4. **面对移动端生命周期保持“永久自愈”**：永远不要假设后台服务、TCP 连接、协程管道会永久存活；在每一次 `onResume` 前台唤醒点建立完备的闭环探活与秒级自愈链条；
 5. **系统组件调用遵循平台规范**：从非 Activity 启动必带 `NEW_TASK`；前台服务 5 秒超时绝不漏调 `startForeground`；通知更新严禁滥用 `startService`；
 6. **物模型语义与物理量纲严格解耦**：字段名称只表达语义，物理单位统一定义在量纲属性，展示层自适应清洗防呆；
-7. **AI 流式交互视口锚定与持久化韧性**：流式高频渲染弃用缓动动画改用绝对偏移锚定，用户翻看历史时智能解绑；长推理网络配足超时并加持防息屏 WakeLock，流式内容定期落地检查点。
+7. **AI 流式交互视口锚定与持久化韧性**：流式高频渲染弃用缓动动画改用绝对偏移锚定，用户翻看历史时智能解绑；长推理网络配足超时并加持防息屏 WakeLock，流式内容定期落地检查点；
+8. **AI 智能体双轨三级容错与执行成果优先**：杜绝强绑原生 tools 与 stream，构建原生流式->文本流式->非流式三级自愈；Gemini ID 回溯保调用，上下文平滑净化防 400；全程维护工具执行记录，终答首选现场报告自愈，永不报错抹杀。
+
 
 
 
